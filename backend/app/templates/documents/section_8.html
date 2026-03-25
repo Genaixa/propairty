@@ -1,0 +1,66 @@
+{% extends "documents/base.html" %}
+{% block content %}
+<div class="notice-box warning">
+  <strong>IMPORTANT LEGAL NOTICE — Section 8</strong><br>
+  This notice is served on grounds of breach of tenancy. Seek legal advice immediately.
+</div>
+
+<h1>Section 8 Notice</h1>
+<p style="text-align:center; font-size:10pt; color:#555; margin-bottom:20px;">
+  Notice of Intention to Seek Possession · Housing Act 1988, Section 8
+</p>
+
+<div class="parties">
+  <table>
+    <tr><td>To (Tenant):</td><td><strong>{{ tenant_name }}</strong></td></tr>
+    <tr><td>Of (Property):</td><td>{{ property_address }}</td></tr>
+    <tr><td>From (Landlord):</td><td>{{ org_name }}</td></tr>
+    <tr><td>Notice Date:</td><td>{{ today }}</td></tr>
+    <tr><td>Arrears Amount:</td><td class="amount">£{{ arrears_amount }}</td></tr>
+    <tr><td>Court Action After:</td><td><strong>{{ court_date }}</strong></td></tr>
+  </table>
+</div>
+
+<h2>Notice of Intention to Seek Possession</h2>
+<p>I/We, <strong>{{ org_name }}</strong>, hereby give you notice of intention to apply to the court for an order for possession of:</p>
+<p style="margin:12px 0 12px 24px; font-weight:bold;">{{ property_address }}</p>
+
+<h2>Grounds for Possession</h2>
+<div class="clause">
+<p>Possession is sought on the following ground(s) under Schedule 2 of the Housing Act 1988:</p>
+
+<p><strong>Ground 8 (Mandatory):</strong> At the date of service of this notice and at the date of the hearing, at least two months' rent lawfully due from the tenant is unpaid. The current arrears stand at <strong>£{{ arrears_amount }}</strong>.</p>
+
+<p><strong>Ground 10 (Discretionary):</strong> Some rent lawfully due from the tenant is unpaid on the date on which proceedings for possession are begun.</p>
+
+<p><strong>Ground 11 (Discretionary):</strong> Whether or not any rent is in arrears on the date on which proceedings for possession are begun, the tenant has persistently delayed paying rent which has become lawfully due.</p>
+</div>
+
+{% if custom_notes %}
+<h2>Further Details</h2>
+<div class="clause"><p>{{ custom_notes }}</p></div>
+{% endif %}
+
+<h2>What You Must Do</h2>
+<ul>
+  <li>Pay the full arrears of <strong>£{{ arrears_amount }}</strong> immediately;</li>
+  <li>If you cannot pay, contact us urgently to discuss a repayment plan;</li>
+  <li>Contact Citizens Advice or a housing solicitor immediately;</li>
+  <li>Contact your local council's housing department — you may be entitled to assistance.</li>
+</ul>
+
+<p style="margin-top:16px;">If no agreement is reached and the arrears are not cleared, proceedings will be issued at the court after <strong>{{ court_date }}</strong>.</p>
+
+<div class="signature-block">
+  <div class="signature-line">
+    <hr>
+    <p>Signed: {{ org_name }}</p>
+    <p>Date: {{ today }}</p>
+  </div>
+  <div class="signature-line">
+    <hr>
+    <p>Received by Tenant: {{ tenant_name }}</p>
+    <p>Date: ___________________</p>
+  </div>
+</div>
+{% endblock %}

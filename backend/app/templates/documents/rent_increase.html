@@ -1,0 +1,56 @@
+{% extends "documents/base.html" %}
+{% block content %}
+<h1>Notice of Rent Increase</h1>
+<p style="text-align:center; font-size:10pt; color:#555; margin-bottom:20px;">
+  Section 13 Notice · Housing Act 1988
+</p>
+
+<div class="parties">
+  <table>
+    <tr><td>To (Tenant):</td><td><strong>{{ tenant_name }}</strong></td></tr>
+    <tr><td>Of (Property):</td><td>{{ property_address }}</td></tr>
+    <tr><td>From (Landlord):</td><td>{{ org_name }}</td></tr>
+    <tr><td>Date of Notice:</td><td>{{ today }}</td></tr>
+    <tr><td>Current Rent:</td><td>£{{ current_rent }} per calendar month</td></tr>
+    <tr><td>Proposed New Rent:</td><td class="amount">£{{ new_rent }} per calendar month</td></tr>
+    <tr><td>Increase Amount:</td><td>£{{ increase_amount }} per month ({{ increase_pct }}%)</td></tr>
+    <tr><td>Effective From:</td><td><strong>{{ effective_date }}</strong></td></tr>
+  </table>
+</div>
+
+<h2>Notice of Proposed Rent Increase</h2>
+<p>Dear {{ tenant_name }},</p>
+
+<p>I am writing to notify you of a proposed increase to the rent payable for the above property. This notice is served pursuant to <strong>Section 13 of the Housing Act 1988</strong>.</p>
+
+<p>Your current rent of <strong>£{{ current_rent }} per calendar month</strong> will increase to <strong>£{{ new_rent }} per calendar month</strong>, effective from <strong>{{ effective_date }}</strong>.</p>
+
+<div class="notice-box info" style="margin-top:16px; margin-bottom:16px;">
+  <strong>New Monthly Rent from {{ effective_date }}: £{{ new_rent }}</strong><br>
+  Please update your standing order before this date.
+</div>
+
+<h2>Your Rights</h2>
+<ul>
+  <li>You have the right to refer this proposed rent increase to the First-tier Tribunal (Property Chamber) before the effective date if you believe it exceeds the market rate;</li>
+  <li>You must do this before <strong>{{ effective_date }}</strong>;</li>
+  <li>If you do not refer the increase, it will take effect on the date stated;</li>
+  <li>This notice must be served at least one month before the effective date for monthly tenancies.</li>
+</ul>
+
+{% if custom_notes %}
+<h2>Additional Information</h2>
+<p>{{ custom_notes }}</p>
+{% endif %}
+
+<p>Please contact us if you have any questions or concerns regarding this notice.</p>
+
+<p>Yours sincerely,</p>
+<div class="signature-block">
+  <div class="signature-line">
+    <hr>
+    <p>{{ org_name }}</p>
+    <p>Date: {{ today }}</p>
+  </div>
+</div>
+{% endblock %}

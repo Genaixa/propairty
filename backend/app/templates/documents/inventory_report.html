@@ -1,0 +1,135 @@
+{% extends "documents/base.html" %}
+{% block content %}
+
+<h1 style="margin-bottom:4px;">Property Inventory Report</h1>
+<p style="text-align:center;color:#555;margin-bottom:6px;font-size:10pt;">
+  {{ inv_type_label }} &nbsp;·&nbsp; {{ inv_date }}
+</p>
+
+<div class="parties">
+  <table>
+    <tr><td>Property:</td><td><strong>{{ property_address }}</strong></td></tr>
+    <tr><td>Unit:</td><td>{{ unit_name }}</td></tr>
+    <tr><td>Tenant:</td><td>{{ tenant_name }}</td></tr>
+    <tr><td>Conducted By:</td><td>{{ conducted_by or '—' }}</td></tr>
+    <tr><td>Tenant Present:</td><td>{{ 'Yes' if tenant_present else 'No' }}</td></tr>
+    <tr><td>Date:</td><td>{{ inv_date }}</td></tr>
+  </table>
+</div>
+
+{% if meter_electric or meter_gas or meter_water or keys_handed %}
+<h2>Meter Readings &amp; Keys</h2>
+<table style="width:100%;border-collapse:collapse;font-size:10pt;margin-bottom:16px;">
+  <tbody>
+    {% if meter_electric %}<tr><td style="padding:4px 8px;font-weight:bold;width:30%;">Electricity:</td><td style="padding:4px 8px;">{{ meter_electric }}</td></tr>{% endif %}
+    {% if meter_gas %}<tr><td style="padding:4px 8px;font-weight:bold;">Gas:</td><td style="padding:4px 8px;">{{ meter_gas }}</td></tr>{% endif %}
+    {% if meter_water %}<tr><td style="padding:4px 8px;font-weight:bold;">Water:</td><td style="padding:4px 8px;">{{ meter_water }}</td></tr>{% endif %}
+    {% if keys_handed %}<tr><td style="padding:4px 8px;font-weight:bold;">Keys Handed:</td><td style="padding:4px 8px;">{{ keys_handed }}</td></tr>{% endif %}
+  </tbody>
+</table>
+{% endif %}
+
+{% for room in rooms %}
+<h2 style="margin-top:18px;">{{ room.room_name }}</h2>
+{% if room.notes %}<p style="font-size:9.5pt;color:#666;margin-bottom:6px;">{{ room.notes }}</p>{% endif %}
+<table style="width:100%;border-collapse:collapse;font-size:10pt;margin-bottom:12px;">
+  <thead>
+    <tr style="background:#f3f4f6;">
+      <th style="text-align:left;padding:5px 10px;border-bottom:1px solid #d1d5db;width:45%;">Item</th>
+      <th style="text-align:center;padding:5px 10px;border-bottom:1px solid #d1d5db;width:20%;">Condition</th>
+      {% if is_comparison %}
+      <th style="text-align:center;padding:5px 10px;border-bottom:1px solid #d1d5db;width:20%;">Check-Out</th>
+      <th style="text-align:center;padding:5px 10px;border-bottom:1px solid #d1d5db;width:15%;">Change</th>
+      {% else %}
+      <th style="text-align:left;padding:5px 10px;border-bottom:1px solid #d1d5db;">Notes</th>
+      {% endif %}
+    </tr>
+  </thead>
+  <tbody>
+    {% for item in room.items %}
+    <tr style="border-bottom:1px solid #f3f4f6;{% if is_comparison and item.changed %}background:#fef9c3;{% endif %}">
+      <td style="padding:5px 10px;">{{ item.item_name }}</td>
+      <td style="padding:5px 10px;text-align:center;">
+        <span style="font-size:8.5pt;padding:2px 8px;border-radius:9999px;font-weight:600;
+          {% if item.condition == 'excellent' %}background:#dcfce7;color:#166534;
+          {% elif item.condition == 'good' %}background:#dbeafe;color:#1d4ed8;
+          {% elif item.condition == 'fair' %}background:#fef9c3;color:#92400e;
+          {% elif item.condition == 'poor' %}background:#fee2e2;color:#991b1b;
+          {% elif item.condition == 'missing' %}background:#f3e8ff;color:#6b21a8;
+          {% else %}background:#f3f4f6;color:#6b7280;{% endif %}">
+          {{ item.condition|capitalize if item.condition else '—' }}
+        </span>
+      </td>
+      {% if is_comparison %}
+      <td style="padding:5px 10px;text-align:center;">
+        {% if item.out_condition %}
+        <span style="font-size:8.5pt;padding:2px 8px;border-radius:9999px;font-weight:600;
+          {% if item.out_condition == 'excellent' %}background:#dcfce7;color:#166534;
+          {% elif item.out_condition == 'good' %}background:#dbeafe;color:#1d4ed8;
+          {% elif item.out_condition == 'fair' %}background:#fef9c3;color:#92400e;
+          {% elif item.out_condition == 'poor' %}background:#fee2e2;color:#991b1b;
+          {% elif item.out_condition == 'missing' %}background:#f3e8ff;color:#6b21a8;
+          {% else %}background:#f3f4f6;color:#6b7280;{% endif %}">
+          {{ item.out_condition|capitalize }}
+        </span>
+        {% else %}<span style="color:#9ca3af;font-size:9pt;">not recorded</span>{% endif %}
+      </td>
+      <td style="padding:5px 10px;text-align:center;font-weight:bold;font-size:9pt;">
+        {% if item.changed %}<span style="color:#dc2626;">▼ Declined</span>
+        {% elif item.improved %}<span style="color:#16a34a;">▲</span>
+        {% else %}<span style="color:#6b7280;">—</span>{% endif %}
+      </td>
+      {% else %}
+      <td style="padding:5px 10px;font-size:9.5pt;color:#555;">{{ item.notes or '—' }}</td>
+      {% endif %}
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endfor %}
+
+{% if overall_notes %}
+<h2>Overall Notes</h2>
+<p style="font-size:10pt;">{{ overall_notes }}</p>
+{% endif %}
+
+{% if is_comparison and declined_items %}
+<h2 style="color:#dc2626;">Items with Declined Condition</h2>
+<table style="width:100%;border-collapse:collapse;font-size:10pt;margin-bottom:16px;">
+  <thead>
+    <tr style="background:#fee2e2;">
+      <th style="text-align:left;padding:5px 10px;border-bottom:1px solid #fca5a5;">Room</th>
+      <th style="text-align:left;padding:5px 10px;border-bottom:1px solid #fca5a5;">Item</th>
+      <th style="text-align:center;padding:5px 10px;border-bottom:1px solid #fca5a5;">Check-In</th>
+      <th style="text-align:center;padding:5px 10px;border-bottom:1px solid #fca5a5;">Check-Out</th>
+      <th style="text-align:left;padding:5px 10px;border-bottom:1px solid #fca5a5;">Notes</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for d in declined_items %}
+    <tr style="border-bottom:1px solid #f3f4f6;">
+      <td style="padding:5px 10px;font-weight:600;">{{ d.room }}</td>
+      <td style="padding:5px 10px;">{{ d.item }}</td>
+      <td style="padding:5px 10px;text-align:center;color:#166534;">{{ d.in_condition|capitalize }}</td>
+      <td style="padding:5px 10px;text-align:center;color:#dc2626;">{{ d.out_condition|capitalize }}</td>
+      <td style="padding:5px 10px;font-size:9pt;color:#555;">{{ d.notes or '—' }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+<div class="signature-block" style="margin-top:40px;">
+  <div class="signature-line">
+    <hr>
+    <p>Agent / Inspector: {{ conducted_by or '___________________' }}</p>
+    <p>Date: {{ inv_date }}</p>
+  </div>
+  <div class="signature-line">
+    <hr>
+    <p>Tenant: {{ tenant_name }}</p>
+    <p>Date: ___________________</p>
+  </div>
+</div>
+
+{% endblock %}

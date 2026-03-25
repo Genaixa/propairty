@@ -1,0 +1,96 @@
+{% extends "documents/base.html" %}
+{% block content %}
+<h1>Assured Shorthold Tenancy Agreement</h1>
+<p style="text-align:center; color:#555; font-size:10pt; margin-bottom:20px;">
+  Housing Act 1988 (as amended by the Housing Act 1996)
+</p>
+
+<div class="parties">
+  <table>
+    <tr><td>Landlord:</td><td>{{ org_name }}</td></tr>
+    <tr><td>Landlord Address:</td><td>{{ landlord_address }}</td></tr>
+    <tr><td>Tenant(s):</td><td>{{ tenant_name }}</td></tr>
+    <tr><td>Tenant Email:</td><td>{{ tenant_email or '—' }}</td></tr>
+    <tr><td>Property Address:</td><td>{{ property_address }}</td></tr>
+    <tr><td>Tenancy Start:</td><td>{{ start_date }}</td></tr>
+    <tr><td>Tenancy End:</td><td>{{ end_date }}</td></tr>
+    <tr><td>Monthly Rent:</td><td class="amount">£{{ monthly_rent }}</td></tr>
+    <tr><td>Rent Due Day:</td><td>{{ rent_day }}{{ 'st' if rent_day == 1 else ('nd' if rent_day == 2 else ('rd' if rent_day == 3 else 'th')) }} of each month</td></tr>
+    <tr><td>Security Deposit:</td><td>£{{ deposit or '0' }}</td></tr>
+    <tr><td>Deposit Scheme:</td><td>Tenancy Deposit Scheme (TDS)</td></tr>
+  </table>
+</div>
+
+<h2>1. The Tenancy</h2>
+<div class="clause">
+<p>The Landlord lets and the Tenant takes the Property for the Term at the Rent specified above. This tenancy is an Assured Shorthold Tenancy within the meaning of the Housing Act 1988 as amended by the Housing Act 1996.</p>
+<p>The tenancy is for a fixed term commencing on <strong>{{ start_date }}</strong> and ending on <strong>{{ end_date }}</strong>{% if is_periodic %}, after which it shall continue as a periodic tenancy on a month-to-month basis unless terminated by either party giving at least one month's written notice{% endif %}.</p>
+</div>
+
+<h2>2. Rent</h2>
+<div class="clause">
+<p>The Tenant shall pay rent of <strong>£{{ monthly_rent }} per calendar month</strong>, payable in advance on the {{ rent_day }}{{ 'st' if rent_day == 1 else ('nd' if rent_day == 2 else ('rd' if rent_day == 3 else 'th')) }} day of each month by bank transfer or standing order to the Landlord's nominated account.</p>
+<p>If any rent is more than 14 days in arrears the Landlord may charge interest at 3% above the Bank of England base rate.</p>
+</div>
+
+<h2>3. Deposit</h2>
+<div class="clause">
+<p>The Tenant shall pay a security deposit of <strong>£{{ deposit or '0' }}</strong> on or before the commencement of the tenancy. This deposit will be protected in a Government-approved tenancy deposit scheme within 30 days of receipt. The deposit may be used to cover: unpaid rent; damage to the property beyond fair wear and tear; cleaning costs; and breach of tenancy obligations.</p>
+</div>
+
+<h2>4. Tenant's Obligations</h2>
+<div class="clause">
+<p>The Tenant agrees to:</p>
+<ul>
+  <li>Pay the rent on time and in full;</li>
+  <li>Keep the property clean and in good order;</li>
+  <li>Not make alterations to the property without written consent;</li>
+  <li>Not sublet or assign the tenancy without written consent;</li>
+  <li>Allow the Landlord reasonable access (24 hours' notice except in emergency);</li>
+  <li>Report any disrepair or defect promptly;</li>
+  <li>Not cause nuisance or annoyance to neighbours;</li>
+  <li>Comply with all obligations under the relevant legislation;</li>
+  <li>Vacate the property and return keys at the end of the tenancy.</li>
+</ul>
+</div>
+
+<h2>5. Landlord's Obligations</h2>
+<div class="clause">
+<ul>
+  <li>Allow the Tenant quiet enjoyment of the property;</li>
+  <li>Maintain the structure and exterior of the property;</li>
+  <li>Ensure all gas appliances are serviced annually (Gas Safety Certificate);</li>
+  <li>Ensure the electrical installation is safe (EICR every 5 years);</li>
+  <li>Provide an Energy Performance Certificate (EPC) with a minimum rating of E;</li>
+  <li>Protect the deposit in a Government-approved scheme;</li>
+  <li>Carry out repairs within a reasonable time of notification.</li>
+</ul>
+</div>
+
+<h2>6. Termination</h2>
+<div class="clause">
+<p>This tenancy may be terminated by the Landlord serving a valid Section 21 Notice under the Housing Act 1988 giving at least two months' notice, or a Section 8 Notice where the Tenant is in breach of tenancy obligations. The Tenant may terminate this tenancy by giving at least one month's written notice prior to the end of the fixed term.</p>
+</div>
+
+<h2>7. Governing Law</h2>
+<div class="clause">
+<p>This agreement shall be governed by the laws of England and Wales.</p>
+</div>
+
+<div class="notice-box info" style="margin-top:24px;">
+  <strong>How to Rent Guide:</strong> The Landlord has provided the Tenant with the Government's "How to Rent" guide as required by the Deregulation Act 2015.
+</div>
+
+<div class="signature-block">
+  <div class="signature-line">
+    <hr>
+    <p>Landlord / Agent: {{ org_name }}</p>
+    <p>Date: ___________________</p>
+  </div>
+  <div class="signature-line">
+    <hr>
+    <p>Tenant: {{ tenant_name }}</p>
+    <p>Date: ___________________</p>
+  </div>
+</div>
+{% endblock %}

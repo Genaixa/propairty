@@ -1,0 +1,65 @@
+{% extends "documents/base.html" %}
+{% block content %}
+<div class="notice-box warning">
+  <strong>IMPORTANT LEGAL NOTICE</strong><br>
+  This is a formal Section 21 Notice requiring possession of the property. Please read carefully and seek independent legal advice if required.
+</div>
+
+<h1>Section 21 Notice</h1>
+<p style="text-align:center; font-size:10pt; color:#555; margin-bottom:20px;">
+  Notice Requiring Possession · Housing Act 1988, Section 21
+</p>
+
+<div class="parties">
+  <table>
+    <tr><td>To (Tenant):</td><td><strong>{{ tenant_name }}</strong></td></tr>
+    <tr><td>Of (Property):</td><td>{{ property_address }}</td></tr>
+    <tr><td>From (Landlord):</td><td>{{ org_name }}</td></tr>
+    <tr><td>Notice Date:</td><td>{{ today }}</td></tr>
+    <tr><td>Possession Required By:</td><td class="amount">{{ possession_date }}</td></tr>
+  </table>
+</div>
+
+<h2>Notice to Quit</h2>
+<p>I/We, <strong>{{ org_name }}</strong>, being the Landlord(s) of the above property, hereby give you notice that possession of the property at:</p>
+<p style="margin:12px 0 12px 24px; font-weight:bold;">{{ property_address }}</p>
+<p>is required on or after <strong>{{ possession_date }}</strong>.</p>
+
+<p>This notice is given pursuant to <strong>Section 21(1)(b)</strong> of the Housing Act 1988 (as amended). The tenancy in question is an Assured Shorthold Tenancy which commenced on <strong>{{ start_date }}</strong>.</p>
+
+<h2>What This Means For You</h2>
+<ul>
+  <li>You are required to vacate the property and return all keys by <strong>{{ possession_date }}</strong>.</li>
+  <li>If you do not vacate by this date, the Landlord may apply to the court for a possession order.</li>
+  <li>You may be entitled to assistance from your local council — please contact them promptly.</li>
+  <li>You should seek independent legal advice, e.g. from Citizens Advice.</li>
+</ul>
+
+<h2>Legal Requirements Confirmed</h2>
+<div class="clause">
+<p>The Landlord confirms that prior to serving this notice:</p>
+<ul>
+  <li>A valid Gas Safety Certificate has been provided to the Tenant;</li>
+  <li>A valid Energy Performance Certificate (EPC) has been provided;</li>
+  <li>The Government's "How to Rent" guide has been provided;</li>
+  <li>The deposit (if applicable) has been protected in a Government-approved scheme and prescribed information provided.</li>
+</ul>
+</div>
+
+<div class="notice-box" style="margin-top:20px;">
+  <strong>Note:</strong> This notice is valid for 6 months from the date of service. After this period a new notice will need to be served.
+</div>
+
+<div class="signature-block">
+  <div class="signature-line">
+    <hr>
+    <p>Signed: {{ org_name }}</p>
+    <p>Date Served: {{ today }}</p>
+  </div>
+  <div class="signature-line">
+    <hr>
+    <p>Served on Tenant: {{ tenant_name }}</p>
+    <p>Method of Service: ___________________</p>
+  </div>
+</div>
+{% endblock %}

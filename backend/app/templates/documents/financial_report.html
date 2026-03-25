@@ -1,0 +1,121 @@
+{% extends "documents/base.html" %}
+{% block content %}
+
+<h1>Monthly Financial Report</h1>
+<p style="text-align:center;color:#555;margin-bottom:24px;">{{ report_month }} &nbsp;·&nbsp; Prepared for {{ landlord_name }}</p>
+
+<!-- Summary boxes -->
+<div style="display:flex;gap:16px;margin:20px 0;">
+  <div style="flex:1;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:6px;padding:14px 18px;text-align:center;">
+    <div style="font-size:9pt;color:#166534;text-transform:uppercase;letter-spacing:0.05em;font-weight:bold;">Rent Collected</div>
+    <div style="font-size:20pt;font-weight:bold;color:#14532d;margin-top:4px;">£{{ "%.2f"|format(total_collected) }}</div>
+  </div>
+  <div style="flex:1;background:{% if total_arrears > 0 %}#fef2f2{% else %}#f9fafb{% endif %};border:1px solid {% if total_arrears > 0 %}#fecaca{% else %}#e5e7eb{% endif %};border-radius:6px;padding:14px 18px;text-align:center;">
+    <div style="font-size:9pt;color:{% if total_arrears > 0 %}#991b1b{% else %}#374151{% endif %};text-transform:uppercase;letter-spacing:0.05em;font-weight:bold;">Arrears</div>
+    <div style="font-size:20pt;font-weight:bold;color:{% if total_arrears > 0 %}#7f1d1d{% else %}#111827{% endif %};margin-top:4px;">£{{ "%.2f"|format(total_arrears) }}</div>
+  </div>
+  <div style="flex:1;background:#f0f9ff;border:1px solid #bae6fd;border-radius:6px;padding:14px 18px;text-align:center;">
+    <div style="font-size:9pt;color:#075985;text-transform:uppercase;letter-spacing:0.05em;font-weight:bold;">Expected</div>
+    <div style="font-size:20pt;font-weight:bold;color:#0c4a6e;margin-top:4px;">£{{ "%.2f"|format(total_expected) }}</div>
+  </div>
+  <div style="flex:1;background:#faf5ff;border:1px solid #e9d5ff;border-radius:6px;padding:14px 18px;text-align:center;">
+    <div style="font-size:9pt;color:#6b21a8;text-transform:uppercase;letter-spacing:0.05em;font-weight:bold;">Properties</div>
+    <div style="font-size:20pt;font-weight:bold;color:#4c1d95;margin-top:4px;">{{ properties|length }}</div>
+  </div>
+</div>
+
+<!-- Properties & Payments -->
+{% for prop in properties %}
+<h2>{{ prop.name }} &nbsp;<span style="font-size:9pt;color:#666;font-weight:normal;">{{ prop.address }}</span></h2>
+<table style="width:100%;border-collapse:collapse;font-size:10pt;margin-bottom:16px;">
+  <thead>
+    <tr style="background:#f3f4f6;">
+      <th style="text-align:left;padding:6px 10px;border-bottom:1px solid #d1d5db;">Unit</th>
+      <th style="text-align:left;padding:6px 10px;border-bottom:1px solid #d1d5db;">Tenant</th>
+      <th style="text-align:right;padding:6px 10px;border-bottom:1px solid #d1d5db;">Expected</th>
+      <th style="text-align:right;padding:6px 10px;border-bottom:1px solid #d1d5db;">Collected</th>
+      <th style="text-align:center;padding:6px 10px;border-bottom:1px solid #d1d5db;">Status</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for unit in prop.units %}
+    <tr style="border-bottom:1px solid #f3f4f6;">
+      <td style="padding:6px 10px;">{{ unit.name }}</td>
+      <td style="padding:6px 10px;color:#555;">{{ unit.tenant_name or 'Vacant' }}</td>
+      <td style="padding:6px 10px;text-align:right;">£{{ "%.2f"|format(unit.expected) }}</td>
+      <td style="padding:6px 10px;text-align:right;font-weight:bold;">£{{ "%.2f"|format(unit.collected) }}</td>
+      <td style="padding:6px 10px;text-align:center;">
+        <span style="font-size:8.5pt;padding:2px 8px;border-radius:9999px;font-weight:600;
+          {% if unit.status == 'paid' %}background:#dcfce7;color:#166534;
+          {% elif unit.status == 'overdue' %}background:#fee2e2;color:#991b1b;
+          {% elif unit.status == 'vacant' %}background:#f3f4f6;color:#6b7280;
+          {% else %}background:#fef9c3;color:#854d0e;{% endif %}">
+          {{ unit.status|capitalize }}
+        </span>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endfor %}
+
+<!-- Compliance summary -->
+{% if compliance_items %}
+<h2>Compliance Summary</h2>
+<table style="width:100%;border-collapse:collapse;font-size:10pt;margin-bottom:16px;">
+  <thead>
+    <tr style="background:#f3f4f6;">
+      <th style="text-align:left;padding:6px 10px;border-bottom:1px solid #d1d5db;">Property</th>
+      <th style="text-align:left;padding:6px 10px;border-bottom:1px solid #d1d5db;">Certificate</th>
+      <th style="text-align:left;padding:6px 10px;border-bottom:1px solid #d1d5db;">Expires</th>
+      <th style="text-align:center;padding:6px 10px;border-bottom:1px solid #d1d5db;">Status</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for c in compliance_items %}
+    <tr style="border-bottom:1px solid #f3f4f6;">
+      <td style="padding:6px 10px;color:#555;">{{ c.property_name }}</td>
+      <td style="padding:6px 10px;">{{ c.label }}</td>
+      <td style="padding:6px 10px;">{{ c.expiry_date or '—' }}</td>
+      <td style="padding:6px 10px;text-align:center;">
+        <span style="font-size:8.5pt;padding:2px 8px;border-radius:9999px;font-weight:600;
+          {% if c.status == 'valid' %}background:#dcfce7;color:#166534;
+          {% elif c.status == 'expiring_soon' %}background:#fef9c3;color:#854d0e;
+          {% else %}background:#fee2e2;color:#991b1b;{% endif %}">
+          {{ c.status.replace('_',' ')|capitalize }}
+        </span>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+<!-- Upcoming lease renewals -->
+{% if renewals %}
+<h2>Upcoming Lease Renewals</h2>
+<table style="width:100%;border-collapse:collapse;font-size:10pt;">
+  <thead>
+    <tr style="background:#f3f4f6;">
+      <th style="text-align:left;padding:6px 10px;border-bottom:1px solid #d1d5db;">Tenant</th>
+      <th style="text-align:left;padding:6px 10px;border-bottom:1px solid #d1d5db;">Property / Unit</th>
+      <th style="text-align:left;padding:6px 10px;border-bottom:1px solid #d1d5db;">End Date</th>
+      <th style="text-align:center;padding:6px 10px;border-bottom:1px solid #d1d5db;">Days Remaining</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for r in renewals %}
+    <tr style="border-bottom:1px solid #f3f4f6;">
+      <td style="padding:6px 10px;">{{ r.tenant_name }}</td>
+      <td style="padding:6px 10px;color:#555;">{{ r.property_name }} · {{ r.unit_name }}</td>
+      <td style="padding:6px 10px;">{{ r.end_date }}</td>
+      <td style="padding:6px 10px;text-align:center;font-weight:bold;color:{% if r.days_remaining < 30 %}#dc2626{% else %}#374151{% endif %};">
+        {{ r.days_remaining }}
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+{% endblock %}

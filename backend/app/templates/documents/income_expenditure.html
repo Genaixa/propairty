@@ -1,0 +1,127 @@
+{% extends "documents/base.html" %}
+{% block content %}
+
+<h1 style="margin-bottom:4px;">Income &amp; Expenditure Statement</h1>
+<p style="text-align:center;color:#555;margin-bottom:6px;font-size:10pt;">
+  {{ org_name }} &nbsp;·&nbsp; {{ from_date }} to {{ to_date }}
+  {% if property_filter %} &nbsp;·&nbsp; {{ property_filter }}{% endif %}
+</p>
+<p style="text-align:center;color:#888;margin-bottom:24px;font-size:8.5pt;">
+  Generated {{ generated_date }} &nbsp;·&nbsp; For self-assessment reference only — verify with your accountant.
+</p>
+
+<!-- Totals summary -->
+<div style="display:flex;gap:14px;margin:20px 0 28px;">
+  <div style="flex:1;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:6px;padding:14px 18px;text-align:center;">
+    <div style="font-size:8.5pt;color:#166534;text-transform:uppercase;letter-spacing:0.05em;font-weight:bold;">Total Income</div>
+    <div style="font-size:22pt;font-weight:bold;color:#14532d;margin-top:4px;">£{{ "%.2f"|format(total_income) }}</div>
+    <div style="font-size:8pt;color:#166534;margin-top:2px;">{{ income_count }} payments</div>
+  </div>
+  <div style="flex:1;background:#fef2f2;border:1px solid #fecaca;border-radius:6px;padding:14px 18px;text-align:center;">
+    <div style="font-size:8.5pt;color:#991b1b;text-transform:uppercase;letter-spacing:0.05em;font-weight:bold;">Total Expenditure</div>
+    <div style="font-size:22pt;font-weight:bold;color:#7f1d1d;margin-top:4px;">£{{ "%.2f"|format(total_expenditure) }}</div>
+    <div style="font-size:8pt;color:#991b1b;margin-top:2px;">{{ expenditure_count }} jobs</div>
+  </div>
+  <div style="flex:1;background:{% if net_profit >= 0 %}#f0f9ff{% else %}#faf5ff{% endif %};border:1px solid {% if net_profit >= 0 %}#bae6fd{% else %}#e9d5ff{% endif %};border-radius:6px;padding:14px 18px;text-align:center;">
+    <div style="font-size:8.5pt;color:{% if net_profit >= 0 %}#075985{% else %}#6b21a8{% endif %};text-transform:uppercase;letter-spacing:0.05em;font-weight:bold;">Net Profit</div>
+    <div style="font-size:22pt;font-weight:bold;color:{% if net_profit >= 0 %}#0c4a6e{% else %}#4c1d95{% endif %};margin-top:4px;">£{{ "%.2f"|format(net_profit) }}</div>
+    <div style="font-size:8pt;color:#6b7280;margin-top:2px;">before tax &amp; allowances</div>
+  </div>
+</div>
+
+<!-- Per-property breakdown -->
+{% for prop in properties %}
+<h2 style="margin-top:20px;margin-bottom:4px;">{{ prop.name }}</h2>
+<p style="font-size:9pt;color:#666;margin-bottom:8px;">{{ prop.address }}</p>
+
+<!-- Income table -->
+<h3 style="font-size:10pt;color:#166534;margin:8px 0 4px;">Income — Rent Received</h3>
+{% if prop.income_rows %}
+<table style="width:100%;border-collapse:collapse;font-size:9.5pt;margin-bottom:10px;">
+  <thead>
+    <tr style="background:#f0fdf4;">
+      <th style="text-align:left;padding:5px 8px;border-bottom:1px solid #bbf7d0;">Date Paid</th>
+      <th style="text-align:left;padding:5px 8px;border-bottom:1px solid #bbf7d0;">Tenant</th>
+      <th style="text-align:left;padding:5px 8px;border-bottom:1px solid #bbf7d0;">Unit</th>
+      <th style="text-align:left;padding:5px 8px;border-bottom:1px solid #bbf7d0;">Period</th>
+      <th style="text-align:right;padding:5px 8px;border-bottom:1px solid #bbf7d0;">Amount</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for r in prop.income_rows %}
+    <tr style="border-bottom:1px solid #f3f4f6;">
+      <td style="padding:5px 8px;">{{ r.paid_date }}</td>
+      <td style="padding:5px 8px;">{{ r.tenant_name }}</td>
+      <td style="padding:5px 8px;color:#555;">{{ r.unit_name }}</td>
+      <td style="padding:5px 8px;color:#555;">{{ r.period }}</td>
+      <td style="padding:5px 8px;text-align:right;font-weight:600;">£{{ "%.2f"|format(r.amount) }}</td>
+    </tr>
+    {% endfor %}
+    <tr style="background:#f0fdf4;font-weight:bold;">
+      <td colspan="4" style="padding:5px 8px;">Property income subtotal</td>
+      <td style="padding:5px 8px;text-align:right;">£{{ "%.2f"|format(prop.total_income) }}</td>
+    </tr>
+  </tbody>
+</table>
+{% else %}
+<p style="font-size:9pt;color:#9ca3af;margin-bottom:10px;">No rent payments recorded in this period.</p>
+{% endif %}
+
+<!-- Expenditure table -->
+<h3 style="font-size:10pt;color:#991b1b;margin:8px 0 4px;">Expenditure — Maintenance &amp; Repairs</h3>
+{% if prop.expenditure_rows %}
+<table style="width:100%;border-collapse:collapse;font-size:9.5pt;margin-bottom:10px;">
+  <thead>
+    <tr style="background:#fef2f2;">
+      <th style="text-align:left;padding:5px 8px;border-bottom:1px solid #fecaca;">Date</th>
+      <th style="text-align:left;padding:5px 8px;border-bottom:1px solid #fecaca;">Description</th>
+      <th style="text-align:left;padding:5px 8px;border-bottom:1px solid #fecaca;">Contractor</th>
+      <th style="text-align:left;padding:5px 8px;border-bottom:1px solid #fecaca;">Invoice Ref</th>
+      <th style="text-align:right;padding:5px 8px;border-bottom:1px solid #fecaca;">Amount</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for r in prop.expenditure_rows %}
+    <tr style="border-bottom:1px solid #f3f4f6;">
+      <td style="padding:5px 8px;">{{ r.date }}</td>
+      <td style="padding:5px 8px;">{{ r.title }}</td>
+      <td style="padding:5px 8px;color:#555;">{{ r.contractor or '—' }}</td>
+      <td style="padding:5px 8px;color:#555;font-size:8.5pt;">{{ r.invoice_ref or '—' }}</td>
+      <td style="padding:5px 8px;text-align:right;font-weight:600;">£{{ "%.2f"|format(r.amount) }}</td>
+    </tr>
+    {% endfor %}
+    <tr style="background:#fef2f2;font-weight:bold;">
+      <td colspan="4" style="padding:5px 8px;">Property expenditure subtotal</td>
+      <td style="padding:5px 8px;text-align:right;">£{{ "%.2f"|format(prop.total_expenditure) }}</td>
+    </tr>
+  </tbody>
+</table>
+{% else %}
+<p style="font-size:9pt;color:#9ca3af;margin-bottom:10px;">No maintenance costs recorded in this period.</p>
+{% endif %}
+
+<!-- Property net -->
+<div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:6px;padding:10px 14px;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center;">
+  <span style="font-size:10pt;font-weight:600;color:#374151;">{{ prop.name }} — Net</span>
+  <span style="font-size:12pt;font-weight:bold;color:{% if prop.net >= 0 %}#166534{% else %}#991b1b{% endif %};">
+    £{{ "%.2f"|format(prop.net) }}
+  </span>
+</div>
+{% endfor %}
+
+<!-- Grand total -->
+<div style="background:#1e1b4b;border-radius:8px;padding:16px 20px;margin-top:24px;display:flex;justify-content:space-between;align-items:center;">
+  <div>
+    <div style="color:#c7d2fe;font-size:9pt;font-weight:600;text-transform:uppercase;">Grand Total Net Profit</div>
+    <div style="color:#a5b4fc;font-size:8.5pt;margin-top:2px;">Income £{{ "%.2f"|format(total_income) }} minus Expenditure £{{ "%.2f"|format(total_expenditure) }}</div>
+  </div>
+  <div style="font-size:26pt;font-weight:bold;color:{% if net_profit >= 0 %}#86efac{% else %}#fca5a5{% endif %};">
+    £{{ "%.2f"|format(net_profit) }}
+  </div>
+</div>
+
+<p style="font-size:8pt;color:#9ca3af;margin-top:20px;text-align:center;">
+  This report is for information purposes only and does not constitute tax advice. Please consult a qualified accountant for your self-assessment tax return.
+</p>
+
+{% endblock %}

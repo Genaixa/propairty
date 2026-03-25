@@ -1,0 +1,53 @@
+{% extends "documents/base.html" %}
+{% block content %}
+<h1>Tenancy Deposit Receipt</h1>
+<p style="text-align:center; font-size:10pt; color:#555; margin-bottom:20px;">
+  Tenancy Deposit Protection Confirmation
+</p>
+
+<div class="parties">
+  <table>
+    <tr><td>Tenant:</td><td><strong>{{ tenant_name }}</strong></td></tr>
+    <tr><td>Property:</td><td>{{ property_address }}</td></tr>
+    <tr><td>Landlord / Agent:</td><td>{{ org_name }}</td></tr>
+    <tr><td>Tenancy Start Date:</td><td>{{ start_date }}</td></tr>
+    <tr><td>Deposit Amount:</td><td class="amount">£{{ deposit }}</td></tr>
+    <tr><td>Date Received:</td><td>{{ today }}</td></tr>
+    <tr><td>Deposit Scheme:</td><td>Tenancy Deposit Scheme (TDS)</td></tr>
+  </table>
+</div>
+
+<h2>Confirmation of Receipt</h2>
+<p>This document confirms that <strong>{{ org_name }}</strong> has received a security deposit of <strong>£{{ deposit }}</strong> from <strong>{{ tenant_name }}</strong> in connection with the Assured Shorthold Tenancy of:</p>
+<p style="margin:12px 0 12px 24px; font-weight:bold;">{{ property_address }}</p>
+
+<h2>Deposit Protection</h2>
+<p>In accordance with the Housing Act 2004 (as amended by the Localism Act 2011), this deposit has been or will be protected in a Government-approved Tenancy Deposit Protection scheme within <strong>30 days</strong> of receipt.</p>
+<p>You will receive (or have received) the Prescribed Information relating to the deposit protection scheme separately. Please retain this document for your records.</p>
+
+<h2>Deductions Policy</h2>
+<p>At the end of the tenancy, your deposit may be used to cover:</p>
+<ul>
+  <li>Unpaid rent or other monies owed under the tenancy agreement;</li>
+  <li>Damage to the property or its contents beyond fair wear and tear;</li>
+  <li>Cleaning costs where the property is not returned in the same condition;</li>
+  <li>Any breach of your obligations under the tenancy agreement.</li>
+</ul>
+<p>Any deductions will be agreed with you or determined by the deposit protection scheme's dispute resolution service.</p>
+
+<h2>Return of Deposit</h2>
+<p>Subject to any agreed deductions, the deposit will be returned to you within <strong>10 days</strong> of the end of the tenancy and agreement of any deductions.</p>
+
+<div class="signature-block">
+  <div class="signature-line">
+    <hr>
+    <p>Landlord / Agent: {{ org_name }}</p>
+    <p>Date: {{ today }}</p>
+  </div>
+  <div class="signature-line">
+    <hr>
+    <p>Received by Tenant: {{ tenant_name }}</p>
+    <p>Date: ___________________</p>
+  </div>
+</div>
+{% endblock %}
