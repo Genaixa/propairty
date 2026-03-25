@@ -83,6 +83,19 @@ def _base_template(title: str, body: str, org_name: str = "Your Letting Agent") 
 </html>"""
 
 
+def send_password_reset(to_email: str, reset_url: str, portal_name: str = "PropAIrty"):
+    body = f"""
+    <h2>Reset your password</h2>
+    <p>We received a request to reset the password for your <strong>{portal_name}</strong> account.</p>
+    <p>Click the button below to set a new password. This link expires in <strong>1 hour</strong>.</p>
+    <p style="margin: 24px 0;">
+      <a href="{reset_url}" class="cta">Reset Password</a>
+    </p>
+    <p>If you didn't request this, you can safely ignore this email — your password won't change.</p>
+    """
+    _send_email(to_email, f"Reset your {portal_name} password", _base_template(f"Reset your password", body))
+
+
 def send_rent_reminder(tenant: Tenant, payment: RentPayment, lease: Lease, unit: Unit, prop: Property, org: Organisation, days_until_due: int):
     if not tenant.email:
         return

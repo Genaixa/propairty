@@ -29,6 +29,9 @@ import Notices from './pages/Notices'
 import Inventory from './pages/Inventory'
 import Valuation from './pages/Valuation'
 import PPM from './pages/PPM'
+import ForgotPassword from './pages/ForgotPassword'
+import ResetPassword from './pages/ResetPassword'
+import PortalPicker from './pages/PortalPicker'
 import ContractorLogin from './pages/contractor/ContractorLogin'
 import ContractorPortal from './pages/contractor/ContractorPortal'
 import LandlordLogin from './pages/landlord/LandlordLogin'
@@ -45,8 +48,14 @@ export default function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/" element={isLoggedIn() ? <Navigate to="/dashboard" replace /> : <Landing />} />
-        <Route path="/login" element={<Login />} />
+        <Route path="/login" element={<PortalPicker />} />
+        <Route path="/login/agent" element={<Login />} />
         <Route path="/signup" element={<Signup />} />
+        <Route path="/forgot-password" element={<ForgotPassword />} />
+        <Route path="/reset-password" element={<ResetPassword />} />
+        <Route path="/tenant/reset-password" element={<ResetPassword />} />
+        <Route path="/landlord/reset-password" element={<ResetPassword />} />
+        <Route path="/contractor/reset-password" element={<ResetPassword />} />
         <Route path="/contractor/login" element={<ContractorLogin />} />
         <Route path="/contractor/portal" element={<ContractorPortal />} />
         <Route path="/landlord/login" element={<LandlordLogin />} />

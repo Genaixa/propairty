@@ -18,6 +18,7 @@ from app.auth import get_current_user
 from app.schemas.auth import Token
 from app.config import settings
 from app import notifications
+from app import password_reset as pr
 from jose import JWTError, jwt
 
 router = APIRouter(prefix="/api/contractor", tags=["contractor-portal"])
@@ -70,6 +71,19 @@ def contractor_me(contractor: Contractor = Depends(get_current_contractor)):
         "email": contractor.email,
         "phone": contractor.phone,
     }
+
+
+@router.post("/forgot-password")
+@limiter.limit("5/minute")
+def contractor_forgot(request: Request, req: pr.ForgotRequest, db: Session = Depends(get_db)):
+    contractor = db.query(Contractor).filter(Contractor.email == req.email, Contractor.portal_enabled == True).first()
+    return pr.request_reset(req.email, "contractor", contractor.id if contractor else None, db)
+
+
+@router.post("/reset-password")
+def contractor_reset(req: pr.ResetRequest, db: Session = Depends(get_db)):
+    return pr.do_reset(req.token, req.new_password, "contractor",
+                       lambda uid, d: d.query(Contractor).filter(Contractor.id == uid).first(), db)
 
 
 # --- Jobs ---

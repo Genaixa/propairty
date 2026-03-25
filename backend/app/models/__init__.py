@@ -21,3 +21,4 @@ from app.models.valuation import PropertyValuation
 from app.models.tenant_notification import TenantNotification
 from app.models.portal_message import PortalMessage
 from app.models.ppm import PPMSchedule
+from app.models.password_reset import PasswordResetToken

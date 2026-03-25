@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
+
 import { login } from '../lib/auth'
 
 export default function Login() {
@@ -45,7 +46,10 @@ export default function Login() {
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
+            <div className="flex justify-between items-center mb-1">
+              <label className="block text-sm font-medium text-gray-700">Password</label>
+              <Link to="/forgot-password?type=agent" className="text-xs text-indigo-500 hover:underline">Forgot password?</Link>
+            </div>
             <input
               type="password"
               value={password}

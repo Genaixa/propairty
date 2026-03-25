@@ -21,6 +21,7 @@ from app.models.user import User
 from app.schemas.auth import Token
 from app.config import settings
 from app import notifications
+from app import password_reset as pr
 from jose import JWTError, jwt
 from sqlalchemy.sql import func as sqlfunc
 
@@ -59,6 +60,19 @@ def tenant_login(request: Request, form_data: OAuth2PasswordRequestForm = Depend
 @router.get("/me")
 def tenant_me(tenant: Tenant = Depends(get_current_tenant)):
     return {"id": tenant.id, "full_name": tenant.full_name, "email": tenant.email, "phone": tenant.phone}
+
+
+@router.post("/forgot-password")
+@limiter.limit("5/minute")
+def tenant_forgot(request: Request, req: pr.ForgotRequest, db: Session = Depends(get_db)):
+    tenant = db.query(Tenant).filter(Tenant.email == req.email, Tenant.portal_enabled == True).first()
+    return pr.request_reset(req.email, "tenant", tenant.id if tenant else None, db)
+
+
+@router.post("/reset-password")
+def tenant_reset(req: pr.ResetRequest, db: Session = Depends(get_db)):
+    return pr.do_reset(req.token, req.new_password, "tenant",
+                       lambda uid, d: d.query(Tenant).filter(Tenant.id == uid).first(), db)
 
 
 # --- Agent: enable portal for a tenant ---

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, Link } from 'react-router-dom'
 import axios from 'axios'
 
 const BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000/api'
@@ -46,7 +46,10 @@ export default function ContractorLogin() {
               placeholder="you@example.com" required />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
+            <div className="flex justify-between items-center mb-1">
+              <label className="block text-sm font-medium text-gray-700">Password</label>
+              <Link to="/forgot-password?type=contractor" className="text-xs text-orange-500 hover:underline">Forgot password?</Link>
+            </div>
             <input type="password" value={password} onChange={e => setPassword(e.target.value)}
               className="w-full px-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
               placeholder="••••••••" required />

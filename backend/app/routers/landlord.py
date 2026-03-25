@@ -21,6 +21,7 @@ from app.models.organisation import Organisation
 from app.schemas.auth import Token
 from app.config import settings
 from app import docgen
+from app import password_reset as pr
 from jose import JWTError, jwt
 from fastapi.responses import Response
 
@@ -54,6 +55,19 @@ def landlord_login(request: Request, form_data: OAuth2PasswordRequestForm = Depe
         raise HTTPException(status_code=401, detail="Incorrect email or password")
     token = create_access_token({"sub": str(landlord.id), "type": "landlord"})
     return {"access_token": token, "token_type": "bearer"}
+
+
+@router.post("/forgot-password")
+@limiter.limit("5/minute")
+def landlord_forgot(request: Request, req: pr.ForgotRequest, db: Session = Depends(get_db)):
+    landlord = db.query(Landlord).filter(Landlord.email == req.email, Landlord.is_active == True).first()
+    return pr.request_reset(req.email, "landlord", landlord.id if landlord else None, db)
+
+
+@router.post("/reset-password")
+def landlord_reset(req: pr.ResetRequest, db: Session = Depends(get_db)):
+    return pr.do_reset(req.token, req.new_password, "landlord",
+                       lambda uid, d: d.query(Landlord).filter(Landlord.id == uid).first(), db)
 
 
 @router.get("/me")
