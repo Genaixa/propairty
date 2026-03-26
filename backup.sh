@@ -1,7 +1,6 @@
 #!/bin/bash
 # PropAIrty daily database backup
-# Keeps 30 days of backups locally.
-# To also copy offsite, set BACKUP_REMOTE (e.g. user@host:/path/to/backups)
+# Keeps 30 days of backups locally + uploads every backup to Cloudflare R2.
 
 set -euo pipefail
 
@@ -14,8 +13,9 @@ KEEP_DAYS=30
 TIMESTAMP=$(date +"%Y-%m-%d_%H-%M-%S")
 FILENAME="${BACKUP_DIR}/propairty_${TIMESTAMP}.sql.gz"
 
-# Optional: copy to remote server after backup
-# BACKUP_REMOTE="user@your-backup-server:/backups/propairty"
+R2_BUCKET="propairty-backups"
+R2_ENDPOINT="https://88c32ad7e289485e633e94b89c6fa0ec.r2.cloudflarestorage.com"
+R2_PROFILE="r2"  # matches [r2] in ~/.aws/credentials
 
 mkdir -p "$BACKUP_DIR"
 
@@ -31,14 +31,16 @@ PGPASSWORD="propairty_prod_pw" pg_dump \
 SIZE=$(du -sh "$FILENAME" | cut -f1)
 echo "[backup] Written: $FILENAME ($SIZE)"
 
-# Delete backups older than KEEP_DAYS
+# Upload to Cloudflare R2
+echo "[backup] Uploading to R2..."
+aws s3 cp "$FILENAME" "s3://${R2_BUCKET}/$(basename "$FILENAME")" \
+  --endpoint-url "$R2_ENDPOINT" \
+  --profile "$R2_PROFILE" \
+  --no-progress
+echo "[backup] Uploaded to R2: s3://${R2_BUCKET}/$(basename "$FILENAME")"
+
+# Delete local backups older than KEEP_DAYS
 find "$BACKUP_DIR" -name "propairty_*.sql.gz" -mtime +$KEEP_DAYS -delete
-echo "[backup] Cleaned up backups older than $KEEP_DAYS days"
+echo "[backup] Cleaned up local backups older than $KEEP_DAYS days"
 
-# Uncomment to copy to a remote server (requires SSH key auth):
-# if [ -n "${BACKUP_REMOTE:-}" ]; then
-#   rsync -az "$FILENAME" "$BACKUP_REMOTE/"
-#   echo "[backup] Copied to $BACKUP_REMOTE"
-# fi
-
-echo "[backup] Done"
+echo "[backup] Done — local + R2 copy saved"
