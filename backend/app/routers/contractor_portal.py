@@ -1,19 +1,23 @@
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status, UploadFile, File
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, field_validator
 from slowapi import Limiter
 from slowapi.util import get_remote_address
-from typing import Optional
+from typing import Optional, List
 from datetime import date
+import os, uuid, mimetypes
 
 from app.database import get_db
 from app.auth import hash_password, verify_password, create_access_token
 from app.models.contractor import Contractor
 from app.models.maintenance import MaintenanceRequest
+from app.models.maintenance_note import MaintenanceNote
 from app.models.unit import Unit
 from app.models.property import Property
 from app.models.user import User
+from app.models.lease import Lease
+from app.models.tenant import Tenant
 from app.auth import get_current_user
 from app.schemas.auth import Token
 from app.config import settings
@@ -57,6 +61,9 @@ def contractor_login(request: Request, form_data: OAuth2PasswordRequestForm = De
     ).first()
     if not contractor or not contractor.hashed_password or not verify_password(form_data.password, contractor.hashed_password):
         raise HTTPException(status_code=401, detail="Incorrect email or password")
+    from datetime import datetime, timezone
+    contractor.last_login = datetime.now(timezone.utc)
+    db.commit()
     token = create_access_token({"sub": str(contractor.id), "type": "contractor"})
     return {"access_token": token, "token_type": "bearer"}
 
@@ -71,6 +78,37 @@ def contractor_me(contractor: Contractor = Depends(get_current_contractor)):
         "email": contractor.email,
         "phone": contractor.phone,
     }
+
+
+class ContractorMeUpdate(BaseModel):
+    full_name: Optional[str] = None
+    phone: Optional[str] = None
+
+
+@router.patch("/me")
+def update_contractor_me(data: ContractorMeUpdate, contractor: Contractor = Depends(get_current_contractor), db: Session = Depends(get_db)):
+    if data.full_name is not None:
+        contractor.full_name = data.full_name.strip()
+    if data.phone is not None:
+        contractor.phone = data.phone.strip()
+    db.commit()
+    return {"id": contractor.id, "full_name": contractor.full_name, "email": contractor.email, "phone": contractor.phone, "company_name": contractor.company_name, "trade": contractor.trade}
+
+
+class ContractorPasswordChange(BaseModel):
+    current_password: str
+    new_password: str
+
+
+@router.post("/me/change-password")
+def contractor_change_password(data: ContractorPasswordChange, contractor: Contractor = Depends(get_current_contractor), db: Session = Depends(get_db)):
+    if not verify_password(data.current_password, contractor.hashed_password):
+        raise HTTPException(status_code=400, detail="Current password is incorrect")
+    if len(data.new_password) < 8:
+        raise HTTPException(status_code=400, detail="New password must be at least 8 characters")
+    contractor.hashed_password = hash_password(data.new_password)
+    db.commit()
+    return {"ok": True}
 
 
 @router.post("/forgot-password")
@@ -88,9 +126,41 @@ def contractor_reset(req: pr.ResetRequest, db: Session = Depends(get_db)):
 
 # --- Jobs ---
 
-def _job_out(j: MaintenanceRequest) -> dict:
+def _job_out(j: MaintenanceRequest, db=None) -> dict:
     unit = j.unit
     prop = unit.property if unit else None
+
+    # Tenant contact: prefer the tenant who reported it, else active lease on this unit
+    tenant_name = None
+    tenant_phone = None
+    if db is not None:
+        t = None
+        if j.reported_by_tenant_id:
+            t = db.query(Tenant).filter(Tenant.id == j.reported_by_tenant_id).first()
+        if not t and unit:
+            lease = db.query(Lease).filter(
+                Lease.unit_id == unit.id,
+                Lease.status == "active",
+            ).first()
+            if lease:
+                t = db.query(Tenant).filter(Tenant.id == lease.tenant_id).first()
+        if t:
+            tenant_name = t.full_name
+            tenant_phone = t.phone
+
+    # Photos: all maintenance photos for this job (tenant + contractor uploaded)
+    photos = []
+    if db is not None:
+        from app.models.upload import UploadedFile
+        photos = [
+            {"id": p.id, "url": f"/uploads/{p.filename}", "source": p.entity_type}
+            for p in db.query(UploadedFile).filter(
+                UploadedFile.entity_type.in_(["maintenance", "maintenance_contractor"]),
+                UploadedFile.entity_id == j.id,
+                UploadedFile.mime_type.like("image/%"),
+            ).order_by(UploadedFile.id).all()
+        ]
+
     return {
         "id": j.id,
         "title": j.title,
@@ -100,10 +170,21 @@ def _job_out(j: MaintenanceRequest) -> dict:
         "property": prop.name if prop else "—",
         "address": f"{prop.address_line1}, {prop.city}" if prop else "—",
         "unit": unit.name if unit else "—",
+        "tenant_name": tenant_name,
+        "tenant_phone": tenant_phone,
         "estimated_cost": j.estimated_cost,
         "actual_cost": j.actual_cost,
         "invoice_ref": j.invoice_ref,
+        "invoice_paid": j.invoice_paid or False,
+        "contractor_accepted": j.contractor_accepted,
+        "contractor_quote": j.contractor_quote,
+        "quote_status": j.quote_status,
+        "scheduled_date": j.scheduled_date.isoformat() if j.scheduled_date else None,
+        "proposed_date": j.proposed_date.isoformat() if j.proposed_date else None,
+        "proposed_date_status": j.proposed_date_status,
+        "photos": photos,
         "created_at": j.created_at.isoformat() if j.created_at else None,
+        "contractor_viewed_at": j.contractor_viewed_at.isoformat() if j.contractor_viewed_at else None,
     }
 
 
@@ -118,7 +199,7 @@ def contractor_jobs(
         .order_by(MaintenanceRequest.created_at.desc())
         .all()
     )
-    return [_job_out(j) for j in jobs]
+    return [_job_out(j, db) for j in jobs]
 
 
 class JobUpdate(BaseModel):
@@ -142,17 +223,21 @@ def update_job(
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
 
-    allowed_statuses = {"in_progress", "completed", "cancelled"}
+    allowed_statuses = {"open", "in_progress", "completed", "cancelled"}
     if data.status and data.status in allowed_statuses:
         job.status = data.status
     if data.actual_cost is not None:
         job.actual_cost = data.actual_cost
     if data.invoice_ref is not None:
         job.invoice_ref = data.invoice_ref
-    if data.completion_notes is not None:
-        # Append to description so agent can see it
-        existing = job.description or ""
-        job.description = existing + f"\n\n[Contractor update]: {data.completion_notes}"
+    if data.completion_notes:
+        note = MaintenanceNote(
+            maintenance_request_id=job.id,
+            author_type="contractor",
+            author_name=contractor.full_name + (f" ({contractor.company_name})" if contractor.company_name else ""),
+            body=data.completion_notes,
+        )
+        db.add(note)
 
     db.commit()
 
@@ -174,6 +259,272 @@ def update_job(
     return {"ok": True, "status": job.status}
 
 
+# ── Accept / Decline ──────────────────────────────────────────────────────────
+
+@router.post("/jobs/{job_id}/accept")
+def accept_job(job_id: int, contractor: Contractor = Depends(get_current_contractor), db: Session = Depends(get_db)):
+    job = db.query(MaintenanceRequest).filter(
+        MaintenanceRequest.id == job_id, MaintenanceRequest.contractor_id == contractor.id
+    ).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    job.contractor_accepted = True
+    if job.status == "open":
+        job.status = "in_progress"
+    db.commit()
+    unit = job.unit; prop = unit.property if unit else None
+    notifications.send(
+        f"✅ <b>Job Accepted</b>\n{job.title}\n{prop.name if prop else ''} · {unit.name if unit else ''}\n"
+        f"Contractor: {contractor.full_name}{(' ('+contractor.company_name+')') if contractor.company_name else ''}"
+    )
+    return {"ok": True}
+
+
+@router.post("/jobs/{job_id}/decline")
+def decline_job(job_id: int, contractor: Contractor = Depends(get_current_contractor), db: Session = Depends(get_db)):
+    job = db.query(MaintenanceRequest).filter(
+        MaintenanceRequest.id == job_id, MaintenanceRequest.contractor_id == contractor.id
+    ).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    job.contractor_accepted = False
+    job.contractor_id = None
+    job.assigned_to = None
+    job.status = "open"
+    db.commit()
+    unit = job.unit; prop = unit.property if unit else None
+    notifications.send(
+        f"❌ <b>Job Declined by Contractor</b>\n{job.title}\n{prop.name if prop else ''} · {unit.name if unit else ''}\n"
+        f"Contractor: {contractor.full_name}{(' ('+contractor.company_name+')') if contractor.company_name else ''}\n⚠️ Needs reassignment."
+    )
+    return {"ok": True}
+
+
+# ── Propose alternative date ──────────────────────────────────────────────────
+
+class ProposeDateIn(BaseModel):
+    proposed_date: str  # ISO date string
+
+@router.post("/jobs/{job_id}/propose-date")
+def propose_date(job_id: int, data: ProposeDateIn, contractor: Contractor = Depends(get_current_contractor), db: Session = Depends(get_db)):
+    from datetime import date as _d
+    job = db.query(MaintenanceRequest).filter(
+        MaintenanceRequest.id == job_id, MaintenanceRequest.contractor_id == contractor.id
+    ).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    try:
+        job.proposed_date = _d.fromisoformat(data.proposed_date)
+    except ValueError:
+        raise HTTPException(status_code=400, detail=f"Invalid date: {data.proposed_date}")
+    job.proposed_date_status = "pending"
+    db.commit()
+    unit = job.unit; prop = unit.property if unit else None
+    note = MaintenanceNote(
+        maintenance_request_id=job.id,
+        author_type="contractor",
+        author_name=contractor.full_name + (f" ({contractor.company_name})" if contractor.company_name else ""),
+        body=f"Requested reschedule to {data.proposed_date}.",
+    )
+    db.add(note); db.commit()
+    notifications.send(
+        f"📅 <b>Reschedule Requested</b>\n{job.title}\n{prop.name if prop else ''} · {unit.name if unit else ''}\n"
+        f"Contractor: {contractor.full_name}\nProposes: {data.proposed_date}"
+    )
+    return {"ok": True, "proposed_date": data.proposed_date}
+
+
+# ── Quote submission ──────────────────────────────────────────────────────────
+
+class QuoteIn(BaseModel):
+    amount: float
+    notes: Optional[str] = None
+
+
+@router.post("/jobs/{job_id}/quote")
+def submit_quote(job_id: int, data: QuoteIn, contractor: Contractor = Depends(get_current_contractor), db: Session = Depends(get_db)):
+    job = db.query(MaintenanceRequest).filter(
+        MaintenanceRequest.id == job_id, MaintenanceRequest.contractor_id == contractor.id
+    ).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    job.contractor_quote = data.amount
+    job.quote_status = "pending"
+    db.commit()
+    unit = job.unit; prop = unit.property if unit else None
+    note_body = f"Quote submitted: £{data.amount:.2f}" + (f"\n{data.notes}" if data.notes else "")
+    note = MaintenanceNote(
+        maintenance_request_id=job.id,
+        author_type="contractor",
+        author_name=contractor.full_name + (f" ({contractor.company_name})" if contractor.company_name else ""),
+        body=note_body,
+    )
+    db.add(note)
+    db.commit()
+    notifications.send(
+        f"💰 <b>Quote Submitted</b>\n{job.title}\n{prop.name if prop else ''} · {unit.name if unit else ''}\n"
+        f"Contractor: {contractor.full_name}\nAmount: £{data.amount:.2f}"
+        + (f"\nNotes: {data.notes}" if data.notes else "")
+    )
+    return {"ok": True, "quote": data.amount}
+
+
+# ── Photo upload ──────────────────────────────────────────────────────────────
+
+UPLOAD_DIR = "/root/propairty/backend/uploads"
+
+@router.post("/jobs/{job_id}/photos")
+async def upload_job_photos(
+    job_id: int,
+    files: List[UploadFile] = File(...),
+    contractor: Contractor = Depends(get_current_contractor),
+    db: Session = Depends(get_db),
+):
+    from app.models.upload import UploadedFile
+    job = db.query(MaintenanceRequest).filter(
+        MaintenanceRequest.id == job_id, MaintenanceRequest.contractor_id == contractor.id
+    ).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    saved = []
+    for f in files:
+        ext = os.path.splitext(f.filename or "")[1] or ".jpg"
+        fname = f"{uuid.uuid4().hex}{ext}"
+        fpath = os.path.join(UPLOAD_DIR, fname)
+        content = await f.read()
+        with open(fpath, "wb") as out:
+            out.write(content)
+        rec = UploadedFile(
+            organisation_id=contractor.organisation_id,
+            entity_type="maintenance_contractor",
+            entity_id=job_id,
+            filename=fname,
+            original_name=f.filename,
+            mime_type=f.content_type or "image/jpeg",
+            size=len(content),
+        )
+        db.add(rec)
+        saved.append(fname)
+    db.commit()
+    return {"ok": True, "uploaded": len(saved)}
+
+
+# ── Profile self-management ───────────────────────────────────────────────────
+
+class ProfileIn(BaseModel):
+    full_name: Optional[str] = None
+    phone: Optional[str] = None
+    email: Optional[str] = None
+    company_name: Optional[str] = None
+    trade: Optional[str] = None
+    notes: Optional[str] = None  # certifications / general notes
+
+
+@router.get("/profile")
+def get_profile(contractor: Contractor = Depends(get_current_contractor), db: Session = Depends(get_db)):
+    return {
+        "full_name": contractor.full_name,
+        "phone": contractor.phone,
+        "email": contractor.email,
+        "company_name": contractor.company_name,
+        "trade": contractor.trade,
+        "notes": contractor.notes,
+        "portal_enabled": contractor.portal_enabled,
+    }
+
+
+@router.put("/profile")
+def update_profile(data: ProfileIn, contractor: Contractor = Depends(get_current_contractor), db: Session = Depends(get_db)):
+    if data.full_name is not None:
+        contractor.full_name = data.full_name.strip()
+    if data.phone is not None:
+        contractor.phone = data.phone.strip()
+    if data.email is not None:
+        contractor.email = data.email.strip()
+    if data.company_name is not None:
+        contractor.company_name = data.company_name.strip()
+    if data.trade is not None:
+        contractor.trade = data.trade.strip()
+    if data.notes is not None:
+        contractor.notes = data.notes.strip()
+    db.commit()
+    return {"ok": True}
+
+
+class NoteCreate(BaseModel):
+    body: str
+
+
+@router.get("/jobs/{job_id}/notes")
+def get_job_notes(
+    job_id: int,
+    contractor: Contractor = Depends(get_current_contractor),
+    db: Session = Depends(get_db),
+):
+    job = db.query(MaintenanceRequest).filter(
+        MaintenanceRequest.id == job_id,
+        MaintenanceRequest.contractor_id == contractor.id,
+    ).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    notes = db.query(MaintenanceNote).filter(
+        MaintenanceNote.maintenance_request_id == job_id
+    ).order_by(MaintenanceNote.created_at.asc()).all()
+    return [
+        {
+            "id": n.id,
+            "author_type": n.author_type,
+            "author_name": n.author_name,
+            "body": n.body,
+            "created_at": n.created_at.isoformat() if n.created_at else None,
+        }
+        for n in notes
+    ]
+
+
+@router.post("/jobs/{job_id}/notes")
+def add_job_note(
+    job_id: int,
+    data: NoteCreate,
+    contractor: Contractor = Depends(get_current_contractor),
+    db: Session = Depends(get_db),
+):
+    job = db.query(MaintenanceRequest).filter(
+        MaintenanceRequest.id == job_id,
+        MaintenanceRequest.contractor_id == contractor.id,
+    ).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    note = MaintenanceNote(
+        maintenance_request_id=job_id,
+        author_type="contractor",
+        author_name=contractor.full_name + (f" ({contractor.company_name})" if contractor.company_name else ""),
+        body=data.body,
+    )
+    db.add(note)
+    db.commit()
+    db.refresh(note)
+
+    # Notify agent of new contractor note
+    unit = job.unit
+    prop = unit.property if unit else None
+    notifications.send(
+        f"💬 <b>Contractor Note</b>\n\n"
+        f"Job: {job.title}\n"
+        f"Property: {prop.name if prop else '—'} · {unit.name if unit else '—'}\n"
+        f"From: {contractor.full_name}\n"
+        f"Note: {data.body}"
+    )
+
+    return {
+        "id": note.id,
+        "author_type": note.author_type,
+        "author_name": note.author_name,
+        "body": note.body,
+        "created_at": note.created_at.isoformat() if note.created_at else None,
+    }
+
+
 # --- Agent: enable portal for a contractor ---
 
 class PortalEnable(BaseModel):
@@ -185,6 +536,23 @@ class PortalEnable(BaseModel):
         if len(v) < 8:
             raise ValueError("Password must be at least 8 characters")
         return v
+
+
+@router.post("/jobs/{job_id}/viewed")
+def mark_job_viewed(
+    job_id: int,
+    contractor: Contractor = Depends(get_current_contractor),
+    db: Session = Depends(get_db),
+):
+    from datetime import datetime, timezone
+    job = db.query(MaintenanceRequest).filter(
+        MaintenanceRequest.id == job_id,
+        MaintenanceRequest.contractor_id == contractor.id,
+    ).first()
+    if job and not job.contractor_viewed_at:
+        job.contractor_viewed_at = datetime.now(timezone.utc)
+        db.commit()
+    return {"ok": True}
 
 
 @router.post("/enable/{contractor_id}")
@@ -231,3 +599,145 @@ def disable_contractor_portal(
     contractor.portal_enabled = False
     db.commit()
     return {"ok": True}
+
+
+# ── Notification preferences ──────────────────────────────────────────────────
+
+import secrets as _secrets_ct
+from pydantic import BaseModel as _CTNotifBM
+
+class CTNotifPrefsIn(_CTNotifBM):
+    notify_email: bool = False
+    notify_whatsapp: bool = False
+    notify_telegram: bool = False
+    whatsapp_number: str = ""
+
+@router.get("/notification-prefs")
+def get_contractor_notif_prefs(contractor: Contractor = Depends(get_current_contractor), db: Session = Depends(get_db)):
+    if not contractor.telegram_link_code:
+        contractor.telegram_link_code = _secrets_ct.token_hex(4).upper()
+        db.commit()
+    return {
+        "notify_email": contractor.notify_email or False,
+        "notify_whatsapp": contractor.notify_whatsapp or False,
+        "notify_telegram": contractor.notify_telegram or False,
+        "whatsapp_number": contractor.whatsapp_number or "",
+        "telegram_chat_id": contractor.telegram_chat_id or "",
+        "telegram_link_code": contractor.telegram_link_code or "",
+        "telegram_linked": bool(contractor.telegram_chat_id),
+    }
+
+@router.put("/notification-prefs")
+def save_contractor_notif_prefs(data: CTNotifPrefsIn, contractor: Contractor = Depends(get_current_contractor), db: Session = Depends(get_db)):
+    contractor.notify_email = data.notify_email
+    contractor.notify_whatsapp = data.notify_whatsapp
+    contractor.notify_telegram = data.notify_telegram
+    if data.whatsapp_number:
+        contractor.whatsapp_number = data.whatsapp_number.strip()
+    db.commit()
+    return {"ok": True}
+
+
+# ── AI chat ───────────────────────────────────────────────────────────────────
+
+from pydantic import BaseModel as _AIBM_CT
+from typing import List as _List_CT
+
+class _CTPortalMsg(_AIBM_CT):
+    role: str
+    content: str
+
+class _CTPortalChatReq(_AIBM_CT):
+    messages: _List_CT[_CTPortalMsg]
+
+@router.post("/ai-chat")
+def contractor_ai_chat(req: _CTPortalChatReq, contractor: Contractor = Depends(get_current_contractor), db: Session = Depends(get_db)):
+    from app.routers.ai import _portal_chat_with_tools, _contractor_context
+    from app import wendy as _wendy
+    from app.models.contractor_message import ContractorMessage
+
+    def _send_message(body: str) -> dict:
+        msg = ContractorMessage(
+            organisation_id=contractor.organisation_id,
+            contractor_id=contractor.id,
+            sender_type="contractor",
+            sender_name=contractor.full_name,
+            body=body.strip(),
+            read=False,
+        )
+        db.add(msg)
+        db.commit()
+        db.refresh(msg)
+        return {"sent": True, "message_id": msg.id}
+
+    tools = [{
+        "type": "function",
+        "function": {
+            "name": "send_message_to_agent",
+            "description": "Send a message to the letting agent on behalf of the contractor.",
+            "parameters": {
+                "type": "object",
+                "properties": {"body": {"type": "string", "description": "The full message text to send"}},
+                "required": ["body"]
+            }
+        }
+    }]
+    context = _contractor_context(contractor, db)
+    msgs = [{"role": m.role, "content": m.content} for m in req.messages]
+    return _portal_chat_with_tools(msgs, _wendy.get('mendy_contractor'), context, tools, {"send_message_to_agent": _send_message})
+
+
+# ── Messages (contractor ↔ agent) ─────────────────────────────────────────────
+
+from app.models.contractor_message import ContractorMessage as _CTMsg
+from pydantic import BaseModel as _CTMsgBM
+
+class _CTMsgIn(_CTMsgBM):
+    body: str
+
+@router.get("/messages/unread-count")
+def contractor_messages_unread(contractor: Contractor = Depends(get_current_contractor), db: Session = Depends(get_db)):
+    count = db.query(_CTMsg).filter(
+        _CTMsg.contractor_id == contractor.id,
+        _CTMsg.sender_type == "agent",
+        _CTMsg.read == False,
+    ).count()
+    return {"count": count}
+
+
+@router.get("/messages")
+def contractor_get_messages(contractor: Contractor = Depends(get_current_contractor), db: Session = Depends(get_db)):
+    msgs = db.query(_CTMsg).filter(
+        _CTMsg.contractor_id == contractor.id
+    ).order_by(_CTMsg.created_at.asc()).all()
+    # mark agent messages as read
+    for m in msgs:
+        if m.sender_type == 'agent' and not m.read:
+            m.read = True
+    db.commit()
+    return [{"id": m.id, "sender_type": m.sender_type, "sender_name": m.sender_name,
+             "body": m.body, "created_at": m.created_at.isoformat()} for m in msgs]
+
+@router.post("/messages")
+def contractor_send_message(data: _CTMsgIn, contractor: Contractor = Depends(get_current_contractor), db: Session = Depends(get_db)):
+    if not data.body.strip():
+        raise HTTPException(status_code=400, detail="Message body cannot be empty")
+    msg = _CTMsg(
+        organisation_id=contractor.organisation_id,
+        contractor_id=contractor.id,
+        sender_type="contractor",
+        sender_name=contractor.full_name or contractor.company_name or "Contractor",
+        body=data.body.strip(),
+        read=False,
+    )
+    db.add(msg)
+    db.commit()
+    db.refresh(msg)
+    return {"id": msg.id, "sender_type": msg.sender_type, "sender_name": msg.sender_name,
+            "body": msg.body, "created_at": msg.created_at.isoformat()}
+
+
+@router.get("/features")
+def get_contractor_features(contractor: Contractor = Depends(get_current_contractor), db: Session = Depends(get_db)):
+    from app import feature_flags as ff
+    return ff.get_org_features(db, contractor.organisation_id, prefix="contractor_")
