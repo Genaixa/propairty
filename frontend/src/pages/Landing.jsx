@@ -332,6 +332,7 @@ const FEATURE_ICON_MAP = {
   'right-to-rent':       IcoShield,
   'audit-trail':         IcoDocument,
   'ai-autopilot':        IcoSparkle,
+  'applicant-matching':  IcoUser,
 }
 
 // ── Portal feature groups ─────────────────────────────────────────────────────
@@ -362,6 +363,7 @@ const PORTAL_TABS = [
       { slug: 'valuation-risk',      title: 'Valuation & Risk Tools',    desc: 'Know which properties are underperforming — and why.' },
       { slug: 'workflows',           title: 'Automated Workflows',       desc: 'Set the rules once. Let the system run them.' },
       { slug: 'ai-autopilot',        title: 'AI Autopilot',              desc: 'Nothing falls through the cracks — automatically.' },
+      { slug: 'applicant-matching',  title: 'Applicant Matching Engine', desc: 'Vacant unit? See which applicants fit best — scored automatically.' },
       { slug: 'files',               title: 'Files & Document Store',    desc: 'Every document against the right record.' },
       { slug: 'multi-org',           title: 'Multi-Org & Role Access',   desc: 'Separate agencies, separate data, one platform.' },
       { slug: 'e-signing',           title: 'Electronic Signing',        desc: 'Send, sign and store — without a printer.' },
@@ -450,7 +452,7 @@ function PortalFeatureSection() {
         <div className="text-center mb-12">
           <p className="text-xs font-semibold text-indigo-600 uppercase tracking-[0.2em] mb-3">Everything included</p>
           <h2 className="text-4xl font-extrabold text-gray-900 mb-3 tracking-tight" style={{fontFamily:"'Playfair Display', Georgia, serif"}}>
-            32 features. One platform.
+            33 features. One platform.
           </h2>
           <p className="text-gray-400 max-w-md mx-auto leading-relaxed">
             Four connected portals — agent, landlord, tenant, contractor — sharing the same live data from day one.
@@ -888,7 +890,7 @@ export default function Landing() {
       <div className="bg-slate-900 border-y border-slate-700/50">
         <div className="max-w-5xl mx-auto px-6 py-8 grid grid-cols-2 sm:grid-cols-4 gap-6 sm:gap-0 sm:divide-x sm:divide-slate-700/50">
           {[
-            ['32', 'features built in', 'not bolted on'],
+            ['33', 'features built in', 'not bolted on'],
             ['4', 'connected portals', 'one live dataset'],
             ['100%', 'UK-built', 'GDPR-compliant'],
             ['1', 'subscription', 'no integrations'],

@@ -116,6 +116,90 @@ def get_tenant_profile(tenant_id: int, db: Session = Depends(get_db), current_us
         } for m in maintenance],
     }
 
+# --- Meter readings (agent view) — must be defined BEFORE /{tenant_id} catch-all ---
+
+from app.models.meter_reading import MeterReading
+from pydantic import BaseModel as _BM
+from typing import Optional as _Opt
+from datetime import date as _date
+
+@router.get("/meter-readings")
+def list_meter_readings(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """All meter readings for this org, newest first."""
+    from sqlalchemy import desc
+    readings = (
+        db.query(MeterReading)
+        .join(Tenant, Tenant.id == MeterReading.tenant_id)
+        .filter(Tenant.organisation_id == current_user.organisation_id)
+        .order_by(desc(MeterReading.reading_date), desc(MeterReading.id))
+        .limit(500)
+        .all()
+    )
+    result = []
+    for r in readings:
+        tenant = db.query(Tenant).filter(Tenant.id == r.tenant_id).first()
+        unit = db.query(Unit).filter(Unit.id == r.unit_id).first()
+        prop = db.query(Property).filter(Property.id == unit.property_id).first() if unit else None
+        result.append({
+            "id": r.id,
+            "tenant_name": tenant.full_name if tenant else "Unknown",
+            "property": prop.name if prop else "—",
+            "unit": unit.name if unit else "—",
+            "meter_type": r.meter_type,
+            "reading": r.reading,
+            "reading_date": r.reading_date.isoformat() if r.reading_date else None,
+            "notes": r.notes,
+            "submitted_by": r.submitted_by,
+            "created_at": r.created_at.isoformat() if r.created_at else None,
+        })
+    return result
+
+
+class MeterReadingCreate(_BM):
+    tenant_id: int
+    meter_type: str
+    reading: float
+    reading_date: str  # ISO date
+    notes: _Opt[str] = None
+
+@router.post("/meter-readings")
+def create_meter_reading(data: MeterReadingCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """Agent logs a meter reading."""
+    tenant = db.query(Tenant).filter(Tenant.id == data.tenant_id, Tenant.organisation_id == current_user.organisation_id).first()
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Tenant not found")
+    lease = db.query(Lease).filter(Lease.tenant_id == tenant.id, Lease.status == "active").first()
+    if not lease:
+        raise HTTPException(status_code=400, detail="Tenant has no active lease")
+    reading = MeterReading(
+        organisation_id=current_user.organisation_id,
+        tenant_id=tenant.id,
+        unit_id=lease.unit_id,
+        meter_type=data.meter_type,
+        reading=data.reading,
+        reading_date=_date.fromisoformat(data.reading_date),
+        notes=data.notes,
+        submitted_by="agent",
+    )
+    db.add(reading)
+    db.commit()
+    db.refresh(reading)
+    unit = db.query(Unit).filter(Unit.id == reading.unit_id).first()
+    prop = db.query(Property).filter(Property.id == unit.property_id).first() if unit else None
+    return {
+        "id": reading.id,
+        "tenant_name": tenant.full_name,
+        "property": prop.name if prop else "—",
+        "unit": unit.name if unit else "—",
+        "meter_type": reading.meter_type,
+        "reading": reading.reading,
+        "reading_date": reading.reading_date.isoformat(),
+        "notes": reading.notes,
+        "submitted_by": reading.submitted_by,
+        "created_at": reading.created_at.isoformat() if reading.created_at else None,
+    }
+
+
 @router.get("/{tenant_id}", response_model=TenantOut)
 def get_tenant(tenant_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     tenant = db.query(Tenant).filter(Tenant.id == tenant_id, Tenant.organisation_id == current_user.organisation_id).first()
@@ -259,88 +343,3 @@ def agent_messages_inbox(db: Session = Depends(get_db), current_user: User = Dep
             seen[m.tenant_id]["unread"] += 1
 
     return list(seen.values())
-
-
-# --- Meter readings (agent view) ---
-
-from app.models.meter_reading import MeterReading
-
-@router.get("/meter-readings")
-def list_meter_readings(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    """All meter readings for this org, newest first."""
-    from sqlalchemy import desc
-    readings = (
-        db.query(MeterReading)
-        .join(Tenant, Tenant.id == MeterReading.tenant_id)
-        .filter(Tenant.organisation_id == current_user.organisation_id)
-        .order_by(desc(MeterReading.reading_date), desc(MeterReading.id))
-        .limit(500)
-        .all()
-    )
-    result = []
-    for r in readings:
-        tenant = db.query(Tenant).filter(Tenant.id == r.tenant_id).first()
-        unit = db.query(Unit).filter(Unit.id == r.unit_id).first()
-        prop = db.query(Property).filter(Property.id == unit.property_id).first() if unit else None
-        result.append({
-            "id": r.id,
-            "tenant_name": tenant.full_name if tenant else "Unknown",
-            "property": prop.name if prop else "—",
-            "unit": unit.name if unit else "—",
-            "meter_type": r.meter_type,
-            "reading": r.reading,
-            "reading_date": r.reading_date.isoformat() if r.reading_date else None,
-            "notes": r.notes,
-            "submitted_by": r.submitted_by,
-            "created_at": r.created_at.isoformat() if r.created_at else None,
-        })
-    return result
-
-
-from pydantic import BaseModel as _BM
-from typing import Optional as _Opt
-from datetime import date as _date
-
-class MeterReadingCreate(_BM):
-    tenant_id: int
-    meter_type: str
-    reading: float
-    reading_date: str  # ISO date
-    notes: _Opt[str] = None
-
-@router.post("/meter-readings")
-def create_meter_reading(data: MeterReadingCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    """Agent logs a meter reading."""
-    tenant = db.query(Tenant).filter(Tenant.id == data.tenant_id, Tenant.organisation_id == current_user.organisation_id).first()
-    if not tenant:
-        raise HTTPException(status_code=404, detail="Tenant not found")
-    lease = db.query(Lease).filter(Lease.tenant_id == tenant.id, Lease.status == "active").first()
-    if not lease:
-        raise HTTPException(status_code=400, detail="Tenant has no active lease")
-    reading = MeterReading(
-        organisation_id=current_user.organisation_id,
-        tenant_id=tenant.id,
-        unit_id=lease.unit_id,
-        meter_type=data.meter_type,
-        reading=data.reading,
-        reading_date=_date.fromisoformat(data.reading_date),
-        notes=data.notes,
-        submitted_by="agent",
-    )
-    db.add(reading)
-    db.commit()
-    db.refresh(reading)
-    unit = db.query(Unit).filter(Unit.id == reading.unit_id).first()
-    prop = db.query(Property).filter(Property.id == unit.property_id).first() if unit else None
-    return {
-        "id": reading.id,
-        "tenant_name": tenant.full_name,
-        "property": prop.name if prop else "—",
-        "unit": unit.name if unit else "—",
-        "meter_type": reading.meter_type,
-        "reading": reading.reading,
-        "reading_date": reading.reading_date.isoformat(),
-        "notes": reading.notes,
-        "submitted_by": reading.submitted_by,
-        "created_at": reading.created_at.isoformat() if reading.created_at else None,
-    }

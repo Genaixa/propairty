@@ -34,6 +34,20 @@ def create_lease(data: LeaseCreate, db: Session = Depends(get_db), current_user:
     ).first()
     if not unit:
         raise HTTPException(status_code=404, detail="Unit not found")
+    new_start = data.start_date
+    new_end = data.end_date  # None = periodic (no fixed end)
+    for existing in db.query(Lease).filter(Lease.unit_id == data.unit_id, Lease.status == "active").all():
+        ex_start = existing.start_date
+        ex_end = existing.end_date  # None = periodic
+        # Two date ranges overlap when: new starts before existing ends AND existing starts before new ends
+        new_before_ex_ends = (ex_end is None or new_start <= ex_end)
+        ex_before_new_ends = (new_end is None or ex_start <= new_end)
+        if new_before_ex_ends and ex_before_new_ends:
+            ex_end_str = str(ex_end) if ex_end else "no end date (periodic)"
+            raise HTTPException(
+                status_code=409,
+                detail=f"Date overlap with an existing active lease ({ex_start} – {ex_end_str}). Adjust the start date to after the current lease ends."
+            )
     lease = Lease(**data.model_dump())
     unit.status = "occupied"
     db.add(lease)

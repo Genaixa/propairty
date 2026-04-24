@@ -55,6 +55,8 @@ export default function Applicants() {
   const [showTerminal, setShowTerminal] = useState(false)
   const [followUps, setFollowUps]   = useState([])
   const [showFollowUps, setShowFollowUps] = useState(true)
+  const [stageFilter, setStageFilter] = useState('all')
+  const [matches, setMatches]       = useState([])
 
   const load = async () => {
     const [ar, pr, fu] = await Promise.all([
@@ -67,13 +69,25 @@ export default function Applicants() {
     setFollowUps(fu.data)
   }
 
+  const loadMatches = async () => {
+    try {
+      const r = await api.get('/applicants/matches/vacant')
+      setMatches(r.data)
+    } catch { setMatches([]) }
+  }
+
   useEffect(() => {
     load()
     api.get('/applicants/units-available').then(r => setUnits(r.data)).catch(() => {})
   }, [])
 
+  useEffect(() => {
+    if (view === 'matches') loadMatches()
+  }, [view])
+
   const activeApplicants   = applicants.filter(a => !['rejected', 'withdrawn'].includes(a.status))
   const terminalApplicants = applicants.filter(a => ['rejected', 'withdrawn'].includes(a.status))
+  const filteredActive     = stageFilter === 'all' ? activeApplicants : activeApplicants.filter(a => a.status === stageFilter)
 
   async function advanceStage(applicant) {
     const next = NEXT_STAGE[applicant.status]
@@ -131,10 +145,10 @@ export default function Applicants() {
         </div>
         <div className="flex items-center gap-3">
           <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
-            {['board', 'list'].map(v => (
+            {[{v:'board',l:'Board'},{v:'list',l:'List'},{v:'matches',l:'Matches'}].map(({v,l}) => (
               <button key={v} onClick={() => setView(v)}
-                className={`px-3 py-1.5 rounded-md text-sm font-medium capitalize transition-colors ${view === v ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500'}`}>
-                {v}
+                className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${view === v ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500'}`}>
+                {l}
               </button>
             ))}
           </div>
@@ -145,25 +159,55 @@ export default function Applicants() {
         </div>
       </div>
 
-      {/* Pipeline summary bar */}
+      {/* Pipeline filter tiles */}
       {pipeline && (
-        <div className="flex gap-3 mb-6 overflow-x-auto pb-1">
-          {STAGES.map(s => (
-            <div key={s.key} className={`flex-shrink-0 border rounded-xl px-4 py-3 ${s.color} min-w-[110px]`}>
-              <div className="flex items-center gap-1.5 mb-1">
-                <div className={`w-2 h-2 rounded-full ${s.dot}`} />
-                <span className="text-xs font-medium text-gray-600">{s.label}</span>
-              </div>
-              <span className="text-2xl font-bold text-gray-800">{pipeline.counts[s.key] || 0}</span>
-            </div>
-          ))}
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">
+          {STAGES.map(s => {
+            const count = pipeline.counts[s.key] || 0
+            const active = stageFilter === s.key
+            return (
+              <button
+                key={s.key}
+                onClick={() => setStageFilter(prev => prev === s.key ? 'all' : s.key)}
+                className={`cursor-pointer text-left rounded-xl border-2 p-4 transition-all duration-150 ${
+                  active ? `${s.color} shadow-sm` : 'border-gray-200 bg-white hover:border-gray-300 hover:shadow-sm'
+                }`}
+              >
+                <div className="flex items-center gap-2 mb-2">
+                  <div className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${s.dot}`} />
+                  <span className={`text-xs font-semibold uppercase tracking-wide truncate ${active ? 'text-gray-700' : 'text-gray-500'}`}>
+                    {s.label}
+                  </span>
+                </div>
+                <div className="flex items-end justify-between">
+                  <span className="text-3xl font-bold text-gray-900">{count}</span>
+                  {active && (
+                    <span className="text-xs font-medium text-gray-500 mb-1">filtered</span>
+                  )}
+                </div>
+              </button>
+            )
+          })}
+        </div>
+      )}
+
+      {/* Active filter indicator */}
+      {stageFilter !== 'all' && (
+        <div className="flex items-center gap-2 mb-4">
+          <span className="text-sm text-gray-600">
+            Showing <strong>{stageInfo(stageFilter).label}</strong> · {filteredActive.length} applicant{filteredActive.length !== 1 ? 's' : ''}
+          </span>
+          <button onClick={() => setStageFilter('all')}
+            className="cursor-pointer text-xs text-indigo-600 hover:text-indigo-800 font-medium px-2 py-0.5 rounded border border-indigo-200 hover:bg-indigo-50 transition-colors">
+            Clear filter
+          </button>
         </div>
       )}
 
       {/* Board view */}
       {view === 'board' && (
         <div className="space-y-4">
-          {STAGES.map(stage => {
+          {STAGES.filter(s => stageFilter === 'all' || s.key === stageFilter).map(stage => {
             const cards = activeApplicants.filter(a => a.status === stage.key)
             return (
               <div key={stage.key} className="bg-white rounded-xl border border-gray-200 overflow-hidden">
@@ -220,8 +264,10 @@ export default function Applicants() {
       {/* List view */}
       {view === 'list' && (
         <div className="bg-white rounded-xl border border-gray-200 overflow-hidden mb-4">
-          {activeApplicants.length === 0 ? (
-            <div className="p-10 text-center text-gray-400 text-sm">No active applicants.</div>
+          {filteredActive.length === 0 ? (
+            <div className="p-10 text-center text-gray-400 text-sm">
+              {stageFilter !== 'all' ? `No applicants at ${stageInfo(stageFilter).label} stage.` : 'No active applicants.'}
+            </div>
           ) : (
             <table className="w-full text-sm">
               <thead className="bg-gray-50 border-b border-gray-100">
@@ -232,7 +278,7 @@ export default function Applicants() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {activeApplicants.map(a => {
+                {filteredActive.map(a => {
                   const si = stageInfo(a.status)
                   return (
                     <tr key={a.id} className="hover:bg-gray-50">
@@ -263,6 +309,106 @@ export default function Applicants() {
               </tbody>
             </table>
           )}
+        </div>
+      )}
+
+      {/* Matches view */}
+      {view === 'matches' && (
+        <div className="space-y-5 mb-4">
+          {matches.length === 0 ? (
+            <div className="bg-white rounded-xl border border-gray-200 p-10 text-center text-gray-400 text-sm">
+              No vacant units with applicant matches found.
+            </div>
+          ) : matches.map(unit => (
+            <div key={unit.unit_id} className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+              <div className="flex items-center justify-between px-5 py-3.5 bg-gray-50 border-b border-gray-100">
+                <div>
+                  <span className="font-semibold text-gray-900 text-sm">{unit.property} · {unit.unit}</span>
+                  {unit.rent && <span className="ml-3 text-xs text-gray-500">£{unit.rent}/mo</span>}
+                  {unit.bedrooms && <span className="ml-2 text-xs text-gray-500">{unit.bedrooms} bed</span>}
+                </div>
+                <span className="text-xs font-medium bg-amber-100 text-amber-700 px-2.5 py-0.5 rounded-full">
+                  {unit.matches?.length || 0} match{unit.matches?.length !== 1 ? 'es' : ''}
+                </span>
+              </div>
+              {unit.matches && unit.matches.length > 0 ? (
+                <table className="w-full text-sm">
+                  <thead className="border-b border-gray-100">
+                    <tr className="text-xs text-gray-500 font-medium uppercase">
+                      <th className="px-5 py-2 text-left">Applicant</th>
+                      <th className="px-5 py-2 text-left">Match</th>
+                      <th className="px-5 py-2 text-left">Budget</th>
+                      <th className="px-5 py-2 text-left">Bedrooms</th>
+                      <th className="px-5 py-2 text-left">Area</th>
+                      <th className="px-5 py-2 text-left">Must-haves</th>
+                      <th className="px-5 py-2 text-left">Stage</th>
+                      <th />
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-50">
+                    {unit.matches.map((m, i) => {
+                      const pct = Math.round(m.pct || 0)
+                      const barColor = pct >= 80 ? 'bg-green-500' : pct >= 60 ? 'bg-indigo-500' : pct >= 40 ? 'bg-amber-500' : 'bg-gray-300'
+                      const si = stageInfo(m.status)
+                      return (
+                        <tr key={m.id} className="hover:bg-gray-50">
+                          <td className="px-5 py-3">
+                            <p className="font-medium text-gray-900">{m.full_name}</p>
+                            {m.monthly_budget && <p className="text-xs text-gray-400">{m.monthly_budget}</p>}
+                          </td>
+                          <td className="px-5 py-3">
+                            <div className="flex items-center gap-2 min-w-[80px]">
+                              <div className="flex-1 bg-gray-100 rounded-full h-1.5 w-16">
+                                <div className={`h-1.5 rounded-full ${barColor}`} style={{ width: `${pct}%` }} />
+                              </div>
+                              <span className={`text-xs font-bold ${pct >= 60 ? 'text-green-700' : 'text-gray-500'}`}>{pct}%</span>
+                            </div>
+                          </td>
+                          <td className="px-5 py-3 text-xs">
+                            {m.scores?.budget != null
+                              ? <span className={m.scores.budget > 15 ? 'text-green-600 font-medium' : m.scores.budget > 0 ? 'text-amber-600' : 'text-gray-300'}>
+                                  {m.scores.budget > 15 ? '✓' : m.scores.budget > 0 ? '~' : '✗'}
+                                </span>
+                              : <span className="text-gray-300">—</span>}
+                          </td>
+                          <td className="px-5 py-3 text-xs">
+                            {m.scores?.bedrooms != null
+                              ? <span className={m.scores.bedrooms > 15 ? 'text-green-600 font-medium' : m.scores.bedrooms > 0 ? 'text-amber-600' : 'text-gray-300'}>
+                                  {m.scores.bedrooms > 15 ? '✓' : m.scores.bedrooms > 0 ? '~' : '✗'}
+                                </span>
+                              : <span className="text-gray-300">—</span>}
+                          </td>
+                          <td className="px-5 py-3 text-xs">
+                            {m.scores?.area != null
+                              ? <span className={m.scores.area > 15 ? 'text-green-600 font-medium' : m.scores.area > 0 ? 'text-amber-600' : 'text-gray-300'}>
+                                  {m.scores.area > 15 ? '✓' : m.scores.area > 0 ? '~' : '✗'}
+                                </span>
+                              : <span className="text-gray-300">—</span>}
+                          </td>
+                          <td className="px-5 py-3 text-xs">
+                            {m.scores?.must_haves != null
+                              ? <span className={m.scores.must_haves > 8 ? 'text-green-600 font-medium' : m.scores.must_haves > 0 ? 'text-amber-600' : 'text-gray-300'}>
+                                  {m.scores.must_haves > 8 ? '✓' : m.scores.must_haves > 0 ? '~' : '✗'}
+                                </span>
+                              : <span className="text-gray-300">—</span>}
+                          </td>
+                          <td className="px-5 py-3">
+                            <span className={`text-xs font-semibold px-2 py-0.5 rounded-full border ${si.color}`}>{si.label}</span>
+                          </td>
+                          <td className="px-5 py-3">
+                            <button onClick={() => setSelected(applicants.find(a => a.id === m.id) || m)}
+                              className="cursor-pointer text-xs text-indigo-600 hover:text-indigo-800 font-medium">View</button>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              ) : (
+                <div className="px-5 py-4 text-xs text-gray-400 italic">No applicant matches for this unit.</div>
+              )}
+            </div>
+          ))}
         </div>
       )}
 
@@ -611,7 +757,13 @@ function ApplicantModal({ applicant, units, onClose, onDelete }) {
                 <label className="block text-sm font-medium text-gray-700 mb-1">Property / Unit</label>
                 <select value={form.unit_id} onChange={e => setForm({ ...form, unit_id: e.target.value })} className={inp}>
                   <option value="">Not specified</option>
-                  {units.map(u => <option key={u.unit_id} value={u.unit_id}>{u.label}</option>)}
+                  {[...new Set(units.map(u => u.property_name))].map(propName => (
+                    <optgroup key={propName} label={propName}>
+                      {units.filter(u => u.property_name === propName).map(u => (
+                        <option key={u.unit_id} value={u.unit_id}>{u.unit_name}</option>
+                      ))}
+                    </optgroup>
+                  ))}
                 </select>
               </div>
               <div className="grid grid-cols-2 gap-4">

@@ -565,4 +565,36 @@ The demo portfolio data was refreshed to reflect a healthy, up-to-date portfolio
 
 ---
 
+## Appendix — Recent Changes (2026-04-24)
+
+### Feature #33 — Applicant Matching Engine
+A new **Matches** tab has been added to the Applicants pipeline view. When you have vacant units, it shows a ranked list of applicants per unit scored across four dimensions: budget, bedrooms, area, and must-haves. Each row shows a score percentage (e.g. 78%) and colour-coded indicators — green tick for a match, amber tilde for partial, grey dash for not stated. Partial matches count; a 100% match is not required to appear.
+
+The AI Autopilot has a matching check: when a vacant unit has an applicant scoring 50% or above, the agent receives an alert.
+
+To use: open **Applicants**, click the **Matches** tab in the top-right view switcher. [SCREENSHOT: Matches view showing vacant units with ranked applicant cards]
+
+Applicant preferences (budget, areas, bedrooms, must-haves) are captured in the **Preferences** tab of the Add/Edit Applicant modal.
+
+### New Lease form — labels and grouped unit dropdown
+The **New Lease** form (found on the Leases page) now has proper field labels on every input so you know exactly what each field is for. The unit dropdown is now grouped by property, making it easy to find the right unit when you manage multiple properties.
+
+### AI Autopilot — 10 new checks (from this session)
+Ten new automated checks were added to the Autopilot engine:
+- **Applicant follow-up overdue** — applicant has a follow-up date that has passed
+- **Applicant stage stalled** — applicant hasn't moved stage in too long
+- **Referencing stalled** — applicant stuck in referencing with no progress
+- **Deposit not registered** — active lease past N days with no deposit record
+- **Inventory missing** — active lease past N days with no move-in inventory
+- **Tenant portal inactive** — tenant portal not enabled for an active tenant
+- **Survey unsent** — active tenant with no satisfaction survey sent
+- **Landlord message unread** — landlord has sent a message that hasn't been replied to
+- **Renewal pending too long** — renewal offer sent but no response for too many days
+- **No inspection** — active tenancy with no inspection in the last N months
+- **Applicant matches** — vacant unit has a high-scoring applicant match (50%+)
+
+All new checks appear in the Autopilot configuration screen and can be individually enabled/disabled with custom thresholds.
+
+---
+
 _This manual is maintained alongside the codebase and updated at the end of each development session._

@@ -462,7 +462,7 @@ function AddTenantModal({ unit, propertyId, onSaved, onClose }) {
             <select value={form.tenant_id} onChange={e => setForm({...form, tenant_id: e.target.value})}
               className="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" required>
               <option value="">Select tenant…</option>
-              {tenants.map(t => <option key={t.id} value={t.id}>{t.full_name}{t.email ? ` — ${t.email}` : ''}</option>)}
+              {[...tenants].sort((a, b) => (a.full_name?.split(' ').slice(-1)[0] || '').localeCompare(b.full_name?.split(' ').slice(-1)[0] || '')).map(t => <option key={t.id} value={t.id}>{t.full_name}{t.email ? ` — ${t.email}` : ''}</option>)}
             </select>
           ) : (
             <div className="space-y-3 p-4 bg-indigo-50 rounded-xl border border-indigo-100">

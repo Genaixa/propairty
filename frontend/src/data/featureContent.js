@@ -707,6 +707,29 @@ export const FEATURES = [
     ],
     mockup: 'ai-autopilot',
   },
+  {
+    slug: 'applicant-matching',
+    icon: '🎯',
+    title: 'Applicant Matching Engine',
+    tagline: 'Match the right applicant to the right property — automatically.',
+    description: 'When a unit becomes vacant, PropAIrty\'s matching engine scores every active applicant against it across four dimensions: budget, bedrooms, preferred area, and must-haves. Partial matches count — a near-match is still surfaced. The agent sees a ranked list of best fits instantly, with colour-coded criteria showing exactly where each applicant aligns.',
+    portal: 'Agent dashboard',
+    bullets: [
+      'Automatically scores all active applicants against every vacant unit',
+      'Four-dimension fuzzy scoring: budget range, bedroom count, area preference, must-haves',
+      'Partial matches are included — not 100% required',
+      'Colour-coded criteria: green (match), amber (partial), grey (not stated)',
+      'AI Autopilot alerts the agent when a high-scoring match (50%+) exists for a vacant unit',
+      'Applicant preferences captured at enquiry stage: budget, areas, bedrooms, must-haves',
+      'Live Matches view in the Applicants pipeline — one click to see ranked fits per unit',
+    ],
+    howItWorks: [
+      { step: 1, title: 'Record applicant preferences', desc: 'When adding or editing an applicant, capture their budget range, preferred areas, minimum/maximum bedrooms, and any must-haves such as parking or garden.' },
+      { step: 2, title: 'Vacancy triggers scoring', desc: 'When a unit has no active lease, the matching engine scores all active applicants against it. Budget has 35% weight, bedrooms 25%, area 25%, must-haves 15%.' },
+      { step: 3, title: 'Agent sees ranked matches', desc: 'Open the Matches view in Applicants to see all vacant units with their top-scored applicants. AI Autopilot also fires an alert when a 50%+ match is found.' },
+    ],
+    mockup: 'applicant-matching',
+  },
 ]
 
 export function getFeature(slug) {

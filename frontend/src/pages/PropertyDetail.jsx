@@ -336,6 +336,99 @@ function PropertyDetailsEdit({ prop, onSaved }) {
 }
 
 
+function CfoPanel({ units }) {
+  const occupied = units.filter(u => u.status === 'occupied')
+  const vacant   = units.filter(u => u.status === 'vacant')
+  const activeRent   = occupied.reduce((s, u) => s + (u.monthly_rent || 0), 0)
+  const voidRent     = vacant.reduce((s, u) => s + (u.monthly_rent || 0), 0)
+  const depositsHeld = occupied.reduce((s, u) => s + (u.lease?.deposit || 0), 0)
+  const avgRent      = occupied.length > 0 ? Math.round(activeRent / occupied.length) : 0
+
+  const today = new Date()
+  const in90  = new Date(today.getTime() + 90 * 24 * 60 * 60 * 1000)
+  const expiring = occupied.filter(u => {
+    if (!u.lease?.end_date || u.lease?.is_periodic) return false
+    const end = new Date(u.lease.end_date)
+    return end >= today && end <= in90
+  })
+
+  const cols = [
+    {
+      label: 'Monthly rent roll',
+      value: `£${activeRent.toLocaleString()}`,
+      sub: `£${(activeRent * 12).toLocaleString()} per year`,
+      icon: 'M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z',
+      color: 'emerald',
+    },
+    {
+      label: 'Avg rent / unit',
+      value: avgRent > 0 ? `£${avgRent.toLocaleString()}` : '—',
+      sub: `across ${occupied.length} occupied unit${occupied.length !== 1 ? 's' : ''}`,
+      icon: 'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z',
+      color: 'indigo',
+    },
+    {
+      label: 'Deposits held',
+      value: `£${depositsHeld.toLocaleString()}`,
+      sub: 'tenant deposit liability',
+      icon: 'M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z',
+      color: 'violet',
+    },
+    {
+      label: 'Void cost',
+      value: voidRent > 0 ? `£${voidRent.toLocaleString()}/mo` : '£0',
+      sub: voidRent > 0 ? `${vacant.length} vacant — £${(voidRent * 12).toLocaleString()} lost p.a.` : 'Fully let',
+      icon: 'M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636',
+      color: voidRent > 0 ? 'amber' : 'emerald',
+    },
+    {
+      label: 'Expiring ≤ 90d',
+      value: expiring.length > 0 ? String(expiring.length) : '—',
+      sub: expiring.length > 0 ? `lease${expiring.length > 1 ? 's' : ''} need renewal` : 'No renewals due soon',
+      icon: 'M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z',
+      color: expiring.length > 0 ? 'rose' : 'gray',
+    },
+  ]
+
+  const colorMap = {
+    emerald: { bg: 'bg-emerald-50', icon: 'text-emerald-500', value: 'text-emerald-700' },
+    indigo:  { bg: 'bg-indigo-50',  icon: 'text-indigo-500',  value: 'text-indigo-700'  },
+    violet:  { bg: 'bg-violet-50',  icon: 'text-violet-500',  value: 'text-violet-700'  },
+    amber:   { bg: 'bg-amber-50',   icon: 'text-amber-500',   value: 'text-amber-700'   },
+    rose:    { bg: 'bg-rose-50',    icon: 'text-rose-500',    value: 'text-rose-700'    },
+    gray:    { bg: 'bg-gray-50',    icon: 'text-gray-400',    value: 'text-gray-500'    },
+  }
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+      <div className="px-5 py-3.5 border-b border-gray-100 flex items-center gap-2">
+        <svg className="w-4 h-4 text-emerald-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+        </svg>
+        <h2 className="text-sm font-semibold text-gray-900">Financial Summary</h2>
+        <span className="text-xs text-gray-400">— mini CFO view</span>
+      </div>
+      <div className="grid grid-cols-2 sm:grid-cols-5 divide-x divide-gray-100">
+        {cols.map(c => {
+          const cl = colorMap[c.color]
+          return (
+            <div key={c.label} className={`px-5 py-4 ${cl.bg}`}>
+              <div className="flex items-center gap-1.5 mb-2">
+                <svg className={`w-3.5 h-3.5 ${cl.icon} shrink-0`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d={c.icon} />
+                </svg>
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">{c.label}</p>
+              </div>
+              <p className={`text-xl font-bold ${cl.value}`}>{c.value}</p>
+              <p className="text-[11px] text-gray-400 mt-1">{c.sub}</p>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 function AddUnitModal({ propertyId, onSaved, onClose }) {
   const [form, setForm] = useState({ name: '', bedrooms: 1, bathrooms: 1, monthly_rent: '', status: 'vacant' })
   const [saving, setSaving] = useState(false)
@@ -443,7 +536,7 @@ function AddTenantModal({ unit, propertyId, onSaved, onClose }) {
           <select value={form.tenant_id} onChange={e => setForm({...form, tenant_id: e.target.value})}
             className="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" required>
             <option value="">Select tenant…</option>
-            {tenants.map(t => <option key={t.id} value={t.id}>{t.full_name} — {t.email}</option>)}
+            {[...tenants].sort((a, b) => (a.full_name?.split(' ').slice(-1)[0] || '').localeCompare(b.full_name?.split(' ').slice(-1)[0] || '')).map(t => <option key={t.id} value={t.id}>{t.full_name} — {t.email}</option>)}
           </select>
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -653,6 +746,9 @@ export default function PropertyDetail() {
           ))}
         </div>
       </div>
+
+      {/* Mini CFO analysis */}
+      <CfoPanel units={prop.units} />
 
       {/* Photos + Floorplan */}
       <div className="bg-white rounded-xl border border-gray-200 p-6">

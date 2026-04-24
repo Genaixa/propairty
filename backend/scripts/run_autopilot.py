@@ -80,6 +80,83 @@ CHECKS_META = {
         "unit": "days overdue",
         "dedup_hours": 72,
     },
+    "applicant_followup_overdue": {
+        "label": "Applicant follow-up overdue",
+        "description": "Alert agent when an applicant's follow-up date has passed with no stage change",
+        "default_days": 0,
+        "unit": "days since follow-up date",
+        "dedup_hours": 24,
+    },
+    "applicant_stage_stalled": {
+        "label": "Applicant stuck at stage",
+        "description": "Alert agent when an applicant hasn't progressed through the pipeline",
+        "default_days": 7,
+        "unit": "days at same stage",
+        "dedup_hours": 48,
+    },
+    "applicant_referencing_stalled": {
+        "label": "Referencing stalled",
+        "description": "Alert agent when an applicant has been in referencing for too long",
+        "default_days": 10,
+        "unit": "days in referencing",
+        "dedup_hours": 48,
+    },
+    "deposit_not_registered": {
+        "label": "Deposit not registered",
+        "description": "Alert agent when an active tenancy has no deposit record on file",
+        "default_days": 3,
+        "unit": "days since tenancy started",
+        "dedup_hours": 48,
+    },
+    "inventory_missing_movein": {
+        "label": "Move-in inventory missing",
+        "description": "Alert agent when a tenancy has started but no check-in inventory exists",
+        "default_days": 3,
+        "unit": "days since tenancy started",
+        "dedup_hours": 48,
+    },
+    "tenant_portal_inactive": {
+        "label": "Tenant portal not activated",
+        "description": "Alert agent when an active tenant has not been set up with portal access",
+        "default_days": 3,
+        "unit": "days since tenancy started",
+        "dedup_hours": 168,
+    },
+    "survey_not_sent": {
+        "label": "Satisfaction survey not sent",
+        "description": "Remind agent to send a satisfaction survey after a maintenance job completes",
+        "default_days": 2,
+        "unit": "days since job completed",
+        "dedup_hours": 168,
+    },
+    "landlord_message_unread": {
+        "label": "Landlord message unread",
+        "description": "Alert agent when a landlord has sent a portal message that hasn't been read",
+        "default_days": 2,
+        "unit": "days unread",
+        "dedup_hours": 24,
+    },
+    "renewal_pending_too_long": {
+        "label": "Renewal offer — no landlord action",
+        "description": "Alert agent when a sent lease renewal has had no response from the landlord",
+        "default_days": 14,
+        "unit": "days since offer sent",
+        "dedup_hours": 168,
+    },
+    "no_inspection": {
+        "label": "No inspection in 6 months",
+        "description": "Alert agent when an occupied unit has not been inspected recently",
+        "default_days": 180,
+        "unit": "days since last inspection",
+        "dedup_hours": 168,
+    },
+    "vacant_unit_matches": {
+        "label": "Vacant unit — applicant matches",
+        "description": "Alert agent when a vacant unit has applicants whose preferences match",
+        "default_days": 1,
+        "unit": "days vacant",
+        "dedup_hours": 48,
+    },
 }
 
 DEFAULT_CONFIG = {k: {"enabled": True, "days": v["default_days"]} for k, v in CHECKS_META.items()}
@@ -491,17 +568,368 @@ def check_arrears_chase(db: Session, org_id: int, days: int, agency_name: str, d
     return results
 
 
+def check_applicant_followup_overdue(db: Session, org_id: int, days: int, agency_name: str, dry_run: bool) -> list:
+    from app.models.applicant import Applicant
+    results = []
+    today = date.today()
+    applicants = db.query(Applicant).filter(
+        Applicant.organisation_id == org_id,
+        Applicant.follow_up_date != None,
+        Applicant.follow_up_date <= today,
+        ~Applicant.status.in_(["rejected", "withdrawn", "tenancy_created"]),
+    ).all()
+    for a in applicants:
+        dedup = f"applicant_followup:{a.id}"
+        if _already_sent(db, org_id, dedup, 24):
+            continue
+        days_overdue = (today - a.follow_up_date).days
+        note = f" — Note: {a.follow_up_note}" if a.follow_up_note else ""
+        summary = (f"Follow-up overdue for {a.full_name} ({a.status}) — "
+                   f"{days_overdue} day(s) past {a.follow_up_date}{note}")
+        if not dry_run:
+            _send_agent_alert(org_id, f"👤 {summary}")
+            _log_action(db, org_id, "applicant_followup_overdue", "applicant", a.id,
+                        "agent_alert", "Agent", summary, None, dedup)
+        results.append({"check": "applicant_followup_overdue", "summary": summary, "entity_id": a.id})
+    return results
+
+
+def check_applicant_stage_stalled(db: Session, org_id: int, days: int, agency_name: str, dry_run: bool) -> list:
+    from app.models.applicant import Applicant
+    results = []
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    STALL_STAGES = ["enquiry", "viewing_booked", "viewed", "referencing", "approved"]
+    applicants = db.query(Applicant).filter(
+        Applicant.organisation_id == org_id,
+        Applicant.status.in_(STALL_STAGES),
+        Applicant.updated_at <= cutoff,
+    ).all()
+    for a in applicants:
+        dedup = f"applicant_stage_stalled:{a.id}"
+        if _already_sent(db, org_id, dedup, 48):
+            continue
+        summary = f"{a.full_name} has been at '{a.status}' stage for {days}+ days with no update"
+        if not dry_run:
+            _send_agent_alert(org_id, f"👤 {summary}")
+            _log_action(db, org_id, "applicant_stage_stalled", "applicant", a.id,
+                        "agent_alert", "Agent", summary, None, dedup)
+        results.append({"check": "applicant_stage_stalled", "summary": summary, "entity_id": a.id})
+    return results
+
+
+def check_applicant_referencing_stalled(db: Session, org_id: int, days: int, agency_name: str, dry_run: bool) -> list:
+    from app.models.applicant import Applicant
+    results = []
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    applicants = db.query(Applicant).filter(
+        Applicant.organisation_id == org_id,
+        Applicant.status == "referencing",
+        Applicant.updated_at <= cutoff,
+    ).all()
+    for a in applicants:
+        dedup = f"applicant_referencing:{a.id}"
+        if _already_sent(db, org_id, dedup, 48):
+            continue
+        ref_status = a.referencing_status or "not_started"
+        summary = f"{a.full_name} has been in referencing for {days}+ days — status: {ref_status}"
+        if not dry_run:
+            _send_agent_alert(org_id, f"📋 {summary}")
+            _log_action(db, org_id, "applicant_referencing_stalled", "applicant", a.id,
+                        "agent_alert", "Agent", summary, None, dedup)
+        results.append({"check": "applicant_referencing_stalled", "summary": summary, "entity_id": a.id})
+    return results
+
+
+def check_deposit_not_registered(db: Session, org_id: int, days: int, agency_name: str, dry_run: bool) -> list:
+    from app.models.lease import Lease
+    from app.models.deposit import TenancyDeposit
+    from app.models.unit import Unit
+    from app.models.property import Property
+    from app.models.tenant import Tenant
+    results = []
+    cutoff = date.today() - timedelta(days=days)
+    leases = db.query(Lease).join(Unit).join(Property).filter(
+        Property.organisation_id == org_id,
+        Lease.status == "active",
+        Lease.start_date <= cutoff,
+    ).all()
+    for lease in leases:
+        deposit = db.query(TenancyDeposit).filter(TenancyDeposit.lease_id == lease.id).first()
+        if deposit:
+            continue
+        dedup = f"deposit_not_registered:{lease.id}"
+        if _already_sent(db, org_id, dedup, 48):
+            continue
+        tenant = db.query(Tenant).filter(Tenant.id == lease.tenant_id).first()
+        unit = db.query(Unit).join(Property).filter(Unit.id == lease.unit_id).first()
+        t_name = tenant.full_name if tenant else "Tenant"
+        addr = f"{unit.property.name} · {unit.name}" if unit else "Unknown"
+        summary = f"No deposit registered for {t_name} at {addr} — tenancy started {lease.start_date}"
+        if not dry_run:
+            _send_agent_alert(org_id, f"💰 {summary}")
+            _log_action(db, org_id, "deposit_not_registered", "lease", lease.id,
+                        "agent_alert", "Agent", summary, None, dedup)
+        results.append({"check": "deposit_not_registered", "summary": summary, "entity_id": lease.id})
+    return results
+
+
+def check_inventory_missing_movein(db: Session, org_id: int, days: int, agency_name: str, dry_run: bool) -> list:
+    from app.models.lease import Lease
+    from app.models.inventory import Inventory
+    from app.models.unit import Unit
+    from app.models.property import Property
+    from app.models.tenant import Tenant
+    results = []
+    cutoff = date.today() - timedelta(days=days)
+    leases = db.query(Lease).join(Unit).join(Property).filter(
+        Property.organisation_id == org_id,
+        Lease.status == "active",
+        Lease.start_date <= cutoff,
+    ).all()
+    for lease in leases:
+        inv = db.query(Inventory).filter(
+            Inventory.lease_id == lease.id,
+            Inventory.inv_type == "check_in",
+        ).first()
+        if inv:
+            continue
+        dedup = f"inventory_missing_movein:{lease.id}"
+        if _already_sent(db, org_id, dedup, 48):
+            continue
+        tenant = db.query(Tenant).filter(Tenant.id == lease.tenant_id).first()
+        unit = db.query(Unit).join(Property).filter(Unit.id == lease.unit_id).first()
+        t_name = tenant.full_name if tenant else "Tenant"
+        addr = f"{unit.property.name} · {unit.name}" if unit else "Unknown"
+        summary = f"No check-in inventory for {t_name} at {addr} — tenancy started {lease.start_date}"
+        if not dry_run:
+            _send_agent_alert(org_id, f"📋 {summary}")
+            _log_action(db, org_id, "inventory_missing_movein", "lease", lease.id,
+                        "agent_alert", "Agent", summary, None, dedup)
+        results.append({"check": "inventory_missing_movein", "summary": summary, "entity_id": lease.id})
+    return results
+
+
+def check_tenant_portal_inactive(db: Session, org_id: int, days: int, agency_name: str, dry_run: bool) -> list:
+    from app.models.tenant import Tenant
+    from app.models.lease import Lease
+    from app.models.unit import Unit
+    from app.models.property import Property
+    results = []
+    cutoff = date.today() - timedelta(days=days)
+    leases = db.query(Lease).join(Unit).join(Property).filter(
+        Property.organisation_id == org_id,
+        Lease.status == "active",
+        Lease.start_date <= cutoff,
+    ).all()
+    for lease in leases:
+        tenant = db.query(Tenant).filter(Tenant.id == lease.tenant_id).first()
+        if not tenant:
+            continue
+        if tenant.portal_enabled and tenant.hashed_password:
+            continue
+        dedup = f"tenant_portal_inactive:{tenant.id}"
+        if _already_sent(db, org_id, dedup, 168):
+            continue
+        unit = db.query(Unit).join(Property).filter(Unit.id == lease.unit_id).first()
+        addr = f"{unit.property.name} · {unit.name}" if unit else "Unknown"
+        summary = f"{tenant.full_name} at {addr} has no portal access — tenancy started {lease.start_date}"
+        if not dry_run:
+            _send_agent_alert(org_id, f"🔑 {summary}")
+            _log_action(db, org_id, "tenant_portal_inactive", "tenant", tenant.id,
+                        "agent_alert", "Agent", summary, None, dedup)
+        results.append({"check": "tenant_portal_inactive", "summary": summary, "entity_id": tenant.id})
+    return results
+
+
+def check_survey_not_sent(db: Session, org_id: int, days: int, agency_name: str, dry_run: bool) -> list:
+    from app.models.maintenance import MaintenanceRequest
+    from app.models.survey import MaintenanceSurvey
+    from app.models.unit import Unit
+    from app.models.property import Property
+    results = []
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    jobs = db.query(MaintenanceRequest).join(Unit).join(Property).filter(
+        Property.organisation_id == org_id,
+        MaintenanceRequest.status == "completed",
+        MaintenanceRequest.updated_at <= cutoff,
+    ).all()
+    for job in jobs:
+        survey = db.query(MaintenanceSurvey).filter(MaintenanceSurvey.job_id == job.id).first()
+        if survey:
+            continue
+        dedup = f"survey_not_sent:{job.id}"
+        if _already_sent(db, org_id, dedup, 168):
+            continue
+        unit = db.query(Unit).join(Property).filter(Unit.id == job.unit_id).first()
+        addr = unit.property.name if unit else "Unknown property"
+        summary = f"No satisfaction survey sent for completed job #{job.id} '{job.title}' at {addr}"
+        if not dry_run:
+            _send_agent_alert(org_id, f"⭐ {summary}")
+            _log_action(db, org_id, "survey_not_sent", "maintenance", job.id,
+                        "agent_alert", "Agent", summary, None, dedup)
+        results.append({"check": "survey_not_sent", "summary": summary, "entity_id": job.id})
+    return results
+
+
+def check_landlord_message_unread(db: Session, org_id: int, days: int, agency_name: str, dry_run: bool) -> list:
+    from app.models.portal_message import PortalMessage
+    from app.models.landlord import Landlord
+    results = []
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    messages = db.query(PortalMessage).filter(
+        PortalMessage.organisation_id == org_id,
+        PortalMessage.sender_type == "landlord",
+        PortalMessage.read == False,
+        PortalMessage.created_at <= cutoff,
+    ).all()
+    for msg in messages:
+        dedup = f"landlord_message_unread:{msg.id}"
+        if _already_sent(db, org_id, dedup, 24):
+            continue
+        landlord = db.query(Landlord).filter(Landlord.id == msg.landlord_id).first()
+        ll_name = landlord.full_name if landlord else "Landlord"
+        preview = msg.body[:80] + ("…" if len(msg.body) > 80 else "")
+        summary = f"Unread message from {ll_name} for {days}+ days: \"{preview}\""
+        if not dry_run:
+            _send_agent_alert(org_id, f"🏠 {summary}")
+            _log_action(db, org_id, "landlord_message_unread", "portal_message", msg.id,
+                        "agent_alert", "Agent", summary, None, dedup)
+        results.append({"check": "landlord_message_unread", "summary": summary, "entity_id": msg.id})
+    return results
+
+
+def check_renewal_pending_too_long(db: Session, org_id: int, days: int, agency_name: str, dry_run: bool) -> list:
+    from app.models.renewal import LeaseRenewal
+    from app.models.lease import Lease
+    from app.models.unit import Unit
+    from app.models.property import Property
+    from app.models.tenant import Tenant
+    results = []
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    renewals = db.query(LeaseRenewal).join(Lease).join(Unit).join(Property).filter(
+        Property.organisation_id == org_id,
+        LeaseRenewal.status == "sent",
+        LeaseRenewal.created_at <= cutoff,
+    ).all()
+    for renewal in renewals:
+        dedup = f"renewal_pending_too_long:{renewal.id}"
+        if _already_sent(db, org_id, dedup, 168):
+            continue
+        lease = db.query(Lease).filter(Lease.id == renewal.lease_id).first()
+        if not lease:
+            continue
+        tenant = db.query(Tenant).filter(Tenant.id == lease.tenant_id).first()
+        unit = db.query(Unit).join(Property).filter(Unit.id == lease.unit_id).first()
+        t_name = tenant.full_name if tenant else "Tenant"
+        addr = f"{unit.property.name} · {unit.name}" if unit else "Unknown"
+        summary = (f"Renewal offer for {t_name} at {addr} has been sent for {days}+ days "
+                   f"with no response — proposed rent £{renewal.proposed_rent}/mo from {renewal.proposed_start}")
+        if not dry_run:
+            _send_agent_alert(org_id, f"📋 {summary}")
+            _log_action(db, org_id, "renewal_pending_too_long", "renewal", renewal.id,
+                        "agent_alert", "Agent", summary, None, dedup)
+        results.append({"check": "renewal_pending_too_long", "summary": summary, "entity_id": renewal.id})
+    return results
+
+
+def check_vacant_unit_matches(db: Session, org_id: int, days: int, agency_name: str, dry_run: bool) -> list:
+    from app.models.unit import Unit
+    from app.models.property import Property
+    from app.models.applicant import Applicant
+    from app.routers.applicants import _score_applicant
+    results = []
+    active_stages = ["enquiry", "viewing_booked", "viewed", "referencing", "approved"]
+    vacant_units = db.query(Unit).join(Property).filter(
+        Property.organisation_id == org_id,
+        Unit.status == "vacant",
+    ).all()
+    applicants = db.query(Applicant).filter(
+        Applicant.organisation_id == org_id,
+        Applicant.status.in_(active_stages),
+    ).all()
+    for unit in vacant_units:
+        prop = db.query(Property).filter(Property.id == unit.property_id).first()
+        good_matches = []
+        for a in applicants:
+            m = _score_applicant(a, unit, prop)
+            if m["pct"] >= 50:
+                good_matches.append((a.full_name, m["pct"], m["reasons"]))
+        if not good_matches:
+            continue
+        good_matches.sort(key=lambda x: x[1], reverse=True)
+        dedup = f"vacant_unit_matches:{unit.id}"
+        if _already_sent(db, org_id, dedup, 48):
+            continue
+        addr = f"{prop.name} · {unit.name}" if prop else unit.name
+        top = good_matches[:3]
+        names = ", ".join(f"{n} ({s}%)" for n, s, _ in top)
+        summary = f"Vacant unit {addr} — {len(good_matches)} applicant match(es): {names}"
+        if not dry_run:
+            _send_agent_alert(org_id, f"🏠 {summary}")
+            _log_action(db, org_id, "vacant_unit_matches", "unit", unit.id,
+                        "agent_alert", "Agent", summary, None, dedup)
+        results.append({"check": "vacant_unit_matches", "summary": summary, "entity_id": unit.id})
+    return results
+
+
+def check_no_inspection(db: Session, org_id: int, days: int, agency_name: str, dry_run: bool) -> list:
+    from app.models.lease import Lease
+    from app.models.unit import Unit
+    from app.models.property import Property
+    from app.models.tenant import Tenant
+    from app.models.inspection import Inspection
+    results = []
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    leases = db.query(Lease).join(Unit).join(Property).filter(
+        Property.organisation_id == org_id,
+        Lease.status == "active",
+    ).all()
+    for lease in leases:
+        last_insp = db.query(Inspection).filter(
+            Inspection.unit_id == lease.unit_id,
+            Inspection.status == "completed",
+        ).order_by(Inspection.scheduled_date.desc()).first()
+        if last_insp and last_insp.scheduled_date >= cutoff.date():
+            continue
+        dedup = f"no_inspection:{lease.unit_id}"
+        if _already_sent(db, org_id, dedup, 168):
+            continue
+        tenant = db.query(Tenant).filter(Tenant.id == lease.tenant_id).first()
+        unit = db.query(Unit).join(Property).filter(Unit.id == lease.unit_id).first()
+        t_name = tenant.full_name if tenant else "Tenant"
+        addr = f"{unit.property.name} · {unit.name}" if unit else "Unknown"
+        last = f"last inspection {last_insp.scheduled_date}" if last_insp else "no inspections on record"
+        summary = f"{addr} ({t_name}) has not been inspected in {days}+ days — {last}"
+        if not dry_run:
+            _send_agent_alert(org_id, f"🏠 {summary}")
+            _log_action(db, org_id, "no_inspection", "unit", lease.unit_id,
+                        "agent_alert", "Agent", summary, None, dedup)
+        results.append({"check": "no_inspection", "summary": summary, "entity_id": lease.unit_id})
+    return results
+
+
 # ── Registry ──────────────────────────────────────────────────────────────────
 
 CHECK_REGISTRY = {
-    "maintenance_unassigned":       check_maintenance_unassigned,
-    "maintenance_stalled":          check_maintenance_stalled,
-    "tenant_message_unanswered":    check_tenant_message_unanswered,
-    "contractor_message_unanswered": check_contractor_message_unanswered,
-    "lease_expiring_no_offer":      check_lease_expiring_no_offer,
-    "renewal_no_response":          check_renewal_no_response,
-    "compliance_expiring":          check_compliance_expiring,
-    "arrears_chase":                check_arrears_chase,
+    "maintenance_unassigned":         check_maintenance_unassigned,
+    "maintenance_stalled":            check_maintenance_stalled,
+    "tenant_message_unanswered":      check_tenant_message_unanswered,
+    "contractor_message_unanswered":  check_contractor_message_unanswered,
+    "lease_expiring_no_offer":        check_lease_expiring_no_offer,
+    "renewal_no_response":            check_renewal_no_response,
+    "compliance_expiring":            check_compliance_expiring,
+    "arrears_chase":                  check_arrears_chase,
+    "applicant_followup_overdue":     check_applicant_followup_overdue,
+    "applicant_stage_stalled":        check_applicant_stage_stalled,
+    "applicant_referencing_stalled":  check_applicant_referencing_stalled,
+    "deposit_not_registered":         check_deposit_not_registered,
+    "inventory_missing_movein":       check_inventory_missing_movein,
+    "tenant_portal_inactive":         check_tenant_portal_inactive,
+    "survey_not_sent":                check_survey_not_sent,
+    "landlord_message_unread":        check_landlord_message_unread,
+    "renewal_pending_too_long":       check_renewal_pending_too_long,
+    "no_inspection":                  check_no_inspection,
+    "vacant_unit_matches":            check_vacant_unit_matches,
 }
 
 

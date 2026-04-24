@@ -291,6 +291,19 @@ def convert_to_tenancy(
     if not applicant.unit_id:
         raise HTTPException(status_code=400, detail="Applicant must be linked to a unit before converting")
 
+    new_start = data.start_date
+    new_end = data.end_date
+    for existing in db.query(Lease).filter(Lease.unit_id == applicant.unit_id, Lease.status == "active").all():
+        ex_end = existing.end_date
+        new_before_ex_ends = (ex_end is None or new_start <= ex_end)
+        ex_before_new_ends = (new_end is None or existing.start_date <= new_end)
+        if new_before_ex_ends and ex_before_new_ends:
+            ex_end_str = str(ex_end) if ex_end else "no end date (periodic)"
+            raise HTTPException(
+                status_code=409,
+                detail=f"Date overlap with an existing active lease ({existing.start_date} – {ex_end_str}). Adjust the tenancy start date."
+            )
+
     # Get or create tenant
     tenant = None
     if applicant.email:
@@ -476,3 +489,210 @@ def follow_ups_due(
         ~Applicant.status.in_(["rejected", "withdrawn", "tenancy_created"]),
     ).order_by(Applicant.follow_up_date).all()
     return [_out(a) for a in applicants]
+
+
+# ── Applicant matching engine ─────────────────────────────────────────────────
+
+import re as _re
+
+def _parse_budget(budget_str: str):
+    """Parse '£900-£1,100' or '£800pm' → (min, max). Returns (None,None) if unparseable."""
+    if not budget_str:
+        return None, None
+    nums = _re.findall(r'[\d,]+', budget_str.replace(',', ''))
+    nums = [int(n) for n in nums if n]
+    if len(nums) == 0:
+        return None, None
+    if len(nums) == 1:
+        return nums[0] * 0.9, nums[0] * 1.1  # ±10% tolerance on single figure
+    return min(nums), max(nums)
+
+
+def _score_applicant(applicant: Applicant, unit: Unit, prop: Property) -> dict:
+    """
+    Score an applicant against a unit. Returns score 0-100 and breakdown.
+    No criterion is required — partial matches count.
+    """
+    scores = {}
+    reasons = []
+
+    # Budget (35 pts) — rent within applicant's stated range
+    bmin, bmax = _parse_budget(applicant.monthly_budget)
+    if bmin is not None and unit.monthly_rent:
+        rent = float(unit.monthly_rent)
+        if bmin <= rent <= bmax:
+            scores['budget'] = 35
+            reasons.append(f"Rent £{rent:.0f} within budget")
+        elif rent < bmin:
+            # Under budget — still a match, slight deduction
+            scores['budget'] = 25
+            reasons.append(f"Rent £{rent:.0f} under budget (good)")
+        else:
+            # Over budget — scale score by how far over
+            over_pct = (rent - bmax) / bmax
+            if over_pct <= 0.10:
+                scores['budget'] = 15
+                reasons.append(f"Rent £{rent:.0f} slightly over budget")
+            else:
+                scores['budget'] = 0
+                reasons.append(f"Rent £{rent:.0f} exceeds budget")
+    else:
+        scores['budget'] = 17  # no budget stated — neutral half score
+
+    # Bedrooms (25 pts)
+    if unit.bedrooms is not None:
+        b = unit.bedrooms
+        bmin_r = applicant.min_bedrooms
+        bmax_r = applicant.max_bedrooms
+        if bmin_r is None and bmax_r is None:
+            scores['bedrooms'] = 12  # no preference — neutral
+        elif bmin_r is not None and bmax_r is not None:
+            if bmin_r <= b <= bmax_r:
+                scores['bedrooms'] = 25
+                reasons.append(f"{b} bed matches preference")
+            elif b < bmin_r:
+                scores['bedrooms'] = 0
+                reasons.append(f"{b} bed below minimum ({bmin_r})")
+            else:
+                scores['bedrooms'] = 5
+                reasons.append(f"{b} bed above maximum ({bmax_r})")
+        elif bmin_r is not None:
+            scores['bedrooms'] = 25 if b >= bmin_r else 0
+            if b >= bmin_r:
+                reasons.append(f"{b} bed meets minimum")
+        else:
+            scores['bedrooms'] = 25 if b <= bmax_r else 5
+            if b <= bmax_r:
+                reasons.append(f"{b} bed within max preference")
+    else:
+        scores['bedrooms'] = 12
+
+    # Area (25 pts) — any preferred area keyword in property name/address/city
+    areas = [a.strip().lower() for a in (applicant.preferred_areas or '').split(',') if a.strip()]
+    if areas:
+        search_text = ' '.join([
+            (prop.name or ''), (prop.address_line1 or ''), (prop.city or ''), (prop.postcode or '')
+        ]).lower()
+        matched_areas = [a for a in areas if a in search_text]
+        if matched_areas:
+            scores['area'] = 25
+            reasons.append(f"Area match: {', '.join(matched_areas)}")
+        else:
+            scores['area'] = 0
+            reasons.append(f"No area match (wants: {', '.join(areas[:2])})")
+    else:
+        scores['area'] = 12  # no preference — neutral
+
+    # Must-haves (15 pts) — keyword match against unit/property description
+    musts = [m.strip().lower() for m in (applicant.must_haves or '').split(',') if m.strip()]
+    if musts:
+        prop_text = ' '.join([
+            (prop.name or ''), (prop.address_line1 or ''), (prop.city or ''),
+            (unit.name or ''),
+        ]).lower()
+        matched = [m for m in musts if m in prop_text]
+        ratio = len(matched) / len(musts) if musts else 0
+        scores['must_haves'] = round(15 * ratio)
+        if matched:
+            reasons.append(f"Must-haves matched: {', '.join(matched)}")
+    else:
+        scores['must_haves'] = 7  # no must-haves — neutral
+
+    total = sum(scores.values())
+    return {
+        "score": min(total, 100),
+        "scores": scores,
+        "reasons": reasons,
+        "pct": min(round(total), 100),
+    }
+
+
+@router.get("/matches/unit/{unit_id}")
+def matches_for_unit(
+    unit_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Return active applicants ranked by match score for a given unit."""
+    unit = db.query(Unit).join(Property).filter(
+        Unit.id == unit_id,
+        Property.organisation_id == current_user.organisation_id,
+    ).first()
+    if not unit:
+        raise HTTPException(status_code=404, detail="Unit not found")
+    prop = db.query(Property).filter(Property.id == unit.property_id).first()
+
+    active_stages = ["enquiry", "viewing_booked", "viewed", "referencing", "approved"]
+    applicants = db.query(Applicant).filter(
+        Applicant.organisation_id == current_user.organisation_id,
+        Applicant.status.in_(active_stages),
+    ).all()
+
+    results = []
+    for a in applicants:
+        match = _score_applicant(a, unit, prop)
+        if match["pct"] >= 20:  # minimum threshold
+            results.append({
+                **_out(a),
+                "match_score": match["pct"],
+                "match_reasons": match["reasons"],
+                "match_scores": match["scores"],
+            })
+
+    results.sort(key=lambda x: x["match_score"], reverse=True)
+    return {
+        "unit_id": unit_id,
+        "unit_name": f"{prop.name} · {unit.name}",
+        "monthly_rent": unit.monthly_rent,
+        "bedrooms": unit.bedrooms,
+        "matches": results,
+    }
+
+
+@router.get("/matches/vacant")
+def matches_for_vacant_units(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Return all vacant units with their top matching applicants."""
+    vacant_units = db.query(Unit).join(Property).filter(
+        Property.organisation_id == current_user.organisation_id,
+        Unit.status == "vacant",
+    ).all()
+
+    active_stages = ["enquiry", "viewing_booked", "viewed", "referencing", "approved"]
+    applicants = db.query(Applicant).filter(
+        Applicant.organisation_id == current_user.organisation_id,
+        Applicant.status.in_(active_stages),
+    ).all()
+
+    output = []
+    for unit in vacant_units:
+        prop = db.query(Property).filter(Property.id == unit.property_id).first()
+        matches = []
+        for a in applicants:
+            m = _score_applicant(a, unit, prop)
+            if m["pct"] >= 20:
+                matches.append({
+                    "id": a.id,
+                    "full_name": a.full_name,
+                    "phone": a.phone,
+                    "email": a.email,
+                    "status": a.status,
+                    "monthly_budget": a.monthly_budget,
+                    "match_score": m["pct"],
+                    "match_reasons": m["reasons"],
+                })
+        matches.sort(key=lambda x: x["match_score"], reverse=True)
+        output.append({
+            "unit_id": unit.id,
+            "unit_name": f"{prop.name} · {unit.name}" if prop else unit.name,
+            "property_name": prop.name if prop else "",
+            "monthly_rent": unit.monthly_rent,
+            "bedrooms": unit.bedrooms,
+            "top_matches": matches[:5],
+            "total_matches": len(matches),
+        })
+
+    output.sort(key=lambda x: x["total_matches"], reverse=True)
+    return output

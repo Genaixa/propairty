@@ -431,8 +431,12 @@ function CreateModal({ units, onClose, onSaved }) {
               required
             >
               <option value="">Select unit...</option>
-              {units.map(u => (
-                <option key={u.id} value={u.id}>{u.property_name} · {u.name}</option>
+              {[...new Set(units.map(u => u.property_name))].map(propName => (
+                <optgroup key={propName} label={propName}>
+                  {units.filter(u => u.property_name === propName).map(u => (
+                    <option key={u.id} value={u.id}>{u.name}</option>
+                  ))}
+                </optgroup>
               ))}
             </select>
           </div>
@@ -615,7 +619,13 @@ function EditModal({ inspection, units, onClose, onSaved }) {
             <select value={form.unit_id} onChange={e => setForm({ ...form, unit_id: e.target.value })} required
               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
               <option value="">Select unit...</option>
-              {units.map(u => <option key={u.id} value={u.id}>{u.property_name} · {u.name}</option>)}
+              {[...new Set(units.map(u => u.property_name))].map(propName => (
+                <optgroup key={propName} label={propName}>
+                  {units.filter(u => u.property_name === propName).map(u => (
+                    <option key={u.id} value={u.id}>{u.name}</option>
+                  ))}
+                </optgroup>
+              ))}
             </select>
           </div>
           <div>

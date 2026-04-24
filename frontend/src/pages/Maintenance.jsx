@@ -726,7 +726,11 @@ export default function Maintenance() {
                 <select value={form.unit_id} onChange={e => setForm({...form, unit_id: e.target.value})}
                   className="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" required>
                   <option value="">Select unit…</option>
-                  {allUnits.map(u => <option key={u.id} value={u.id}>{u.propertyName} · {u.name}</option>)}
+                  {properties.map(p => (
+                    <optgroup key={p.id} label={p.name}>
+                      {(p.units || []).map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                    </optgroup>
+                  ))}
                 </select>
               )}
               <input placeholder="Title" value={form.title} onChange={e => setForm({...form, title: e.target.value})}
