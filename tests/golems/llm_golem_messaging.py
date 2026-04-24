@@ -23,7 +23,7 @@ from contractor import ContractorGolem
 
 try:
     from groq import Groq
-    GROQ_KEY = os.environ.get("GROQ_API_KEY", "GROQ_API_KEY_REMOVED")
+    GROQ_KEY = os.environ.get("GROQ_API_KEY", "")
     groq_client = Groq(api_key=GROQ_KEY)
     LLM_AVAILABLE = True
 except ImportError:
