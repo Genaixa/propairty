@@ -59,11 +59,16 @@ def _deposit_out(d: TenancyDeposit, db: Session):
         "returned_date": d.returned_date.isoformat() if d.returned_date else None,
         "dispute_notes": d.dispute_notes,
         "notes": d.notes,
+        "checkin_inspection_id": d.checkin_inspection_id,
+        "checkout_inspection_id": d.checkout_inspection_id,
         # Computed
         "tenant_name": tenant.full_name if tenant else None,
+        "tenant_id": tenant.id if tenant else None,
         "tenant_email": tenant.email if tenant else None,
         "tenant_phone": tenant.phone if tenant else None,
         "unit": f"{prop.name} · {unit.name}" if prop and unit else None,
+        "unit_id": unit.id if unit else None,
+        "property_id": prop.id if prop else None,
         "property_name": prop.name if prop else None,
         "lease_start": lease.start_date.isoformat() if lease and lease.start_date else None,
         "lease_status": lease.status if lease else None,
@@ -95,6 +100,8 @@ class DepositUpdate(BaseModel):
     returned_date: Optional[date] = None
     dispute_notes: Optional[str] = None
     notes: Optional[str] = None
+    checkin_inspection_id: Optional[int] = None
+    checkout_inspection_id: Optional[int] = None
 
 
 @router.get("/leases-for-deposit")
@@ -228,7 +235,7 @@ def update_deposit(
     if not deposit:
         raise HTTPException(status_code=404, detail="Deposit not found")
 
-    for field, value in data.model_dump(exclude_none=True).items():
+    for field, value in data.model_dump(exclude_unset=True).items():
         setattr(deposit, field, value)
 
     # Auto-advance status based on fields set

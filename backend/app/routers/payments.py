@@ -12,7 +12,9 @@ from app.models.lease import Lease
 from app.models.unit import Unit
 from app.models.property import Property
 from app.models.tenant import Tenant
+from app.models.organisation import Organisation
 from app.schemas.payment import PaymentOut, MarkPaidRequest
+from app import emails
 
 router = APIRouter(prefix="/api/payments", tags=["payments"])
 
@@ -92,9 +94,12 @@ def _enrich(payments: list, db: Session) -> list:
             "paid_date": str(p.paid_date) if p.paid_date else None,
             "status": p.status,
             "notes": p.notes,
+            "tenant_id": tenant.id if tenant else None,
             "tenant_name": tenant.full_name if tenant else "Unknown",
             "tenant_phone": tenant.phone if tenant else None,
             "unit": f"{prop.name} · {unit.name}" if prop and unit else "Unknown",
+            "unit_id": unit.id if unit else None,
+            "property_id": prop.id if prop else None,
         })
     return result
 
@@ -161,3 +166,24 @@ def mark_paid(payment_id: int, data: MarkPaidRequest, db: Session = Depends(get_
         payment.status = "partial"
     db.commit()
     return {"ok": True, "status": payment.status}
+
+
+@router.post("/{payment_id}/send-reminder")
+def send_reminder(payment_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    payment = db.query(RentPayment).join(Lease).join(Unit).join(Property).filter(
+        RentPayment.id == payment_id,
+        Property.organisation_id == current_user.organisation_id
+    ).first()
+    if not payment:
+        raise HTTPException(status_code=404, detail="Payment not found")
+
+    lease = payment.lease
+    unit = db.query(Unit).get(lease.unit_id)
+    prop = db.query(Property).get(unit.property_id)
+    tenant = db.query(Tenant).get(lease.tenant_id)
+    org = db.query(Organisation).get(current_user.organisation_id)
+
+    from datetime import date
+    days = (payment.due_date - date.today()).days
+    emails.send_rent_reminder(tenant, payment, lease, unit, prop, org, days)
+    return {"ok": True}

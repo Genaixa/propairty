@@ -13,6 +13,7 @@ from app.models.tenant import Tenant
 from app.models.unit import Unit
 from app.models.property import Property
 from app.models.organisation import Organisation
+from app.models.landlord import Landlord
 from app import docgen
 
 router = APIRouter(prefix="/api/documents", tags=["documents"])
@@ -58,7 +59,9 @@ def generate_document(req: GenerateRequest, db: Session = Depends(get_db), curre
     lease, tenant, unit, org = _get_lease_context(req.lease_id, current_user.organisation_id, db)
 
     if req.doc_type == "ast":
-        pdf = docgen.generate_ast(lease, tenant, unit, org)
+        from app.models.deposit import TenancyDeposit
+        dep = db.query(TenancyDeposit).filter(TenancyDeposit.lease_id == lease.id).first()
+        pdf = docgen.generate_ast(lease, tenant, unit, org, deposit_override=dep.amount if dep else None)
         filename = f"AST_{tenant.full_name.replace(' ', '_')}_{lease.start_date}.pdf"
 
     elif req.doc_type == "section_21":
@@ -83,6 +86,54 @@ def generate_document(req: GenerateRequest, db: Session = Depends(get_db), curre
     else:
         raise HTTPException(status_code=400, detail=f"Unknown document type: {req.doc_type}")
 
+    return Response(
+        content=pdf,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+    )
+
+
+class ManagementAgreementRequest(BaseModel):
+    landlord_id: int
+    management_fee_pct: float = 10.0
+    tenant_find_fee: str = "One month's rent (inc. VAT)"
+    renewal_fee: str = "£150 + VAT"
+    maintenance_limit: int = 250
+    notice_period: int = 60
+    inspection_frequency: str = "twice per year"
+
+
+@router.post("/generate-management-agreement")
+def generate_management_agreement(
+    req: ManagementAgreementRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    landlord = db.query(Landlord).filter(
+        Landlord.id == req.landlord_id,
+        Landlord.organisation_id == current_user.organisation_id,
+    ).first()
+    if not landlord:
+        raise HTTPException(status_code=404, detail="Landlord not found")
+
+    org = db.query(Organisation).filter(Organisation.id == current_user.organisation_id).first()
+    properties = db.query(Property).filter(
+        Property.landlord_id == req.landlord_id,
+        Property.organisation_id == current_user.organisation_id,
+    ).all()
+
+    pdf = docgen.generate_management_agreement(
+        landlord=landlord,
+        org=org,
+        properties=properties,
+        management_fee_pct=req.management_fee_pct,
+        tenant_find_fee=req.tenant_find_fee,
+        renewal_fee=req.renewal_fee,
+        maintenance_limit=req.maintenance_limit,
+        notice_period=req.notice_period,
+        inspection_frequency=req.inspection_frequency,
+    )
+    filename = f"ManagementAgreement_{landlord.full_name.replace(' ', '_')}.pdf"
     return Response(
         content=pdf,
         media_type="application/pdf",

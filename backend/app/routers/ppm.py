@@ -157,7 +157,7 @@ def list_schedules(org_id: int = Depends(get_org), db: Session = Depends(get_db)
             next_due=s.next_due,
             last_triggered=s.last_triggered,
             contractor_id=s.contractor_id,
-            contractor_name=contractor.name if contractor else None,
+            contractor_name=(contractor.company_name or contractor.full_name) if contractor else None,
             is_active=s.is_active,
         ))
     return result
@@ -191,7 +191,7 @@ def create_schedule(req: PPMIn, org_id: int = Depends(get_org), db: Session = De
         unit_id=s.unit_id, unit_name=unit.name if unit else None,
         title=s.title, description=s.description, frequency=s.frequency,
         next_due=s.next_due, last_triggered=s.last_triggered,
-        contractor_id=s.contractor_id, contractor_name=contractor.name if contractor else None,
+        contractor_id=s.contractor_id, contractor_name=(contractor.company_name or contractor.full_name) if contractor else None,
         is_active=s.is_active,
     )
 
@@ -221,7 +221,7 @@ def update_schedule(schedule_id: int, req: PPMIn, org_id: int = Depends(get_org)
         unit_id=s.unit_id, unit_name=unit.name if unit else None,
         title=s.title, description=s.description, frequency=s.frequency,
         next_due=s.next_due, last_triggered=s.last_triggered,
-        contractor_id=s.contractor_id, contractor_name=contractor.name if contractor else None,
+        contractor_id=s.contractor_id, contractor_name=(contractor.company_name or contractor.full_name) if contractor else None,
         is_active=s.is_active,
     )
 

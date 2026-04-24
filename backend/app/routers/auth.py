@@ -3,6 +3,8 @@ from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from slowapi import Limiter
 from slowapi.util import get_remote_address
+from pydantic import BaseModel
+from typing import Optional
 from app.database import get_db
 from app.models.user import User
 from app.auth import verify_password, create_access_token, get_current_user
@@ -37,3 +39,34 @@ def agent_forgot(request: Request, req: pr.ForgotRequest, db: Session = Depends(
 def agent_reset(req: pr.ResetRequest, db: Session = Depends(get_db)):
     return pr.do_reset(req.token, req.new_password, "agent",
                        lambda uid, d: d.query(User).filter(User.id == uid).first(), db)
+
+
+class AgentProfileUpdate(BaseModel):
+    full_name: Optional[str] = None
+    phone: Optional[str] = None
+
+
+class AgentPasswordChange(BaseModel):
+    current_password: str
+    new_password: str
+
+
+@router.patch("/me")
+def update_agent_me(data: AgentProfileUpdate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    if data.full_name is not None:
+        current_user.full_name = data.full_name.strip()
+    db.commit()
+    db.refresh(current_user)
+    return current_user
+
+
+@router.post("/me/change-password")
+def agent_change_password(data: AgentPasswordChange, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    from app.auth import hash_password
+    if not verify_password(data.current_password, current_user.hashed_password):
+        raise HTTPException(status_code=400, detail="Current password is incorrect")
+    if len(data.new_password) < 8:
+        raise HTTPException(status_code=400, detail="New password must be at least 8 characters")
+    current_user.hashed_password = hash_password(data.new_password)
+    db.commit()
+    return {"ok": True}

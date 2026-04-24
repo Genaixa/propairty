@@ -199,3 +199,52 @@ def draft_letter(db: Session, org_id: int, letter_type: str, tenant_id: int = No
                     context["lease_start"] = str(active.start_date)
                     context["lease_end"] = str(active.end_date) if active.end_date else "Periodic"
     return context
+
+
+def send_arrears_reminder(db: Session, org_id: int, tenant_name: str, **_):
+    """Send a rent arrears reminder email to a named tenant."""
+    from app.emails import _send_email, _base_template
+
+    # Find tenant by name (case-insensitive)
+    tenant = (db.query(Tenant)
+              .filter(Tenant.organisation_id == org_id,
+                      Tenant.full_name.ilike(f"%{tenant_name}%"))
+              .first())
+    if not tenant:
+        return {"success": False, "error": f"Tenant '{tenant_name}' not found."}
+    if not tenant.email:
+        return {"success": False, "error": f"{tenant.full_name} has no email address on record."}
+
+    # Find overdue payment
+    lease = db.query(Lease).filter(Lease.tenant_id == tenant.id, Lease.status == "active").first()
+    payment = (db.query(RentPayment)
+               .filter(RentPayment.tenant_id == tenant.id, RentPayment.status == "overdue")
+               .order_by(RentPayment.due_date)
+               .first())
+    if not payment:
+        return {"success": False, "error": f"No overdue payments found for {tenant.full_name}."}
+
+    from app.models.organisation import Organisation
+    org = db.query(Organisation).filter_by(id=org_id).first()
+    org_name = org.name if org else "Your Letting Agent"
+    days_overdue = (date.today() - payment.due_date).days
+
+    unit = db.query(Unit).filter(Unit.id == lease.unit_id).first() if lease else None
+    prop = unit.property if unit else None
+    prop_str = f"{prop.name}, {unit.name}" if prop and unit else "your property"
+
+    body = f"""
+    <h2>Rent payment overdue</h2>
+    <p>Dear {tenant.full_name},</p>
+    <p>We write to inform you that your rent payment of <strong>£{payment.amount_due:.2f}</strong>
+    was due on <strong>{payment.due_date.strftime('%d %B %Y')}</strong> and remains outstanding
+    ({days_overdue} day{'s' if days_overdue != 1 else ''} overdue).</p>
+    <p>Please arrange payment immediately to avoid further action.</p>
+    <p>If you have already made payment or are experiencing difficulties, please contact us as soon as possible.</p>
+    <a href="https://propairty.co.uk/tenant/portal" class="cta">Pay via tenant portal</a>
+    """
+    subject = f"Overdue rent reminder — £{payment.amount_due:.0f} ({days_overdue} days overdue)"
+    sent = _send_email(tenant.email, subject, _base_template(subject, body, org_name))
+    if sent:
+        return {"success": True, "message": f"Reminder sent to {tenant.full_name} at {tenant.email}."}
+    return {"success": False, "error": "Email send failed — check SMTP settings."}

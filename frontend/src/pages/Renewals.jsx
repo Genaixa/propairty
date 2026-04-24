@@ -1,4 +1,6 @@
+import { PageHeader } from '../components/Illustration'
 import { useState, useEffect } from 'react'
+import { Link } from 'react-router-dom'
 import api from '../lib/api'
 
 const STATUS_CONFIG = {
@@ -22,6 +24,7 @@ export default function Renewals() {
   const [tab, setTab] = useState('action')
   const [showOffer, setShowOffer] = useState(null) // lease data for modal
   const [downloading, setDownloading] = useState(null)
+  const [downloadingS13, setDownloadingS13] = useState(null)
 
   useEffect(() => { load() }, [])
 
@@ -61,40 +64,80 @@ export default function Renewals() {
     }
   }
 
+  async function downloadSection13(leaseId, renewal) {
+    setDownloadingS13(renewal.id)
+    try {
+      const res = await api.post('/documents/generate', {
+        lease_id: leaseId,
+        doc_type: 'rent_increase',
+        new_rent: renewal.proposed_rent,
+        effective_date: renewal.proposed_start,
+      }, { responseType: 'blob' })
+      const url = URL.createObjectURL(res.data)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `section-13-notice-${leaseId}.pdf`
+      a.click()
+      URL.revokeObjectURL(url)
+    } finally {
+      setDownloadingS13(null)
+    }
+  }
+
   // Separate: no offer sent vs offer sent
   const noOffer = leases.filter(l => !l.renewal)
   const offerSent = leases.filter(l => l.renewal && l.renewal.status === 'sent')
   const responded = leases.filter(l => l.renewal && ['accepted', 'declined', 'expired'].includes(l.renewal.status))
   const displayed = tab === 'action' ? noOffer : tab === 'sent' ? offerSent : responded
 
-  const expiringSoon = leases.filter(l => l.days_to_expiry != null && l.days_to_expiry <= 30).length
+  const alreadyExpiredNoOffer = noOffer.filter(l => l.days_to_expiry != null && l.days_to_expiry < 0).length
+
+  const [sortCol, setSortCol] = useState('end_date')
+  const [sortDir, setSortDir] = useState('asc')
+
+  function toggleSort(col) {
+    if (sortCol === col) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+    else { setSortCol(col); setSortDir('asc') }
+  }
+
+  const SortTh = ({ col, label }) => (
+    <th onClick={() => toggleSort(col)}
+      className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide cursor-pointer select-none hover:text-gray-800 whitespace-nowrap">
+      {label} {sortCol === col ? (sortDir === 'asc' ? '▲' : '▼') : <span className="text-gray-300">↕</span>}
+    </th>
+  )
+
+  const sortedDisplayed = [...displayed].sort((a, b) => {
+    let av, bv
+    if      (sortCol === 'tenant_name')  { av = a.tenant_name || '';    bv = b.tenant_name || '' }
+    else if (sortCol === 'property')     { av = a.property || '';       bv = b.property || '' }
+    else if (sortCol === 'monthly_rent') { av = a.monthly_rent || 0;    bv = b.monthly_rent || 0; return sortDir === 'asc' ? av - bv : bv - av }
+    else                                 { av = a.end_date || '';       bv = b.end_date || '' }
+    if (av < bv) return sortDir === 'asc' ? -1 : 1
+    if (av > bv) return sortDir === 'asc' ? 1 : -1
+    return 0
+  })
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Lease Renewals</h1>
-          <p className="text-sm text-gray-500 mt-1">Manage renewal offers for expiring tenancies</p>
-        </div>
-      </div>
+      <PageHeader title="Lease Renewals" subtitle="Manage renewal offers for expiring tenancies" />
 
       {/* Summary cards */}
-      <div className="grid grid-cols-4 gap-4 mb-6">
-        <div className="bg-white border border-gray-200 rounded-xl p-4">
-          <p className="text-xs text-gray-500 font-medium uppercase tracking-wide">Expiring (90 days)</p>
-          <p className="text-3xl font-bold text-indigo-600 mt-1">{leases.length}</p>
-        </div>
-        <div className="bg-white border border-gray-200 rounded-xl p-4">
-          <p className="text-xs text-gray-500 font-medium uppercase tracking-wide">No offer sent</p>
+      <div className="grid grid-cols-3 gap-4 mb-6">
+        <div className={`border rounded-xl p-4 cursor-pointer transition-all ${tab === 'action' ? 'bg-orange-50 border-orange-300' : 'bg-white border-gray-200 hover:border-orange-200'}`} onClick={() => setTab('action')}>
+          <p className="text-xs text-gray-500 font-medium uppercase tracking-wide">Need action — no offer sent</p>
           <p className={`text-3xl font-bold mt-1 ${noOffer.length > 0 ? 'text-orange-600' : 'text-gray-400'}`}>{noOffer.length}</p>
+          {alreadyExpiredNoOffer > 0 && <p className="text-xs text-red-500 mt-1">{alreadyExpiredNoOffer} already past end date</p>}
         </div>
-        <div className="bg-white border border-gray-200 rounded-xl p-4">
-          <p className="text-xs text-gray-500 font-medium uppercase tracking-wide">Awaiting response</p>
-          <p className="text-3xl font-bold text-yellow-600 mt-1">{offerSent.length}</p>
+        <div className={`border rounded-xl p-4 cursor-pointer transition-all ${tab === 'sent' ? 'bg-yellow-50 border-yellow-300' : 'bg-white border-gray-200 hover:border-yellow-200'}`} onClick={() => setTab('sent')}>
+          <p className="text-xs text-gray-500 font-medium uppercase tracking-wide">Offer sent — awaiting response</p>
+          <p className={`text-3xl font-bold mt-1 ${offerSent.length > 0 ? 'text-yellow-600' : 'text-gray-400'}`}>{offerSent.length}</p>
+          <p className="text-xs text-gray-400 mt-1">Tenant has been sent a renewal offer</p>
         </div>
-        <div className="bg-white border border-gray-200 rounded-xl p-4">
-          <p className="text-xs text-gray-500 font-medium uppercase tracking-wide">Expiring ≤30 days</p>
-          <p className={`text-3xl font-bold mt-1 ${expiringSoon > 0 ? 'text-red-600' : 'text-gray-400'}`}>{expiringSoon}</p>
+        <div className={`border rounded-xl p-4 cursor-pointer transition-all ${tab === 'history' ? 'bg-gray-100 border-gray-400' : 'bg-white border-gray-200 hover:border-gray-300'}`} onClick={() => setTab('history')}>
+          <p className="text-xs text-gray-500 font-medium uppercase tracking-wide">Responded</p>
+          <p className="text-3xl font-bold text-gray-600 mt-1">{responded.length}</p>
+          <p className="text-xs text-gray-400 mt-1">Accepted or declined by tenant</p>
         </div>
       </div>
 
@@ -103,7 +146,7 @@ export default function Renewals() {
         {[
           ['action', `Action Required (${noOffer.length})`],
           ['sent', `Offer Sent (${offerSent.length})`],
-          ['history', `History (${responded.length})`],
+          ['history', `Responded (${responded.length})`],
         ].map(([key, label]) => (
           <button
             key={key}
@@ -130,10 +173,10 @@ export default function Renewals() {
           <table className="w-full text-sm">
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Tenant</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Property / Unit</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Expires</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Current Rent</th>
+                <SortTh col="tenant_name" label="Tenant" />
+                <SortTh col="property" label="Property / Unit" />
+                <SortTh col="end_date" label="Expires" />
+                <SortTh col="monthly_rent" label="Current Rent" />
                 {tab !== 'action' && (
                   <>
                     <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Proposed Rent</th>
@@ -144,24 +187,29 @@ export default function Renewals() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {displayed.map(l => {
+              {sortedDisplayed.map(l => {
                 const renewal = l.renewal
                 const statusCfg = renewal ? STATUS_CONFIG[renewal.status] : null
                 return (
                   <tr key={l.lease_id} className="hover:bg-gray-50">
                     <td className="px-4 py-3">
-                      <p className="font-medium text-gray-900">{l.tenant_name}</p>
-                      <p className="text-xs text-gray-500">{l.tenant_email}</p>
+                      {l.tenant_id
+                        ? <Link to={`/tenants/${l.tenant_id}`} className="font-medium text-indigo-600 hover:underline">{l.tenant_name}</Link>
+                        : <p className="font-medium text-gray-900">{l.tenant_name}</p>}
                     </td>
                     <td className="px-4 py-3">
-                      <p className="text-gray-800">{l.property}</p>
-                      <p className="text-xs text-gray-500">{l.unit}</p>
+                      {l.property_id
+                        ? <Link to={`/properties/${l.property_id}`} className="block text-indigo-600 hover:underline">{l.property}</Link>
+                        : <p className="text-gray-800">{l.property}</p>}
+                      {l.unit_id
+                        ? <Link to={`/properties/${l.property_id}/units/${l.unit_id}`} className="block text-xs text-indigo-500 hover:underline">{l.unit}</Link>
+                        : <p className="text-xs text-gray-500">{l.unit}</p>}
                     </td>
                     <td className="px-4 py-3">
                       <p className="text-gray-700">{l.end_date ? new Date(l.end_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'}</p>
                       {l.days_to_expiry != null && (
                         <p className={`text-xs mt-0.5 ${urgencyColor(l.days_to_expiry)}`}>
-                          {l.days_to_expiry <= 0 ? `${Math.abs(l.days_to_expiry)}d overdue` : `${l.days_to_expiry}d left`}
+                          {l.days_to_expiry <= 0 ? `Expired ${Math.abs(l.days_to_expiry)}d ago` : `${l.days_to_expiry}d left`}
                         </p>
                       )}
                     </td>
@@ -189,6 +237,10 @@ export default function Renewals() {
                               {statusCfg.label}
                             </span>
                           )}
+                          {renewal?.landlord_viewed_at
+                            ? <p className="text-xs text-emerald-600 mt-1" title={new Date(renewal.landlord_viewed_at).toLocaleString('en-GB')}>👁 Landlord viewed {new Date(renewal.landlord_viewed_at).toLocaleDateString('en-GB',{day:'2-digit',month:'short'})}</p>
+                            : renewal && <p className="text-xs text-gray-400 mt-1">Landlord not yet viewed</p>
+                          }
                         </td>
                       </>
                     )}
@@ -209,8 +261,18 @@ export default function Renewals() {
                               disabled={downloading === renewal.id}
                               className="text-xs text-indigo-600 font-medium hover:underline"
                             >
-                              {downloading === renewal.id ? '...' : 'PDF'}
+                              {downloading === renewal.id ? '...' : 'Offer PDF'}
                             </button>
+                            {renewal.proposed_rent > l.monthly_rent && (
+                              <button
+                                onClick={() => downloadSection13(l.lease_id, renewal)}
+                                disabled={downloadingS13 === renewal.id}
+                                className="text-xs text-purple-600 font-medium hover:underline"
+                                title="Section 13 Notice (Housing Act 1988) — formal rent increase notice"
+                              >
+                                {downloadingS13 === renewal.id ? '...' : 'S.13 Notice'}
+                              </button>
+                            )}
                             <button
                               onClick={() => handleAccept(renewal.id)}
                               className="text-xs text-green-600 font-medium hover:underline"

@@ -1,5 +1,23 @@
+import { PageHeader } from '../components/Illustration'
 import { useEffect, useState } from 'react'
+import { Link, useSearchParams } from 'react-router-dom'
 import api from '../lib/api'
+
+function Stars({ rating, count }) {
+  if (rating == null) return <span className="text-xs text-gray-400">No reviews</span>
+  const full = Math.round(rating)
+  return (
+    <div className="flex items-center gap-1">
+      <span className="flex gap-0.5">
+        {[1,2,3,4,5].map(n => (
+          <span key={n} className={`text-sm ${n <= full ? 'text-yellow-400' : 'text-gray-200'}`}>★</span>
+        ))}
+      </span>
+      <span className="text-xs font-semibold text-gray-700">{rating.toFixed(1)}</span>
+      <span className="text-xs text-gray-400">({count})</span>
+    </div>
+  )
+}
 
 const TRADES = ['Plumber', 'Electrician', 'Gas Engineer', 'Builder', 'Roofer', 'Painter/Decorator', 'Carpenter', 'Locksmith', 'Cleaner', 'Gardener', 'General Maintenance', 'Other']
 
@@ -19,6 +37,8 @@ const statusBadge = s => ({
 
 export default function Contractors() {
   const [tab, setTab] = useState('contractors')
+  const [reviewsModal, setReviewsModal] = useState(null) // { contractor, data }
+  const [loadingReviews, setLoadingReviews] = useState(false)
   const [contractors, setContractors] = useState([])
   const [jobs, setJobs] = useState([])
   const [showForm, setShowForm] = useState(false)
@@ -30,6 +50,33 @@ export default function Contractors() {
   const [portalModal, setPortalModal] = useState(null) // contractor object
   const [portalPassword, setPortalPassword] = useState('')
   const [portalMsg, setPortalMsg] = useState('')
+  const [cSort, setCSort] = useState({ col: 'full_name', dir: 'asc' })
+  const [jSort, setJSort] = useState({ col: 'created_at', dir: 'desc' })
+  const [jobFilter, setJobFilter] = useState('all') // 'all' | 'open' | 'unassigned'
+  const [searchParams, setSearchParams] = useSearchParams()
+  const [tradeFilter, setTradeFilter] = useState(searchParams.get('trade') || '')
+
+  function toggleSort(sort, setSort, col) {
+    setSort(s => ({ col, dir: s.col === col ? (s.dir === 'asc' ? 'desc' : 'asc') : 'asc' }))
+  }
+
+  function SortTh({ col, label, sort, setSort }) {
+    return (
+      <th onClick={() => toggleSort(sort, setSort, col)}
+        className="text-left px-5 py-3 font-medium text-gray-500 cursor-pointer select-none hover:text-gray-800 whitespace-nowrap">
+        {label} {sort.col === col ? (sort.dir === 'asc' ? '▲' : '▼') : <span className="text-gray-300">↕</span>}
+      </th>
+    )
+  }
+
+  function SortThSm({ col, label, sort, setSort }) {
+    return (
+      <th onClick={() => toggleSort(sort, setSort, col)}
+        className="text-left px-4 py-3 font-medium text-gray-500 cursor-pointer select-none hover:text-gray-800 whitespace-nowrap">
+        {label} {sort.col === col ? (sort.dir === 'asc' ? '▲' : '▼') : <span className="text-gray-300">↕</span>}
+      </th>
+    )
+  }
 
   useEffect(() => { load() }, [])
 
@@ -76,6 +123,19 @@ export default function Contractors() {
     }
   }
 
+  async function openReviews(contractor) {
+    setLoadingReviews(true)
+    setReviewsModal({ contractor, data: null })
+    try {
+      const r = await api.get(`/contractors/${contractor.id}/reviews`)
+      setReviewsModal({ contractor, data: r.data })
+    } catch {
+      setReviewsModal({ contractor, data: { avg_rating: null, review_count: 0, reviews: [] } })
+    } finally {
+      setLoadingReviews(false)
+    }
+  }
+
   async function handlePortalDisable(contractorId) {
     try {
       await api.post(`/contractor/disable/${contractorId}`)
@@ -100,34 +160,97 @@ export default function Contractors() {
     }
   }
 
-  const totalSpend = jobs.reduce((s, j) => s + (j.actual_cost || 0), 0)
-  const totalEstimated = jobs.reduce((s, j) => s + (j.estimated_cost || 0), 0)
-  const openJobs = jobs.filter(j => j.status === 'open' || j.status === 'in_progress').length
+  // When a trade filter is active, scope stats to that trade's contractor IDs only
+  const tradeContractorIds = tradeFilter
+    ? new Set(contractors.filter(c => (c.trade || '').toLowerCase() === tradeFilter.toLowerCase()).map(c => c.id))
+    : null
+  const scopedJobs = tradeContractorIds
+    ? jobs.filter(j => j.contractor_id && tradeContractorIds.has(j.contractor_id))
+    : jobs
+
+  const totalSpend     = scopedJobs.reduce((s, j) => s + (j.actual_cost || 0), 0)
+  const totalEstimated = scopedJobs.reduce((s, j) => s + (j.estimated_cost || 0), 0)
+  const openJobs  = scopedJobs.filter(j => j.status === 'open' || j.status === 'in_progress').length
   const unassigned = jobs.filter(j => !j.contractor_id && (j.status === 'open' || j.status === 'in_progress')).length
+
+  const filteredContractors = tradeFilter
+    ? contractors.filter(c => (c.trade || '').toLowerCase() === tradeFilter.toLowerCase())
+    : contractors
+
+  const sortedContractors = [...filteredContractors].sort((a, b) => {
+    const cJobs = id => jobs.filter(j => j.contractor_id === id)
+    let av, bv
+    if      (cSort.col === 'full_name')   { av = a.full_name;          bv = b.full_name }
+    else if (cSort.col === 'trade')       { av = a.trade || '';        bv = b.trade || '' }
+    else if (cSort.col === 'jobs')        { av = cJobs(a.id).length;   bv = cJobs(b.id).length }
+    else if (cSort.col === 'rating')      { av = a.avg_rating ?? -1;   bv = b.avg_rating ?? -1 }
+    else                                  { av = a[cSort.col] || '';   bv = b[cSort.col] || '' }
+    if (av < bv) return cSort.dir === 'asc' ? -1 : 1
+    if (av > bv) return cSort.dir === 'asc' ? 1 : -1
+    return 0
+  })
+
+  const filteredJobs = jobs.filter(j => {
+    if (jobFilter === 'open') return j.status === 'open' || j.status === 'in_progress'
+    if (jobFilter === 'unassigned') return !j.contractor_id && (j.status === 'open' || j.status === 'in_progress')
+    return true
+  })
+
+  const sortedJobs = [...filteredJobs].sort((a, b) => {
+    // Always float unassigned to top
+    const aUnassigned = !a.contractor_id ? 0 : 1
+    const bUnassigned = !b.contractor_id ? 0 : 1
+    if (aUnassigned !== bUnassigned) return aUnassigned - bUnassigned
+    let av, bv
+    if      (jSort.col === 'title')       { av = a.title;                   bv = b.title }
+    else if (jSort.col === 'property')    { av = a.property || '';          bv = b.property || '' }
+    else if (jSort.col === 'contractor')  { av = a.contractor_name || '';   bv = b.contractor_name || '' }
+    else if (jSort.col === 'estimated')   { av = a.estimated_cost ?? -1;    bv = b.estimated_cost ?? -1 }
+    else if (jSort.col === 'actual')      { av = a.actual_cost ?? -1;       bv = b.actual_cost ?? -1 }
+    else if (jSort.col === 'status')      { av = a.status;                  bv = b.status }
+    else                                  { av = a[jSort.col] || '';        bv = b[jSort.col] || '' }
+    if (av < bv) return jSort.dir === 'asc' ? -1 : 1
+    if (av > bv) return jSort.dir === 'asc' ? 1 : -1
+    return 0
+  })
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
-        <h2 className="text-2xl font-bold text-gray-900">Contractors</h2>
+      <PageHeader title="Contractors" subtitle="Your trusted trades & service providers">
         <button onClick={() => { setShowForm(true); setEditId(null); setForm({ full_name: '', company_name: '', trade: '', email: '', phone: '', notes: '' }) }}
           className="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-indigo-700">
           + Add Contractor
         </button>
-      </div>
+      </PageHeader>
 
       {/* Summary cards */}
       <div className="grid grid-cols-4 gap-4 mb-6">
-        {[
-          { label: 'Contractors', value: contractors.length, color: 'text-indigo-600' },
-          { label: 'Open Jobs', value: openJobs, color: 'text-yellow-600' },
-          { label: 'Unassigned', value: unassigned, color: unassigned > 0 ? 'text-red-600' : 'text-gray-600' },
-          { label: 'Total Spend', value: `£${totalSpend.toLocaleString()}`, color: 'text-gray-900' },
-        ].map((c, i) => (
-          <div key={i} className="bg-white rounded-xl border border-gray-200 p-4">
-            <p className="text-xs text-gray-500 uppercase tracking-wide">{c.label}</p>
-            <p className={`text-2xl font-bold mt-1 ${c.color}`}>{c.value}</p>
-          </div>
-        ))}
+        <div className="bg-white rounded-xl border border-gray-200 p-4">
+          <p className="text-xs text-gray-500 uppercase tracking-wide">Contractors</p>
+          <p className="text-2xl font-bold mt-1 text-indigo-600">{contractors.length}</p>
+        </div>
+        <button
+          onClick={() => { setTab('jobs'); setJobFilter('open') }}
+          className={`rounded-xl border p-4 text-left transition-colors hover:border-yellow-400 hover:bg-yellow-50
+            ${jobFilter === 'open' && tab === 'jobs' ? 'bg-yellow-50 border-yellow-400' : 'bg-white border-gray-200'}`}
+        >
+          <p className="text-xs text-gray-500 uppercase tracking-wide">Open Jobs</p>
+          <p className="text-2xl font-bold mt-1 text-yellow-600">{openJobs}</p>
+          <p className="text-xs text-gray-400 mt-0.5">Click to filter</p>
+        </button>
+        <button
+          onClick={() => { setTab('jobs'); setJobFilter('unassigned') }}
+          className={`rounded-xl border p-4 text-left transition-colors hover:border-red-300 hover:bg-red-50
+            ${jobFilter === 'unassigned' && tab === 'jobs' ? 'bg-red-50 border-red-400' : 'bg-white border-gray-200'}`}
+        >
+          <p className="text-xs text-gray-500 uppercase tracking-wide">Unassigned</p>
+          <p className={`text-2xl font-bold mt-1 ${unassigned > 0 ? 'text-red-600' : 'text-gray-600'}`}>{unassigned}</p>
+          <p className="text-xs text-gray-400 mt-0.5">Click to filter</p>
+        </button>
+        <div className="bg-white rounded-xl border border-gray-200 p-4">
+          <p className="text-xs text-gray-500 uppercase tracking-wide">Total Spend</p>
+          <p className="text-2xl font-bold mt-1 text-gray-900">£{totalSpend.toLocaleString()}</p>
+        </div>
       </div>
 
       {/* Tabs */}
@@ -143,34 +266,58 @@ export default function Contractors() {
       {/* Contractors list */}
       {tab === 'contractors' && (
         <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+          {tradeFilter && (
+            <div className="px-4 py-2.5 bg-indigo-50 border-b border-indigo-100 flex items-center gap-2">
+              <span className="text-xs font-medium text-indigo-800">
+                Filtered by trade: <strong>{tradeFilter}</strong> · {filteredContractors.length} contractor{filteredContractors.length !== 1 ? 's' : ''}
+              </span>
+              <button onClick={() => { setTradeFilter(''); setSearchParams({}) }} className="text-xs text-indigo-500 hover:text-indigo-700 ml-1">× Clear</button>
+            </div>
+          )}
           <table className="w-full text-sm">
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
-                {['Name / Company', 'Trade', 'Contact', 'Jobs', ''].map(h => (
-                  <th key={h} className="text-left px-5 py-3 font-medium text-gray-500">{h}</th>
-                ))}
+                <SortTh col="full_name" label="Name / Company" sort={cSort} setSort={setCSort} />
+                <SortTh col="trade" label="Trade" sort={cSort} setSort={setCSort} />
+                <th className="text-left px-5 py-3 font-medium text-gray-500">Contact</th>
+                <SortTh col="jobs" label="Jobs" sort={cSort} setSort={setCSort} />
+                <SortTh col="rating" label="Rating" sort={cSort} setSort={setCSort} />
+                <th />
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {contractors.map(c => {
+              {sortedContractors.map(c => {
                 const cJobs = jobs.filter(j => j.contractor_id === c.id)
                 const cSpend = cJobs.reduce((s, j) => s + (j.actual_cost || 0), 0)
                 return (
                   <tr key={c.id} className="hover:bg-gray-50">
                     <td className="px-5 py-3.5">
-                      <p className="font-medium text-gray-900">{c.full_name}</p>
-                      {c.company_name && <p className="text-xs text-gray-500">{c.company_name}</p>}
+                      <div className="flex items-center gap-3">
+                        {c.avatar_url
+                          ? <img src={c.avatar_url} alt={c.full_name} className="w-9 h-9 rounded-full object-cover shrink-0" />
+                          : <div className="w-9 h-9 rounded-full bg-orange-100 flex items-center justify-center text-orange-600 font-bold text-sm shrink-0">{c.full_name[0]}</div>
+                        }
+                        <div>
+                          <Link to={`/contractors/${c.id}`} className="font-medium text-gray-900 hover:text-indigo-600 hover:underline">{c.full_name}</Link>
+                          {c.company_name && <p className="text-xs text-gray-500">{c.company_name}</p>}
+                        </div>
+                      </div>
                     </td>
                     <td className="px-5 py-3.5">
                       {c.trade ? <span className="text-xs bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-full font-medium">{c.trade}</span> : '—'}
                     </td>
                     <td className="px-5 py-3.5 text-gray-500">
-                      {c.phone && <p>{c.phone}</p>}
-                      {c.email && <p className="text-xs">{c.email}</p>}
+                      {c.phone && <p><a href={`tel:${c.phone}`} className="hover:text-indigo-600">{c.phone}</a></p>}
+                      {c.email && <p className="text-xs"><a href={`mailto:${c.email}`} className="hover:text-indigo-600">{c.email}</a></p>}
                     </td>
                     <td className="px-5 py-3.5 text-gray-600">
                       <p>{cJobs.length} job{cJobs.length !== 1 ? 's' : ''}</p>
                       {cSpend > 0 && <p className="text-xs text-gray-400">£{cSpend.toLocaleString()} spent</p>}
+                    </td>
+                    <td className="px-5 py-3.5">
+                      <button onClick={() => openReviews(c)} className="hover:opacity-80 transition-opacity text-left">
+                        <Stars rating={c.avg_rating} count={c.review_count} />
+                      </button>
                     </td>
                     <td className="px-5 py-3.5">
                       <div className="flex gap-2 items-center flex-wrap">
@@ -191,8 +338,10 @@ export default function Contractors() {
                   </tr>
                 )
               })}
-              {contractors.length === 0 && (
-                <tr><td colSpan="5" className="px-5 py-8 text-center text-gray-400">No contractors yet. Add your first contractor above.</td></tr>
+              {filteredContractors.length === 0 && (
+                <tr><td colSpan="6" className="px-5 py-8 text-center text-gray-400">
+                  {tradeFilter ? `No ${tradeFilter} contractors yet. Add one above.` : 'No contractors yet. Add your first contractor above.'}
+                </td></tr>
               )}
             </tbody>
           </table>
@@ -202,20 +351,33 @@ export default function Contractors() {
       {/* Jobs & costs */}
       {tab === 'jobs' && (
         <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+          {jobFilter !== 'all' && (
+            <div className="px-4 py-2.5 bg-yellow-50 border-b border-yellow-100 flex items-center gap-2">
+              <span className="text-xs font-medium text-yellow-800">
+                {jobFilter === 'open' ? 'Showing: Open jobs' : 'Showing: Unassigned jobs'} · {filteredJobs.length} result{filteredJobs.length !== 1 ? 's' : ''}
+              </span>
+              <button onClick={() => setJobFilter('all')} className="text-xs text-yellow-600 hover:text-yellow-800 ml-1">× Clear filter</button>
+            </div>
+          )}
           <table className="w-full text-sm">
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
-                {['Job', 'Property', 'Contractor', 'Estimated', 'Actual', 'Invoice', 'Status', ''].map(h => (
-                  <th key={h} className="text-left px-4 py-3 font-medium text-gray-500">{h}</th>
-                ))}
+                <SortThSm col="title" label="Job" sort={jSort} setSort={setJSort} />
+                <SortThSm col="property" label="Property" sort={jSort} setSort={setJSort} />
+                <SortThSm col="contractor" label="Contractor" sort={jSort} setSort={setJSort} />
+                <SortThSm col="estimated" label="Estimated" sort={jSort} setSort={setJSort} />
+                <SortThSm col="actual" label="Actual" sort={jSort} setSort={setJSort} />
+                <th className="text-left px-4 py-3 font-medium text-gray-500">Invoice</th>
+                <SortThSm col="status" label="Status" sort={jSort} setSort={setJSort} />
+                <th />
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {jobs.map(j => (
+              {sortedJobs.map(j => (
                 <tr key={j.id} className="hover:bg-gray-50">
                   <td className="px-4 py-3">
-                    <p className="font-medium text-gray-900">{j.title}</p>
-                    <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${priorityBadge(j.priority)}`}>{j.priority}</span>
+                    <Link to={`/maintenance`} state={{ jobId: j.id }} className="font-medium text-indigo-600 hover:underline">{j.title}</Link>
+                    <span className={`block text-xs px-1.5 py-0.5 rounded-full font-medium w-fit mt-0.5 ${priorityBadge(j.priority)}`}>{j.priority}</span>
                   </td>
                   <td className="px-4 py-3 text-gray-500 text-xs">{j.property}<br/>{j.unit}</td>
                   <td className="px-4 py-3">
@@ -237,16 +399,24 @@ export default function Contractors() {
                   </td>
                 </tr>
               ))}
-              {jobs.length === 0 && (
-                <tr><td colSpan="8" className="px-5 py-8 text-center text-gray-400">No maintenance jobs yet.</td></tr>
+              {filteredJobs.length === 0 && (
+                <tr><td colSpan="8" className="px-5 py-8 text-center text-gray-400">
+                  {jobs.length === 0 ? 'No maintenance jobs yet.' : 'No jobs match the current filter.'}
+                </td></tr>
               )}
             </tbody>
-            {jobs.length > 0 && (
+            {filteredJobs.length > 0 && (
               <tfoot className="bg-gray-50 border-t border-gray-200">
                 <tr>
-                  <td colSpan="3" className="px-4 py-2.5 text-xs font-medium text-gray-500">Totals</td>
-                  <td className="px-4 py-2.5 text-xs font-medium text-gray-700">£{totalEstimated.toLocaleString()}</td>
-                  <td className="px-4 py-2.5 text-xs font-bold text-gray-900">£{totalSpend.toLocaleString()}</td>
+                  <td colSpan="3" className="px-4 py-2.5 text-xs font-medium text-gray-500">
+                    Totals{jobFilter !== 'all' ? ' (filtered)' : ''}
+                  </td>
+                  <td className="px-4 py-2.5 text-xs font-medium text-gray-700">
+                    £{filteredJobs.reduce((s,j) => s + (j.estimated_cost||0), 0).toLocaleString()}
+                  </td>
+                  <td className="px-4 py-2.5 text-xs font-bold text-gray-900">
+                    £{filteredJobs.reduce((s,j) => s + (j.actual_cost||0), 0).toLocaleString()}
+                  </td>
                   <td colSpan="3"></td>
                 </tr>
               </tfoot>
@@ -356,6 +526,54 @@ export default function Contractors() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Reviews modal */}
+      {reviewsModal && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[80vh] flex flex-col">
+            <div className="px-6 py-4 border-b border-gray-100 flex items-start justify-between">
+              <div>
+                <h3 className="text-lg font-bold text-gray-900">{reviewsModal.contractor.full_name}</h3>
+                {reviewsModal.contractor.company_name && <p className="text-sm text-gray-500">{reviewsModal.contractor.company_name}</p>}
+                {reviewsModal.data && (
+                  <div className="mt-2">
+                    <Stars rating={reviewsModal.data.avg_rating} count={reviewsModal.data.review_count} />
+                  </div>
+                )}
+              </div>
+              <button onClick={() => setReviewsModal(null)} className="text-gray-400 hover:text-gray-600 text-2xl leading-none ml-4">&times;</button>
+            </div>
+
+            <div className="overflow-y-auto flex-1 divide-y divide-gray-100">
+              {loadingReviews && (
+                <p className="px-6 py-8 text-sm text-gray-400 text-center">Loading reviews…</p>
+              )}
+              {!loadingReviews && reviewsModal.data?.reviews?.length === 0 && (
+                <p className="px-6 py-8 text-sm text-gray-400 text-center">No reviews yet.</p>
+              )}
+              {!loadingReviews && reviewsModal.data?.reviews?.map(r => (
+                <div key={r.id} className="px-6 py-4">
+                  <div className="flex items-center justify-between mb-1">
+                    <div className="flex items-center gap-2">
+                      <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${r.reviewer_type === 'tenant' ? 'bg-violet-100 text-violet-700' : 'bg-indigo-100 text-indigo-700'}`}>
+                        {r.reviewer_type === 'tenant' ? '🏠 Tenant' : '🏢 Agent'}
+                      </span>
+                      <span className="text-xs text-gray-500">{r.reviewer_name}</span>
+                    </div>
+                    <span className="text-xs text-gray-400">{r.created_at ? new Date(r.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : ''}</span>
+                  </div>
+                  <div className="flex gap-0.5 mb-1">
+                    {[1,2,3,4,5].map(n => (
+                      <span key={n} className={`text-base ${n <= r.stars ? 'text-yellow-400' : 'text-gray-200'}`}>★</span>
+                    ))}
+                  </div>
+                  {r.comment && <p className="text-sm text-gray-600 italic">"{r.comment}"</p>}
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       )}

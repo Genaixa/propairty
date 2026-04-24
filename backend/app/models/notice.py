@@ -21,6 +21,7 @@ class LegalNotice(Base):
     check_epc = Column(String, nullable=True)
     check_deposit = Column(String, nullable=True)
     check_how_to_rent = Column(String, nullable=True)
+    viewed_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     lease = relationship("Lease")

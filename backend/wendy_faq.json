@@ -1,0 +1,192 @@
+[
+  {
+    "category": "General",
+    "q": "What is PropAIrty?",
+    "a": "PropAIrty is an all-in-one property management platform built for UK letting agencies. It connects four portals — agent, tenant, landlord and contractor — in a single system, with AI woven through every feature. 31 features, built in from day one, all sharing the same live data."
+  },
+  {
+    "category": "General",
+    "q": "Who is PropAIrty for?",
+    "a": "Primarily for UK letting agents and property managers who want to replace a patchwork of spreadsheets, email chains and separate tools with one joined-up system. It also serves landlords, tenants and contractors through their own dedicated portals."
+  },
+  {
+    "category": "General",
+    "q": "How does PropAIrty differ from other property management software?",
+    "a": "Most platforms are built around a core ledger with bolt-on modules you pay extra for. PropAIrty ships all 31 features as one system — AI assistant, self-service portals for tenants, landlords and contractors, electronic signing, automated workflows, a phone agent, compliance tracking and more — all sharing the same live data from day one."
+  },
+  {
+    "category": "General",
+    "q": "How do I get started?",
+    "a": "Book a demo and we'll walk you through the platform with your own portfolio data. We can have your agency live — properties, tenants, landlords and contractors all imported — within a day."
+  },
+  {
+    "category": "General",
+    "q": "What is the pricing?",
+    "a": "Pricing is based on portfolio size. Book a demo and we'll give you a tailored quote. There are no module fees — every feature is included in one subscription."
+  },
+  {
+    "category": "General",
+    "q": "Can multiple agencies use PropAIrty on the same installation?",
+    "a": "Yes. PropAIrty supports multiple organisations with complete data isolation — each agency has its own portfolio, users and settings. Data never crosses between organisations."
+  },
+  {
+    "category": "General",
+    "q": "Is PropAIrty UK-specific?",
+    "a": "Yes. It is built around UK tenancy law — AST agreements, Section 21 and Section 8 notices, Section 13 rent increases, Right to Rent checks, deposit protection schemes (TDS, DPS, myDeposits) and EICR/EPC/gas safety compliance requirements."
+  },
+  {
+    "category": "Agent Portal",
+    "q": "What does the agent portal cover?",
+    "a": "Everything a letting agency needs day-to-day: property and tenant management, compliance tracking, maintenance jobs, legal notices, document generation, electronic signing, payments and arrears, inspections, inventory, PPM schedules, applicant pipeline, rent risk scoring, analytics, AI tools, automated workflows, files store and audit trail."
+  },
+  {
+    "category": "Agent Portal",
+    "q": "What user roles are available?",
+    "a": "Five roles: Admin (full access), Manager (full access), Negotiator (no Finance or Intelligence sections), Accounts (no Operations or Intelligence sections) and Read-only. You can also restrict any user to a specific subset of properties — they'll only see those properties anywhere in the system."
+  },
+  {
+    "category": "Agent Portal",
+    "q": "How does compliance tracking work?",
+    "a": "Every property has compliance certificates tracked against it — Gas Safety, EICR, EPC, Fire Risk, PAT, Legionella, CO alarms, HMO licence and custom types. Each shows days until expiry, colour-coded green/amber/red. Telegram alerts fire as expiry approaches. Certificate PDFs are stored against each record."
+  },
+  {
+    "category": "Agent Portal",
+    "q": "Can I generate legal documents from within the system?",
+    "a": "Yes. AST agreements, Section 21 and Section 8 notices, deposit receipts, renewal offer letters, Section 13 rent increase notices and rent statements are all generated as print-ready PDFs from your live tenancy data — no copy-pasting required."
+  },
+  {
+    "category": "Agent Portal",
+    "q": "Does PropAIrty support electronic signing?",
+    "a": "Yes. Send any document for e-signature from within PropAIrty. Recipients get a secure link — no account needed. You can track signing status (sent, opened, signed, declined) and the completed document is returned and stored automatically against the tenancy."
+  },
+  {
+    "category": "Agent Portal",
+    "q": "What are automated workflows?",
+    "a": "A built-in rules engine that runs daily checks and fires emails or alerts automatically. Examples: rent overdue by 3 days → email tenant; lease expiring in 60 days → alert landlord; maintenance job stalled → flag to agent; compliance expiring in 30 days → Telegram alert. Rules are togglable and fully configurable."
+  },
+  {
+    "category": "Agent Portal",
+    "q": "How does Right to Rent tracking work?",
+    "a": "You log the document type, check date and expiry for each tenant. The RTR dashboard shows all tenants with time-limited documents sorted by urgency. Alerts fire before documents expire so you can re-check and update the record — keeping a clean audit trail."
+  },
+  {
+    "category": "Agent Portal",
+    "q": "Is there a full audit trail?",
+    "a": "Yes. Every create, update and delete action in PropAIrty is logged — who did it, what they changed and when. The log is immutable, searchable and filterable by user, date range and action type. Essential for regulatory inspections and dispute resolution."
+  },
+  {
+    "category": "Agent Portal",
+    "q": "Can I track income and expenditure across the portfolio?",
+    "a": "Yes. The Accounting section produces an income and expenditure report across all properties and landlords, filtered by date range or property. Export as PDF or CSV for your accountant or for landlord year-end reviews."
+  },
+  {
+    "category": "Agent Portal",
+    "q": "Does PropAIrty send satisfaction surveys after maintenance jobs?",
+    "a": "Yes. When a maintenance job is marked complete, a survey email is automatically sent to the reporting tenant. They rate the work and leave a comment via a simple link — no login required. Low scores are flagged for agent follow-up."
+  },
+  {
+    "category": "Landlord Portal",
+    "q": "What can landlords see in their portal?",
+    "a": "Everything about their portfolio: live rent collected vs expected, arrears, maintenance jobs, compliance certificates, inspection reports, documents, upcoming renewals and direct messaging with the agency. Monthly statements are auto-generated and emailed on the 1st of each month."
+  },
+  {
+    "category": "Landlord Portal",
+    "q": "What is the CFO tab in the landlord portal?",
+    "a": "A financial overview of the landlord's portfolio: net income over the last 12 months, gross rent vs repairs and agency fees, yield score per property (Star / OK / Watch / Drop) and a 12-month gross rent forecast chart. The landlord can enter their agency fee percentage to see true net figures."
+  },
+  {
+    "category": "Landlord Portal",
+    "q": "Can landlords see if tenants are in arrears?",
+    "a": "Yes. A dedicated Arrears tab shows any tenants behind on rent — how many days overdue and the outstanding amount. The Overview tab also shows a clickable arrears banner if any rent is overdue."
+  },
+  {
+    "category": "Landlord Portal",
+    "q": "Can landlords communicate with the agency through their portal?",
+    "a": "Yes. The Messages tab in the landlord portal is a direct channel between the landlord and the letting agency. All messages are visible to agents in the agent portal in real time."
+  },
+  {
+    "category": "Tenant Portal",
+    "q": "What can tenants do in their portal?",
+    "a": "View and download their tenancy agreement and documents, see their rent schedule and payment history, report maintenance with photos, submit meter readings, accept or decline renewal offers, view their deposit details, track their Right to Rent status, access a move-out checklist and contact emergency numbers — all without calling the office."
+  },
+  {
+    "category": "Tenant Portal",
+    "q": "Can tenants report maintenance issues?",
+    "a": "Yes. Tenants fill in a short form: title, category (plumbing, electrical, heating, etc.), priority (low to urgent) and description. The job appears instantly in the agent portal and triggers the AI dispatch workflow."
+  },
+  {
+    "category": "Tenant Portal",
+    "q": "Can tenants submit meter readings?",
+    "a": "Yes. Electricity, gas and water readings can be submitted from the Meters tab. All readings are stored and immediately visible to agents."
+  },
+  {
+    "category": "Tenant Portal",
+    "q": "Can tenants accept a lease renewal offer online?",
+    "a": "Yes. If an agent sends a renewal offer, tenants see the proposed new rent, dates and any notes from the agent. They can accept or decline with a single click — the response is recorded and the agent is notified."
+  },
+  {
+    "category": "Tenant Portal",
+    "q": "Is there a move-out checklist for tenants?",
+    "a": "Yes. The Move Out tab shows a checklist of tasks to complete before leaving, with a countdown to the lease end date. Progress is saved on the tenant's device so it persists between sessions."
+  },
+  {
+    "category": "Contractor Portal",
+    "q": "What can contractors do in their portal?",
+    "a": "View all assigned maintenance jobs (filtered by active, completed or cancelled), mark jobs complete, upload before and after photos, message the agency directly, view a monthly calendar of scheduled jobs and manage their profile and notification preferences."
+  },
+  {
+    "category": "Contractor Portal",
+    "q": "How are contractors notified of new jobs?",
+    "a": "When an agent dispatches a job, the contractor sees it immediately in their portal. Notifications can be configured as email, SMS or Telegram — whichever the contractor prefers."
+  },
+  {
+    "category": "Contractor Portal",
+    "q": "Can contractors choose how they receive job alerts?",
+    "a": "Yes. Each contractor sets their own notification preferences in the portal — email, SMS or Telegram. They can update this at any time from the Notification Preferences tab."
+  },
+  {
+    "category": "Agency Website",
+    "q": "Does PropAIrty include a public property listings website?",
+    "a": "Yes. Every agency gets a fully branded public site at their own URL. Available properties appear automatically when marked as available in the portfolio. The site includes property search with filters, an About page, Landlords page, Contact form, Blog and a Valuation request form for landlord leads."
+  },
+  {
+    "category": "Agency Website",
+    "q": "Can I use my own domain name for the public website?",
+    "a": "Yes. Point your own domain to PropAIrty and the public site serves under your branding with no PropAIrty mentions. Alternatively use your-agency.propairty.co.uk."
+  },
+  {
+    "category": "Agency Website",
+    "q": "What pages are included on the agency website?",
+    "a": "Property listings with search and filters, property detail pages, About, Landlords (lead gen), Contact, Blog (with individual post pages), Valuation request form and Privacy/Terms pages. All copy is editable from the agent portal."
+  },
+  {
+    "category": "AI & Automation",
+    "q": "What AI tools are included?",
+    "a": "PropAIrty ships with ten AI tools: AI portfolio chat assistant, daily news briefing, AI maintenance dispatch, rent optimisation, churn risk predictor, void risk, AI phone agent, email triage, applicant scoring and contractor performance scoring. Plus an AI drafting suite: listing generator, lease analyser, deposit dispute letters, EPC roadmaps, insurance claim reports, Section 13 notices and landlord tax summaries."
+  },
+  {
+    "category": "AI & Automation",
+    "q": "How does the AI chat assistant work?",
+    "a": "The AI assistant has direct read access to your live portfolio data — leases, payments, maintenance jobs, compliance certificates, tenants and properties. Ask anything in plain English: \"Which gas certs expire this quarter?\", \"Which tenants are in arrears on leases expiring before August?\" — and get specific, accurate answers from your actual data."
+  },
+  {
+    "category": "AI & Automation",
+    "q": "What is the AI phone agent?",
+    "a": "A Twilio-powered voice assistant that answers inbound calls on your agency number 24/7. It collects the caller's details and issue description, logs a maintenance job automatically in PropAIrty and sends the agent a Telegram alert — even at 2am on a bank holiday weekend."
+  },
+  {
+    "category": "AI & Automation",
+    "q": "How does rent optimisation work?",
+    "a": "The rent optimisation tool scans your portfolio and flags units where the current rent appears below market rate, with a suggested uplift and a one-click button to email the landlord directly from the tool."
+  },
+  {
+    "category": "AI & Automation",
+    "q": "What is churn risk?",
+    "a": "The churn risk tool analyses active tenancies and flags tenants likely to leave at renewal — based on lease length, payment history and other signals — so you can engage them proactively before they give notice."
+  },
+  {
+    "category": "AI & Automation",
+    "q": "What is the daily news briefing?",
+    "a": "PropAIrty scans UK property and legal news sources — Estate Agent Today, Property Industry Eye, Property Reporter and others — and produces a concise daily briefing tailored to letting agents. Updated throughout the day and shown on your dashboard. No email required."
+  }
+]

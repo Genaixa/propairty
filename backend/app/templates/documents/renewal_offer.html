@@ -50,11 +50,12 @@
   .notes-box p { color: #78350f; margin: 0; }
 
   .response-box { border: 2px solid #4f46e5; border-radius: 10px; padding: 20px 24px; margin: 28px 0; }
-  .response-box h3 { font-size: 14px; font-weight: 700; color: #4f46e5; margin-bottom: 12px; }
-  .sig-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-top: 12px; }
+  .response-box h3 { font-size: 14px; font-weight: 700; color: #4f46e5; margin-bottom: 6px; }
+  .response-box .sub { font-size: 12px; color: #6b7280; margin-bottom: 16px; }
+  .sig-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-top: 16px; }
   .sig-block .label { font-size: 11px; color: #6b7280; margin-bottom: 6px; }
   .sig-line { border-bottom: 1px solid #d1d5db; height: 36px; margin-bottom: 6px; }
-  .sig-option { display: inline-block; border: 1px solid #d1d5db; border-radius: 6px; padding: 6px 16px; font-size: 12px; color: #374151; margin-right: 12px; }
+  .sig-option { display: inline-block; border: 1px solid #d1d5db; border-radius: 6px; padding: 8px 18px; font-size: 12px; font-weight: 600; color: #374151; margin-right: 12px; margin-bottom: 8px; }
 
   .footer { margin-top: 40px; padding-top: 16px; border-top: 1px solid #e5e7eb; font-size: 10px; color: #9ca3af; display: flex; justify-content: space-between; }
 </style>
@@ -78,7 +79,13 @@
 
   <p>Dear {{ tenant_name }},</p>
 
-  <p>Your current tenancy at <strong>{{ property_address }}</strong> is due to expire on <strong>{{ current_end }}</strong>. We are pleased to offer you the opportunity to renew your tenancy on the following terms:</p>
+  <p>Your current tenancy at <strong>{{ property_address }}</strong>
+  {% if current_end != '—' %}
+    is due to expire on <strong>{{ current_end }}</strong>.
+  {% else %}
+    is currently running on a periodic (rolling) basis.
+  {% endif %}
+  We are pleased to offer you the opportunity to renew your tenancy on the following terms:</p>
 
   <!-- Rent comparison -->
   <div class="rent-comparison">
@@ -117,21 +124,20 @@
 
   {% if agent_notes %}
   <div class="notes-box">
-    <div class="label">Additional notes</div>
+    <div class="label">Note from your letting agent</div>
     <p>{{ agent_notes }}</p>
   </div>
   {% endif %}
 
-  <p>All other terms and conditions of your existing tenancy agreement remain unchanged.</p>
-
-  <p>Please respond by logging into your tenant portal at <strong>propairty.co.uk/tenant/portal</strong> or by signing and returning this letter.</p>
+  <p>All other terms and conditions of your existing tenancy agreement remain unchanged. If you have made any agreed alterations to the property, these are acknowledged as part of the renewed tenancy.</p>
 
   <!-- Response section -->
   <div class="response-box">
-    <h3>Response (please circle and sign)</h3>
-    <div style="margin-bottom:16px;">
-      <span class="sig-option">☐ I ACCEPT the renewal offer</span>
-      <span class="sig-option">☐ I DECLINE the renewal offer</span>
+    <h3>How to Respond</h3>
+    <p class="sub">The easiest way to accept or decline is via your tenant portal — log in at <strong>propairty.co.uk/tenant</strong> and go to the Renewals tab. Alternatively, you may sign and return this letter to your letting agent.</p>
+    <div>
+      <span class="sig-option">&#9744;&nbsp; I ACCEPT the renewal offer</span>
+      <span class="sig-option">&#9744;&nbsp; I DECLINE the renewal offer</span>
     </div>
     <div class="sig-grid">
       <div class="sig-block">
@@ -146,12 +152,12 @@
     </div>
   </div>
 
-  <p>If you have any questions about this offer, please do not hesitate to contact us.</p>
+  <p>If you have any questions about this offer, please contact us and we will be happy to discuss.</p>
 
-  <p>Yours sincerely,<br><strong>{{ org_name }}</strong><br>PropAIrty Property Management</p>
+  <p>Yours sincerely,<br><strong>{{ org_name }}</strong></p>
 
   <div class="footer">
-    <span>{{ org_name }} · PropAIrty</span>
+    <span>{{ org_name }}</span>
     <span>{{ ref }} · Generated {{ today }}</span>
   </div>
 

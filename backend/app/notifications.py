@@ -125,6 +125,63 @@ def check_open_maintenance(db: Session):
     send("\n".join(lines))
 
 
+def send_photo(image_path: str, caption: str = "", chat_id: str = None) -> bool:
+    token = BOT_TOKEN
+    cid = chat_id or CHAT_ID
+    if not token or not cid:
+        return False
+    try:
+        with open(image_path, "rb") as f:
+            r = httpx.post(
+                f"https://api.telegram.org/bot{token}/sendPhoto",
+                data={"chat_id": cid, "caption": caption, "parse_mode": "HTML"},
+                files={"photo": f},
+                timeout=20,
+            )
+        return r.status_code == 200
+    except Exception as e:
+        print(f"[Notifications] sendPhoto failed: {e}")
+        return False
+
+
+def send_video(video_path: str, caption: str = "", chat_id: str = None) -> bool:
+    token = BOT_TOKEN
+    cid = chat_id or CHAT_ID
+    if not token or not cid:
+        return False
+    try:
+        with open(video_path, "rb") as f:
+            r = httpx.post(
+                f"https://api.telegram.org/bot{token}/sendVideo",
+                data={"chat_id": cid, "caption": caption, "parse_mode": "HTML"},
+                files={"video": f},
+                timeout=60,
+            )
+        return r.status_code == 200
+    except Exception as e:
+        print(f"[Notifications] sendVideo failed: {e}")
+        return False
+
+
+def send_audio(audio_path: str, caption: str = "", chat_id: str = None) -> bool:
+    token = BOT_TOKEN
+    cid = chat_id or CHAT_ID
+    if not token or not cid:
+        return False
+    try:
+        with open(audio_path, "rb") as f:
+            r = httpx.post(
+                f"https://api.telegram.org/bot{token}/sendAudio",
+                data={"chat_id": cid, "caption": caption, "parse_mode": "HTML"},
+                files={"audio": f},
+                timeout=30,
+            )
+        return r.status_code == 200
+    except Exception as e:
+        print(f"[Notifications] sendAudio failed: {e}")
+        return False
+
+
 def notify_new_maintenance(title: str, unit_name: str, priority: str, reported_by: str = ""):
     """Call this immediately when a new maintenance request is created."""
     icon = "🚨" if priority in ("high", "urgent") else "🔧"

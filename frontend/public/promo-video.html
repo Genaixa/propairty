@@ -1,0 +1,1205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Propairty — Promotional Video</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #000; overflow: hidden; }
+  #root { width: 100vw; height: 100vh; }
+  @keyframes particleDrift {
+    0% { transform: translateY(0px) translateX(0px); opacity: 0.15; }
+    50% { opacity: 0.4; }
+    100% { transform: translateY(-40px) translateX(10px); opacity: 0.05; }
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 0.4; transform: scale(1); }
+    50% { opacity: 0.8; transform: scale(1.05); }
+  }
+  @keyframes scanline {
+    0% { transform: translateY(-100%); }
+    100% { transform: translateY(100vh); }
+  }
+  @keyframes shimmer {
+    0% { background-position: -400px 0; }
+    100% { background-position: 400px 0; }
+  }
+  @keyframes chaosShake {
+    0%,100% { transform: rotate(var(--r)) translate(0,0); }
+    25% { transform: rotate(calc(var(--r) + 2deg)) translate(2px,-1px); }
+    75% { transform: rotate(calc(var(--r) - 1deg)) translate(-1px,2px); }
+  }
+  @keyframes dataFlow {
+    0% { stroke-dashoffset: 200; opacity: 0; }
+    20% { opacity: 1; }
+    100% { stroke-dashoffset: 0; opacity: 0.6; }
+  }
+  @keyframes hubPulse {
+    0%, 100% { box-shadow: 0 0 30px rgba(0,198,255,0.3); }
+    50% { box-shadow: 0 0 60px rgba(0,198,255,0.6), 0 0 100px rgba(0,198,255,0.2); }
+  }
+  @keyframes countUp {
+    from { transform: translateY(30px); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+  }
+  @keyframes gridMove {
+    0% { background-position: 0 0; }
+    100% { background-position: 80px 80px; }
+  }
+</style>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/tone@14.7.77/build/Tone.js"></script>
+<script type="text/babel" src="animations.jsx"></script>
+<script type="text/babel">
+// ─── BRAND ────────────────────────────────────────────────────────────────
+const BR = {
+  bg:      '#020B18',
+  navy:    '#0A1628',
+  blue:    '#1254B7',
+  accent:  '#00C6FF',
+  purple:  '#8B5CF6',
+  green:   '#34D399',
+  amber:   '#F59E0B',
+  white:   '#FFFFFF',
+  muted:   '#4B6A8A',
+  dimmed:  '#1E3A5F',
+  card:    'rgba(255,255,255,0.04)',
+  font:    "'Plus Jakarta Sans', sans-serif",
+};
+
+// ─── SUBTITLES ────────────────────────────────────────────────────────────
+const SUBS = [
+  { s: 2.5, e: 10.5, t: "Managing property means juggling a dozen different tools." },
+  { s: 11,  e: 18.5, t: "Integrations that break. Data that never syncs. Time that disappears." },
+  { s: 14,  e: 21.5, t: "There has to be a better way." },
+  { s: 23,  e: 30,   t: "Propairty. Thirty-one features. One platform. Live data from day one." },
+  { s: 31,  e: 38,   t: "Built in. No bolt-ons. No integrations to manage." },
+  { s: 40,  e: 47,   t: "Six AI tools that turn your entire portfolio into plain-English answers." },
+  { s: 49,  e: 57,   t: "Every compliance certificate. Every maintenance job. Every notice — connected." },
+  { s: 59,  e: 66,   t: "Tenant, landlord and contractor portals. Built in. No extra charge." },
+  { s: 68,  e: 75,   t: "From automated workflows to audit trails — every admin tool included." },
+  { s: 77,  e: 83,   t: "One live system. Every decision backed by real data." },
+  { s: 84,  e: 90,   t: "Propairty. The last platform your agency will ever need." },
+];
+
+// ─── MOUSE PARALLAX ───────────────────────────────────────────────────────
+// Uses a module-level ref instead of React state — no extra re-renders from mouse moves.
+// Since components already re-render at 60fps from the animation RAF, they sample
+// this at 60fps naturally. The 0.5s CSS transition smooths out any sub-frame gaps.
+const _mousePos = { x: 0, y: 0 };
+if (!window.__propMouseSetup) {
+  window.__propMouseSetup = true;
+  window.addEventListener('mousemove', (e) => {
+    _mousePos.x = (e.clientX / window.innerWidth - 0.5) * 2;
+    _mousePos.y = (e.clientY / window.innerHeight - 0.5) * 2;
+  }, { passive: true });
+}
+function useMouseParallax() { return _mousePos; }
+function px(mouse, depth) {
+  return {
+    transform: `translate(${mouse.x * depth * 18}px, ${mouse.y * depth * 12}px)`,
+    transition: 'transform 0.5s cubic-bezier(0.25,0.46,0.45,0.94)',
+  };
+}
+
+// ─── PARTICLE FIELD ────────────────────────────────────────────────────────
+// Canvas-based: runs its own RAF entirely outside React's reconciliation cycle.
+// 55 React-managed divs each reconciled at 60fps → 0 React overhead.
+function ParticleField({ count = 45 }) {
+  const canvasRef = React.useRef(null);
+  React.useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const W = 1920, H = 1080;
+    canvas.width = W; canvas.height = H;
+    const pts = Array.from({ length: count }, () => ({
+      x: Math.random() * W, y: Math.random() * H,
+      r: Math.random() * 1.5 + 0.4,
+      vx: (Math.random() - 0.5) * 0.35,
+      vy: -(Math.random() * 0.35 + 0.08),
+      op: Math.random() * 0.3 + 0.05,
+      dop: (Math.random() > 0.5 ? 1 : -1) * 0.003,
+    }));
+    let raf;
+    const draw = () => {
+      ctx.clearRect(0, 0, W, H);
+      for (const p of pts) {
+        p.x += p.vx; p.y += p.vy;
+        p.op += p.dop;
+        if (p.op > 0.4 || p.op < 0.03) p.dop *= -1;
+        if (p.y < -2) { p.y = H + 2; p.x = Math.random() * W; }
+        if (p.x < -2) p.x = W + 2;
+        if (p.x > W + 2) p.x = -2;
+        ctx.globalAlpha = p.op;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+        ctx.fillStyle = '#00C6FF';
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+      raf = requestAnimationFrame(draw);
+    };
+    raf = requestAnimationFrame(draw);
+    return () => cancelAnimationFrame(raf);
+  }, []);
+  return (
+    <canvas ref={canvasRef} style={{
+      position: 'absolute', inset: 0,
+      width: '100%', height: '100%',
+      pointerEvents: 'none', zIndex: 0,
+    }} />
+  );
+}
+
+// ─── GRID BACKGROUND ──────────────────────────────────────────────────────
+function GridBg({ opacity = 1 }) {
+  return (
+    <div style={{
+      position: 'absolute', inset: 0, pointerEvents: 'none',
+      backgroundImage: `linear-gradient(rgba(0,198,255,0.04) 1px, transparent 1px), linear-gradient(90deg, rgba(0,198,255,0.04) 1px, transparent 1px)`,
+      backgroundSize: '80px 80px',
+      opacity,
+      animation: 'gridMove 12s linear infinite',
+    }} />
+  );
+}
+
+// ─── LOGO ──────────────────────────────────────────────────────────────────
+function Logo({ scale = 1, glow = 1 }) {
+  const s = 72 * scale;
+  return (
+    <div style={{
+      fontFamily: BR.font, fontSize: s, fontWeight: 900,
+      letterSpacing: '-0.04em', lineHeight: 1,
+      filter: `drop-shadow(0 0 ${28 * glow}px rgba(0,198,255,${0.6 * glow}))`,
+      display: 'flex', alignItems: 'baseline',
+    }}>
+      <span style={{ color: '#fff' }}>Prop</span>
+      <span style={{
+        background: `linear-gradient(135deg, ${BR.accent} 0%, ${BR.purple} 100%)`,
+        WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
+      }}>AI</span>
+      <span style={{ color: '#fff' }}>rty</span>
+    </div>
+  );
+}
+
+// ─── SUBTITLE BAR ─────────────────────────────────────────────────────────
+function SubtitleBar({ time, fontSize = 22 }) {
+  const sub = SUBS.find(s => time >= s.s && time < s.e);
+  return (
+    <div style={{
+      position: 'absolute', bottom: 52, left: '50%', transform: 'translateX(-50%)',
+      maxWidth: 1200, textAlign: 'center', zIndex: 200, pointerEvents: 'none',
+      opacity: sub ? 1 : 0, transition: 'opacity 0.5s',
+    }}>
+      <div style={{
+        background: 'rgba(2,11,24,0.88)', backdropFilter: 'blur(12px)',
+        padding: '12px 32px', borderRadius: 8,
+        border: '1px solid rgba(0,198,255,0.12)',
+        display: 'inline-block',
+      }}>
+        <span style={{ color: '#fff', fontSize, fontWeight: 500, fontFamily: BR.font, letterSpacing: '-0.01em' }}>
+          {sub?.t}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+// ─── LABEL PILL ───────────────────────────────────────────────────────────
+function Pill({ label, color }) {
+  return (
+    <div style={{
+      display: 'inline-flex', alignItems: 'center', gap: 6,
+      padding: '6px 18px', borderRadius: 100,
+      background: `${color}18`, border: `1px solid ${color}44`,
+      color, fontSize: 12, fontWeight: 700, letterSpacing: '0.1em',
+      fontFamily: BR.font, textTransform: 'uppercase',
+    }}>
+      <span style={{ fontSize: 8, opacity: 0.8 }}>▲</span> {label}
+    </div>
+  );
+}
+
+// ─── SCENE 1: CHAOS (2–12s) ──────────────────────────────────────────────
+const TOOLS = [
+  { n: 'Xero',         c: '#13B5EA', sub: 'Accounting' },
+  { n: 'DocuSign',     c: '#FFBD00', sub: 'Signing' },
+  { n: 'Fixflo',       c: '#FF6B35', sub: 'Maintenance' },
+  { n: 'Slack',        c: '#E01E5A', sub: 'Comms' },
+  { n: 'Rightmove',    c: '#00DEB6', sub: 'Listings' },
+  { n: 'Outlook',      c: '#0078D4', sub: 'Email' },
+  { n: 'Google Drive', c: '#EA4335', sub: 'Docs' },
+  { n: 'Zoopla',       c: '#8519E7', sub: 'Search' },
+  { n: 'Trello',       c: '#0052CC', sub: 'Tasks' },
+  { n: 'Dropbox',      c: '#0061FF', sub: 'Storage' },
+  { n: 'Stripe',       c: '#635BFF', sub: 'Payments' },
+  { n: 'HubSpot',      c: '#FF7A59', sub: 'CRM' },
+];
+const TOOL_POS = [
+  { x: 60,  y: 80,  r: -6 }, { x: 300, y: 40,  r: 4  }, { x: 560, y: 100, r: -3 },
+  { x: 810, y: 55,  r: 6  }, { x: 1060,y: 90,  r: -5 }, { x: 1300,y: 60,  r: 3  },
+  { x: 120, y: 310, r: 7  }, { x: 380, y: 360, r: -8 }, { x: 650, y: 290, r: 4  },
+  { x: 920, y: 340, r: -6 }, { x: 1160,y: 280, r: 5  }, { x: 1380,y: 330, r: -3 },
+];
+
+function ChaosScene({ time }) {
+  const t = time - 2;
+  const overall = interpolate([0, 1, 8.5, 10], [0, 1, 1, 0])(Math.max(0, t));
+  const errorGlow = interpolate([5, 9], [0, 1])(Math.max(0, t));
+
+  return (
+    <div style={{ position: 'absolute', inset: 0, overflow: 'hidden' }}>
+      {/* error red tint */}
+      <div style={{
+        position: 'absolute', inset: 0, pointerEvents: 'none',
+        background: `radial-gradient(ellipse at center, rgba(255,60,60,${errorGlow * 0.18}) 0%, transparent 65%)`,
+      }} />
+
+      {/* Tool cards */}
+      {TOOLS.map((tool, i) => {
+        const pos = TOOL_POS[i];
+        const tp = interpolate([i * 0.08, i * 0.08 + 0.4, 0.85, 1], [0, 1, 1, 0])(overall);
+        return (
+          <div key={tool.n} style={{
+            position: 'absolute', left: pos.x, top: pos.y,
+            '--r': `${pos.r}deg`,
+            transform: `rotate(${pos.r}deg)`,
+            opacity: tp,
+            animation: tp > 0.1 ? `chaosShake 2.${i % 4}s ${i * 0.15}s ease-in-out infinite` : 'none',
+          }}>
+            <div style={{
+              background: `linear-gradient(135deg, rgba(255,255,255,0.07), rgba(255,255,255,0.02))`,
+              border: `1px solid rgba(255,255,255,0.12)`,
+              borderRadius: 12, padding: '14px 18px',
+              backdropFilter: 'blur(10px)',
+              display: 'flex', alignItems: 'center', gap: 10,
+              minWidth: 148,
+            }}>
+              <div style={{
+                width: 30, height: 30, borderRadius: 8,
+                background: `${tool.c}22`, border: `1px solid ${tool.c}55`,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: 13, fontWeight: 900, color: tool.c, fontFamily: BR.font,
+              }}>
+                {tool.n[0]}
+              </div>
+              <div>
+                <div style={{ color: '#fff', fontSize: 13, fontWeight: 700, fontFamily: BR.font }}>{tool.n}</div>
+                <div style={{ color: '#FF4D4D', fontSize: 10, fontWeight: 600, fontFamily: BR.font, marginTop: 2 }}>
+                  ● Sync error
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })}
+
+      {/* Chaotic connection lines */}
+      <svg style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none', opacity: overall * 0.35 }}>
+        {[[0,7],[1,9],[2,10],[3,5],[4,8],[5,11],[6,1],[7,3],[8,0]].map(([a, b], i) => {
+          const pa = TOOL_POS[a], pb = TOOL_POS[b];
+          return (
+            <line key={i}
+              x1={pa.x + 74} y1={pa.y + 28}
+              x2={pb.x + 74} y2={pb.y + 28}
+              stroke="#FF4D4D" strokeWidth="1"
+              strokeDasharray="5 5" opacity="0.5" />
+          );
+        })}
+      </svg>
+
+      {/* Central headline */}
+      <div style={{
+        position: 'absolute', bottom: 140, left: '50%',
+        transform: 'translateX(-50%)', textAlign: 'center',
+        opacity: interpolate([0.4, 0.7, 0.9, 1], [0, 1, 1, 0])(overall),
+      }}>
+        <div style={{
+          fontSize: 54, fontWeight: 900, color: '#fff',
+          fontFamily: BR.font, letterSpacing: '-0.035em', lineHeight: 1.1,
+          textShadow: '0 4px 24px rgba(0,0,0,0.8)',
+        }}>
+          Too many tools.<br />Too many problems.
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── SCENE 2: BREAK (12–22s) ──────────────────────────────────────────────
+function BreakScene({ time }) {
+  const t = time - 12;
+  const p = interpolate([0, 1.5, 7.5, 10], [0, 1, 1, 0], Easing.easeOutCubic)(Math.max(0, t));
+  const mouse = useMouseParallax();
+
+  return (
+    <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ opacity: p, textAlign: 'center', ...px(mouse, 0.4) }}>
+        <div style={{
+          fontSize: 96, fontWeight: 900, fontFamily: BR.font,
+          letterSpacing: '-0.045em', lineHeight: 1,
+          color: '#fff',
+        }}>
+          There's<br />
+          <span style={{
+            background: `linear-gradient(135deg, ${BR.accent} 0%, ${BR.purple} 100%)`,
+            WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
+            display: 'inline-block',
+            filter: `drop-shadow(0 0 ${40 * p}px rgba(0,198,255,0.5))`,
+          }}>a better way.</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── SCENE 3: HERO REVEAL (22–34s) ────────────────────────────────────────
+function HeroScene({ time }) {
+  const t = time - 22;
+  const mouse = useMouseParallax();
+  const fadeIn = interpolate([0, 2], [0, 1], Easing.easeOutExpo)(Math.max(0, t));
+  const tagIn  = interpolate([1.5, 3.5], [0, 1], Easing.easeOutCubic)(Math.max(0, t));
+  const badgeIn = interpolate([3, 5.5], [0, 1], Easing.easeOutCubic)(Math.max(0, t));
+  const NUM_FEATURES = ['31', 'features', 'Built in.', 'No integrations.'];
+
+  return (
+    <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+      {/* Glow behind logo */}
+      <div style={{
+        position: 'absolute', top: '35%', left: '50%',
+        transform: 'translate(-50%, -50%)',
+        width: 600, height: 400,
+        background: `radial-gradient(ellipse at center, rgba(0,198,255,0.18) 0%, transparent 70%)`,
+        opacity: fadeIn, pointerEvents: 'none',
+      }} />
+
+      {/* Logo */}
+      <div style={{
+        opacity: fadeIn,
+        transform: `translateY(${(1 - fadeIn) * 50}px)`,
+        marginBottom: 20,
+        ...px(mouse, 0.9),
+      }}>
+        <Logo scale={1.3} glow={fadeIn} />
+      </div>
+
+      {/* Tagline */}
+      <div style={{
+        opacity: tagIn,
+        transform: `translateY(${(1 - tagIn) * 24}px)`,
+        textAlign: 'center', marginBottom: 44,
+        ...px(mouse, 0.55),
+      }}>
+        <p style={{
+          fontSize: 26, color: BR.muted, fontWeight: 400,
+          fontFamily: BR.font, letterSpacing: '-0.01em',
+        }}>
+          The only platform built entirely around live, unified property data.
+        </p>
+      </div>
+
+      {/* Feature count pills */}
+      <div style={{
+        display: 'flex', gap: 14, alignItems: 'center',
+        opacity: badgeIn,
+        transform: `translateY(${(1 - badgeIn) * 18}px)`,
+        ...px(mouse, 0.35),
+      }}>
+        {['AI Core', 'Compliance', 'Maintenance', 'Portals', 'Analytics', 'Legal', 'Accounting', 'E-Signing'].map((label, i) => (
+          <div key={label} style={{
+            padding: '9px 20px', borderRadius: 100,
+            border: `1px solid ${BR.accent}33`,
+            background: `${BR.accent}0C`,
+            color: BR.accent, fontSize: 13, fontWeight: 600, fontFamily: BR.font,
+            opacity: interpolate([i * 0.12, i * 0.12 + 0.5], [0, 1])(badgeIn),
+            transform: `translateY(${(1 - Math.min(1, Math.max(0, (badgeIn - i * 0.12) / 0.5))) * 12}px)`,
+          }}>
+            {label}
+          </div>
+        ))}
+      </div>
+
+      {/* "31 features" counter element */}
+      <div style={{
+        position: 'absolute', bottom: 130, right: 100,
+        opacity: interpolate([4, 6], [0, 1])(Math.max(0, t)),
+        ...px(mouse, 1.2),
+      }}>
+        <div style={{
+          background: `linear-gradient(135deg, rgba(0,198,255,0.12), rgba(139,92,246,0.08))`,
+          border: `1px solid rgba(0,198,255,0.25)`,
+          borderRadius: 16, padding: '18px 28px',
+          textAlign: 'center',
+        }}>
+          <div style={{ fontSize: 52, fontWeight: 900, fontFamily: BR.font, color: BR.accent, lineHeight: 1 }}>31</div>
+          <div style={{ fontSize: 13, color: BR.muted, fontFamily: BR.font, fontWeight: 600, marginTop: 4 }}>features built in</div>
+        </div>
+      </div>
+
+      {/* "0 integrations" counter */}
+      <div style={{
+        position: 'absolute', bottom: 130, left: 100,
+        opacity: interpolate([4.5, 6.5], [0, 1])(Math.max(0, t)),
+        ...px(mouse, 0.8),
+      }}>
+        <div style={{
+          background: `linear-gradient(135deg, rgba(52,211,153,0.12), rgba(0,198,255,0.06))`,
+          border: `1px solid rgba(52,211,153,0.25)`,
+          borderRadius: 16, padding: '18px 28px',
+          textAlign: 'center',
+        }}>
+          <div style={{ fontSize: 52, fontWeight: 900, fontFamily: BR.font, color: BR.green, lineHeight: 1 }}>0</div>
+          <div style={{ fontSize: 13, color: BR.muted, fontFamily: BR.font, fontWeight: 600, marginTop: 4 }}>integrations needed</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── SCENE 4: AI CORE (34–50s) ────────────────────────────────────────────
+const AI_FEATS = [
+  { name: 'AI Assistant',          desc: 'Your entire portfolio, answerable in plain English',      icon: '◈', c: BR.accent },
+  { name: 'Daily AI Briefing',     desc: 'UK property news filtered for what matters to your agency', icon: '◉', c: BR.purple },
+  { name: 'AI Maintenance Dispatch', desc: 'Right contractor suggested before you read the job',    icon: '◆', c: BR.green },
+  { name: 'AI Portfolio Intelligence', desc: 'Seven AI tools that turn your data into decisions',   icon: '◇', c: BR.amber },
+  { name: 'AI Drafting Suite',     desc: 'Legal documents and letters drafted in seconds',           icon: '◐', c: BR.accent },
+  { name: 'AI Phone Agent',        desc: 'A voice agent that answers maintenance calls 24/7',        icon: '◑', c: BR.purple },
+];
+
+function AIScene({ time }) {
+  const t = time - 34;
+  const titleP = interpolate([0, 1.5], [0, 1], Easing.easeOutCubic)(Math.max(0, t));
+  const cardsP = interpolate([0.5, 7], [0, 1])(Math.max(0, t));
+
+  return (
+    <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '0 80px' }}>
+      {/* Purple glow */}
+      <div style={{
+        position: 'absolute', inset: 0, pointerEvents: 'none',
+        background: `radial-gradient(ellipse 65% 55% at 50% 50%, rgba(139,92,246,0.14) 0%, transparent 70%)`,
+        opacity: titleP,
+      }} />
+
+      <div style={{
+        opacity: titleP, transform: `translateY(${(1-titleP)*24}px)`,
+        textAlign: 'center', marginBottom: 14, zIndex: 2,
+      }}>
+        <Pill label="AI Core" color={BR.purple} />
+      </div>
+
+      <div style={{
+        opacity: titleP, transform: `translateY(${(1-titleP)*20}px)`,
+        textAlign: 'center', marginBottom: 36, zIndex: 2,
+      }}>
+        <h2 style={{
+          fontSize: 50, fontWeight: 900, color: '#fff',
+          fontFamily: BR.font, letterSpacing: '-0.035em', lineHeight: 1.1,
+        }}>
+          Six AI tools. Built in.<br />
+          <span style={{
+            background: `linear-gradient(135deg, ${BR.accent}, ${BR.purple})`,
+            WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
+          }}>Zero integrations required.</span>
+        </h2>
+      </div>
+
+      <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', justifyContent: 'center', maxWidth: 1100, zIndex: 2 }}>
+        {AI_FEATS.map((f, i) => {
+          const d = i * 0.1;
+          const cp = interpolate([d, d + 0.4], [0, 1], Easing.easeOutBack)(cardsP);
+          return (
+            <div key={f.name} style={{
+              flex: '1 1 calc(33% - 20px)', minWidth: 240, maxWidth: 340,
+              background: `linear-gradient(135deg, ${f.c}12 0%, rgba(0,0,0,0.2) 100%)`,
+              border: `1px solid ${f.c}30`,
+              borderRadius: 16, padding: '22px 24px',
+              opacity: cp, transform: `translateY(${(1-cp)*28}px) scale(${0.92 + cp*0.08})`,
+              boxShadow: `0 0 24px ${f.c}18`,
+            }}>
+              <div style={{ fontSize: 26, color: f.c, marginBottom: 10, fontFamily: BR.font }}>{f.icon}</div>
+              <div style={{ color: '#fff', fontSize: 16, fontWeight: 700, fontFamily: BR.font, marginBottom: 6 }}>{f.name}</div>
+              <div style={{ color: BR.muted, fontSize: 13, lineHeight: 1.55, fontFamily: BR.font }}>{f.desc}</div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ─── SCENE 5: FEATURE BLITZ (50–70s) ─────────────────────────────────────
+const FEAT_GROUPS = [
+  {
+    label: 'Operations', color: BR.accent,
+    items: ['Rent & Arrears Tracking','Compliance Dashboard','Maintenance & Contractors',
+            'Document Generation','Portfolio Analytics','Property Listings Website',
+            'Legal Notices','Renewals & Rent Reviews','Inspections & Inventory',
+            'Deposit Management','Planned Maintenance (PPM)'],
+  },
+  {
+    label: 'Portals & Access', color: BR.green,
+    items: ['Tenant Self-Service Portal','Landlord Portal','Contractor Portal','Multi-Org & Role Access'],
+  },
+  {
+    label: 'Growth & Admin', color: BR.amber,
+    items: ['Applicant Management','Valuation & Risk Tools','Automated Workflows',
+            'Files & Document Store','Electronic Signing','Tenant Satisfaction Surveys',
+            'Accounting & Reporting','Right to Rent & Referencing','Audit Trail','Telegram Alerts'],
+  },
+];
+
+function BlitzScene({ time }) {
+  const t = time - 50;
+  const groupDur = 6.5;
+  const gi = Math.min(2, Math.floor(t / groupDur));
+  const gt = t - gi * groupDur;
+  const g = FEAT_GROUPS[Math.max(0, gi)];
+
+  const enter = interpolate([0, 1], [0, 1], Easing.easeOutCubic)(Math.max(0, gt));
+  const exit  = interpolate([groupDur - 1.2, groupDur], [1, 0])(Math.max(0, gt));
+  const vis   = enter * exit;
+
+  return (
+    <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '0 90px' }}>
+      {g && <>
+        {/* Bg glow */}
+        <div style={{
+          position: 'absolute', inset: 0, pointerEvents: 'none',
+          background: `radial-gradient(ellipse 60% 50% at 50% 50%, ${g.color}10 0%, transparent 70%)`,
+          opacity: vis,
+        }} />
+
+        <div style={{ opacity: vis, transform: `translateY(${(1-enter)*20}px)`, marginBottom: 14, zIndex: 2 }}>
+          <Pill label={g.label} color={g.color} />
+        </div>
+
+        <div style={{
+          opacity: vis, transform: `translateY(${(1-enter)*18}px)`,
+          textAlign: 'center', marginBottom: 32, zIndex: 2,
+        }}>
+          <h2 style={{
+            fontSize: 44, fontWeight: 900, color: '#fff',
+            fontFamily: BR.font, letterSpacing: '-0.03em',
+          }}>
+            Every tool your team needs.{' '}
+            <span style={{
+              background: `linear-gradient(135deg, ${g.color}, ${BR.accent})`,
+              WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
+              display: 'inline-block',
+              backgroundClip: 'text',
+              color: 'transparent',
+            }}>Already built in.</span>
+          </h2>
+        </div>
+
+        <div style={{
+          display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'center',
+          maxWidth: 1100, opacity: vis, zIndex: 2,
+        }}>
+          {g.items.map((item, i) => {
+            const d = i * 0.06;
+            const cp = interpolate([d, d + 0.35], [0, 1], Easing.easeOutBack)(enter);
+            return (
+              <div key={item} style={{
+                padding: '10px 20px', borderRadius: 100,
+                background: `${g.color}10`, border: `1px solid ${g.color}35`,
+                color: '#fff', fontSize: 14, fontWeight: 600, fontFamily: BR.font,
+                opacity: cp * exit,
+                transform: `translateY(${(1-cp)*14}px)`,
+                whiteSpace: 'nowrap',
+              }}>
+                {item}
+              </div>
+            );
+          })}
+        </div>
+      </>}
+    </div>
+  );
+}
+
+// ─── SCENE 6: UNIFIED HUB (70–82s) ────────────────────────────────────────
+const HUB_NODES = [
+  'Rent Tracking', 'AI Assistant', 'Compliance', 'Maintenance',
+  'Tenant Portal', 'Legal Notices', 'Analytics', 'E-Signing',
+  'Document Gen', 'Landlord Portal', 'Accounting', 'Audit Trail',
+];
+
+function HubScene({ time }) {
+  const t = time - 70;
+  const mouse = useMouseParallax();
+  const hubP  = interpolate([0, 2.5], [0, 1], Easing.easeOutCubic)(Math.max(0, t));
+  const textP = interpolate([2.5, 4.5], [0, 1], Easing.easeOutCubic)(Math.max(0, t));
+  const R = 200;
+  const CX = 250, CY = 250;
+
+  return (
+    <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ position: 'relative', width: 500, height: 500, flexShrink: 0, ...px(mouse, 0.5) }}>
+        {/* SVG spokes */}
+        <svg style={{ position: 'absolute', inset: 0, width: 500, height: 500, overflow: 'visible' }}>
+          {HUB_NODES.map((_, i) => {
+            const angle = (i / HUB_NODES.length) * Math.PI * 2 - Math.PI / 2;
+            const x = Math.cos(angle) * R + CX;
+            const y = Math.sin(angle) * R + CY;
+            const nodeP = interpolate([i * 0.07, i * 0.07 + 0.35], [0, 1], Easing.easeOutBack)(hubP);
+            return (
+              <g key={i}>
+                <line x1={CX} y1={CY} x2={x} y2={y}
+                  stroke={BR.accent} strokeWidth="1"
+                  strokeDasharray="200" strokeDashoffset={200 - nodeP * 200}
+                  opacity={0.35 * nodeP} />
+              </g>
+            );
+          })}
+        </svg>
+
+        {/* Center hub */}
+        <div style={{
+          position: 'absolute', top: CY, left: CX,
+          transform: 'translate(-50%, -50%)',
+          width: 130, height: 130, borderRadius: '50%',
+          background: `radial-gradient(circle, rgba(0,198,255,0.2), rgba(0,198,255,0.04))`,
+          border: `2px solid rgba(0,198,255,0.5)`,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          boxShadow: `0 0 40px rgba(0,198,255,0.3)`,
+          animation: 'hubPulse 3s ease-in-out infinite',
+          opacity: hubP, zIndex: 2,
+        }}>
+          <Logo scale={0.3} glow={hubP} />
+        </div>
+
+        {/* Satellite nodes */}
+        {HUB_NODES.map((node, i) => {
+          const angle = (i / HUB_NODES.length) * Math.PI * 2 - Math.PI / 2;
+          const x = Math.cos(angle) * R + CX;
+          const y = Math.sin(angle) * R + CY;
+          const nodeP = interpolate([i * 0.07, i * 0.07 + 0.35], [0, 1], Easing.easeOutBack)(hubP);
+          return (
+            <div key={node} style={{
+              position: 'absolute',
+              left: x, top: y,
+              transform: `translate(-50%, -50%) scale(${0.8 + nodeP * 0.2})`,
+              opacity: nodeP, zIndex: 3,
+              textAlign: 'center',
+            }}>
+              <div style={{
+                padding: '6px 12px', borderRadius: 8,
+                background: 'rgba(0,198,255,0.08)',
+                border: '1px solid rgba(0,198,255,0.25)',
+                color: '#fff', fontSize: 11, fontWeight: 600, fontFamily: BR.font,
+                whiteSpace: 'nowrap',
+              }}>
+                {node}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Text */}
+      <div style={{
+        opacity: textP, transform: `translateY(${(1-textP)*20}px)`,
+        textAlign: 'center', marginTop: 16,
+      }}>
+        <h2 style={{
+          fontSize: 42, fontWeight: 900, color: '#fff',
+          fontFamily: BR.font, letterSpacing: '-0.03em', lineHeight: 1.2,
+        }}>
+          One system. One source of truth.<br />
+          <span style={{
+            background: `linear-gradient(135deg, ${BR.accent}, ${BR.purple})`,
+            WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
+          }}>Live data shared across every feature.</span>
+        </h2>
+      </div>
+    </div>
+  );
+}
+
+// ─── SCENE 7: CTA (82–90s) ────────────────────────────────────────────────
+function CTAScene({ time }) {
+  const t = time - 82;
+  const mouse = useMouseParallax();
+  const p = interpolate([0, 2], [0, 1], Easing.easeOutCubic)(Math.max(0, t));
+
+  return (
+    <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+      {/* Final glow */}
+      <div style={{
+        position: 'absolute', inset: 0, pointerEvents: 'none',
+        background: `radial-gradient(ellipse 80% 65% at 50% 50%, rgba(0,198,255,0.18) 0%, rgba(139,92,246,0.08) 50%, transparent 70%)`,
+        opacity: p,
+      }} />
+
+      <div style={{
+        opacity: p, transform: `translateY(${(1-p)*36}px)`,
+        textAlign: 'center', zIndex: 2,
+        ...px(mouse, 0.4),
+      }}>
+        <div style={{ marginBottom: 20 }}>
+          <Logo scale={1.5} glow={p} />
+        </div>
+
+        <div style={{
+          fontSize: 76, fontWeight: 900, color: '#fff',
+          fontFamily: BR.font, letterSpacing: '-0.045em', lineHeight: 1,
+          marginBottom: 16,
+        }}>
+          31 features.<br />
+          <span style={{
+            background: `linear-gradient(135deg, ${BR.accent}, ${BR.purple})`,
+            WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
+            filter: `drop-shadow(0 0 40px rgba(0,198,255,0.4))`,
+            display: 'inline-block',
+          }}>Built in.</span>
+        </div>
+
+        <p style={{
+          fontSize: 22, color: BR.muted, fontFamily: BR.font,
+          fontWeight: 400, marginBottom: 44,
+          letterSpacing: '-0.01em',
+        }}>
+          The last platform your agency will ever need.
+        </p>
+
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 20 }}>
+          <div style={{
+            padding: '18px 44px', borderRadius: 12,
+            background: `linear-gradient(135deg, ${BR.accent}, ${BR.blue})`,
+            color: '#fff', fontSize: 18, fontWeight: 800,
+            fontFamily: BR.font, letterSpacing: '-0.01em',
+            boxShadow: `0 0 40px rgba(0,198,255,0.45), 0 8px 32px rgba(0,0,0,0.4)`,
+            cursor: 'pointer',
+          }}>
+            Start Free Trial →
+          </div>
+
+          <div style={{
+            color: BR.muted, fontSize: 16, fontFamily: BR.font, fontWeight: 500,
+            letterSpacing: '0.02em',
+          }}>
+            propairty.co.uk
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── AUDIO SYSTEM ────────────────────────────────────────────────────────
+const EL_KEY   = 'sk_810f3fa3ecc963ba66c4a923375935baa45f4095ae251c6b';
+const EL_VOICE = 'onwK4e9ZLuTAKqWW03F9'; // Daniel — British male
+const EL_MODEL = 'eleven_multilingual_v2';
+
+const VO_LINES = [
+  { s: 2.5,  t: "Managing property today means juggling a dozen different tools." },
+  { s: 11,   t: "Integrations that break. Data that never syncs. Time that just disappears." },
+  { s: 14.5, t: "There has to be a better way." },
+  { s: 23,   t: "Propairty. Thirty-one features. One platform. Live data from day one." },
+  { s: 31,   t: "Built in. No bolt-ons. No integrations to manage." },
+  { s: 40,   t: "Six AI tools that turn your entire portfolio into plain-English answers." },
+  { s: 49,   t: "Every compliance certificate. Every maintenance job. Every legal notice — all connected." },
+  { s: 59,   t: "Tenant, landlord and contractor portals. Built in. No extra charge." },
+  { s: 68,   t: "From automated workflows to audit trails — every admin tool included." },
+  { s: 77,   t: "One live system. Every decision backed by real data." },
+  { s: 84,   t: "Propairty. The last platform your agency will ever need." },
+];
+
+// ─── ELEVENLABS FETCH ────────────────────────────────────────────────────
+async function fetchELAudio(text) {
+  const res = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${EL_VOICE}`, {
+    method: 'POST',
+    headers: { 'xi-api-key': EL_KEY, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      text, model_id: EL_MODEL,
+      voice_settings: { stability: 0.42, similarity_boost: 0.82, style: 0.38, use_speaker_boost: true },
+    }),
+  });
+  if (!res.ok) throw new Error(`EL ${res.status}`);
+  const blob = await res.blob();
+  const audio = new Audio(URL.createObjectURL(blob));
+  audio.preload = 'auto';
+  return audio;
+}
+
+// ─── VO ENGINE — window-level singleton ──────────────────────────────────
+if (!window.__propVO) {
+  window.__propVO = {
+    audios: {}, loaded: {}, loadingStarted: false,
+    currentLine: -1, rafId: null, running: false,
+    prevAnimTime: null, lastMovedAt: 0,
+    getTime: () => 0, getMuted: () => false,
+
+    tick() {
+      if (!this.running) return;
+      const time  = this.getTime();
+      const muted = this.getMuted();
+      const now   = performance.now();
+
+      // Detect motion via wall-clock: if animation time changed, note when
+      if (time !== this.prevAnimTime) {
+        if (this.prevAnimTime !== null && Math.abs(time - this.prevAnimTime) > 2) {
+          // Scrub — stop all, reset line
+          Object.values(this.audios).forEach(a => { try { a.pause(); a.currentTime = 0; } catch(_){} });
+          this.currentLine = -1;
+        }
+        this.prevAnimTime = time;
+        this.lastMovedAt  = now;
+      }
+
+      const isPlaying = (now - this.lastMovedAt) < 250; // moving within last 250ms
+
+      if (!isPlaying || muted) {
+        Object.values(this.audios).forEach(a => { try { a.pause(); } catch(_){} });
+        this.rafId = requestAnimationFrame(() => this.tick());
+        return;
+      }
+
+      // Which line should play?
+      let target = -1;
+      for (let i = VO_LINES.length - 1; i >= 0; i--) {
+        if (time >= VO_LINES[i].s) { target = i; break; }
+      }
+
+      if (target !== this.currentLine) {
+        const prev = this.audios[this.currentLine];
+        if (prev) { try { prev.pause(); prev.currentTime = 0; } catch(_){} }
+        this.currentLine = target;
+        const next = this.audios[target];
+        // Only play if loaded AND actually paused (guard against double-play)
+        if (next && this.loaded[target] && next.paused) {
+          next.volume = 1;
+          next.play().catch(() => {});
+        }
+      }
+
+      this.rafId = requestAnimationFrame(() => this.tick());
+    },
+
+    start(getTime, getMuted) {
+      this.getTime  = getTime;
+      this.getMuted = getMuted;
+      if (this.running) return; // singleton guard
+      this.running = true;
+      this.lastMovedAt = 0;
+      this.prevAnimTime = null;
+      this.rafId = requestAnimationFrame(() => this.tick());
+    },
+
+    stop() {
+      this.running = false;
+      if (this.rafId) { cancelAnimationFrame(this.rafId); this.rafId = null; }
+      Object.values(this.audios).forEach(a => { try { a.pause(); } catch(_){} });
+    },
+  };
+}
+const voEngine = window.__propVO;
+
+// ─── TONE.JS MUSIC ENGINE — window-level singleton ───────────────────────
+// Prime AudioContext on first click (required by browser autoplay policy)
+document.addEventListener('click', () => { if (window.Tone) Tone.start(); }, { once: true });
+
+if (!window.__propMusic) {
+  window.__propMusic = {
+    ready: false, playing: false,
+
+    async init() {
+      if (this.ready) return;
+      if (!window.Tone) { console.warn('Tone.js not loaded'); return; }
+      await Tone.start();
+      Tone.Transport.bpm.value = 128;
+
+      // Effects
+      const reverb = new Tone.Reverb({ decay: 1.6, wet: 0.22 });
+      await reverb.generate();
+      const comp = new Tone.Compressor(-24, 4).toDestination();
+      reverb.connect(comp);
+
+      // Pad — fat, evolving
+      const pad = new Tone.PolySynth(Tone.Synth, {
+        oscillator: { type: 'fatsawtooth', spread: 25, count: 3 },
+        envelope: { attack: 0.4, decay: 0.1, sustain: 0.75, release: 2.5 },
+        volume: -22,
+      });
+      pad.connect(reverb);
+
+      // Bass — punchy square
+      const bass = new Tone.MonoSynth({
+        oscillator: { type: 'square' },
+        filter: { Q: 2, frequency: 400, type: 'lowpass', rolloff: -24 },
+        envelope: { attack: 0.008, decay: 0.08, sustain: 0.5, release: 0.25 },
+        volume: -11,
+      });
+      bass.toDestination();
+
+      // Lead arp
+      const leadFX = new Tone.FeedbackDelay({ delayTime: '8n', feedback: 0.28, wet: 0.18 });
+      leadFX.connect(reverb);
+      const lead = new Tone.PolySynth(Tone.Synth, {
+        oscillator: { type: 'triangle' },
+        envelope: { attack: 0.004, decay: 0.07, sustain: 0.1, release: 0.35 },
+        volume: -21,
+      });
+      lead.connect(leadFX);
+
+      // Drums
+      const kick  = new Tone.MembraneSynth({ pitchDecay: 0.04, octaves: 8, volume: -4  }).toDestination();
+      const snare = new Tone.NoiseSynth({ noise:{ type:'white' }, envelope:{ attack:0.001, decay:0.13, sustain:0, release:0.04 }, volume:-15 }).toDestination();
+      const hat   = new Tone.MetalSynth({ frequency:700, envelope:{ attack:0.001, decay:0.03, release:0.01 }, harmonicity:5.1, modulationIndex:32, resonance:4000, octaves:1.5, volume:-27 }).toDestination();
+
+      // Chord progression A - E - F#m - D (one chord per bar, 4-bar loop)
+      const CHORDS = [['A3','C#4','E4'],['E3','G#3','B3'],['F#3','A3','C#4'],['D3','F#3','A3']];
+      let barCount = 0;
+      new Tone.Loop(t => { pad.triggerAttackRelease(CHORDS[barCount % 4], '1m', t); barCount++; }, '1m').start(0);
+
+      // Driving bass — 8th notes per chord
+      const BASS = ['A1','A2','E2','A2', 'E1','E2','B2','E2', 'F#1','F#2','C#3','F#2', 'D1','D2','A2','D2'];
+      let bassIdx = 0;
+      new Tone.Sequence(t => { bass.triggerAttackRelease(BASS[bassIdx++ % BASS.length], '8n', t); }, Array(16).fill(0), '8n').start(0);
+
+      // Arp 16th notes
+      const ARP = ['A4','C#5','E5','A5','E5','C#5','A4','C#5','E4','G#4','B4','E5','B4','G#4','E4','G#4','F#4','A4','C#5','F#5','C#5','A4','F#4','A4','D4','F#4','A4','D5','A4','F#4','D4','F#4'];
+      let arpIdx = 0;
+      new Tone.Sequence(t => { lead.triggerAttackRelease(ARP[arpIdx++ % ARP.length], '16n', t); }, Array(32).fill(0), '16n').start(0);
+
+      // Four-on-the-floor kick
+      new Tone.Sequence(t => kick.triggerAttackRelease('C1','16n',t), ['C1',null,null,null,'C1',null,null,null,'C1',null,null,null,'C1',null,null,null], '16n').start(0);
+      // Snare 2&4
+      new Tone.Sequence(t => snare.triggerAttackRelease('8n',t), [null,null,'X',null,null,null,'X',null], '8n').start(0);
+      // Hi-hat 16ths
+      new Tone.Sequence(t => hat.triggerAttackRelease('32n',t), Array(16).fill('X'), '16n').start(0);
+
+      Tone.Destination.volume.value = -14; // music sits under VO
+      this.ready = true;
+    },
+
+    async play() {
+      try {
+        if (!this.ready) await this.init();
+        if (!this.playing && this.ready) { Tone.Transport.start(); this.playing = true; }
+      } catch(e) { console.warn('Music:', e); }
+    },
+
+    pause() {
+      if (this.playing) { try { Tone.Transport.pause(); } catch(_){} this.playing = false; }
+    },
+  };
+}
+const musicEngine = window.__propMusic;
+
+// ─── CONTROLLER COMPONENT ────────────────────────────────────────────────
+function VoiceoverController({ muted, onLoadState }) {
+  const time     = useTime();
+  const timeRef  = React.useRef(time);
+  const mutedRef = React.useRef(muted);
+  timeRef.current  = time;
+  mutedRef.current = muted;
+
+  const [loadedCount, setLoadedCount] = React.useState(Object.keys(voEngine.loaded).length);
+  const [loadState,   setLoadState]   = React.useState(loadedCount >= VO_LINES.length ? 'ready' : 'loading');
+
+  // Load VO — guarded so only runs once even with Strict Mode double-mount
+  React.useEffect(() => {
+    if (voEngine.loadingStarted) return;
+    voEngine.loadingStarted = true;
+    let alive = true;
+    (async () => {
+      const BATCH = 3;
+      for (let b = 0; b < VO_LINES.length; b += BATCH) {
+        if (!alive) break;
+        const batch = Array.from({ length: Math.min(BATCH, VO_LINES.length - b) }, (_, k) => b + k);
+        await Promise.all(batch.map(async (i) => {
+          if (voEngine.loaded[i]) return;
+          try {
+            voEngine.audios[i] = await fetchELAudio(VO_LINES[i].t);
+            voEngine.loaded[i] = true;
+          } catch(e) { console.warn('VO', i, e.message); voEngine.loaded[i] = false; }
+          if (alive) setLoadedCount(prev => prev + 1);
+        }));
+      }
+      if (alive) setLoadState('ready');
+    })();
+    return () => { alive = false; };
+  }, []);
+
+  React.useEffect(() => { onLoadState && onLoadState(loadState, loadedCount); }, [loadState, loadedCount]);
+
+  // Start VO engine
+  React.useEffect(() => {
+    voEngine.start(() => timeRef.current, () => mutedRef.current);
+    return () => voEngine.stop();
+  }, []);
+
+  // Music play/pause
+  const prevRef = React.useRef(time);
+  React.useEffect(() => {
+    const delta  = time - prevRef.current;
+    const moving = delta > 0.001 && delta < 0.5;
+    prevRef.current = time;
+    if (muted) { musicEngine.pause(); return; }
+    if (moving) musicEngine.play();
+    else musicEngine.pause();
+  }, [Math.floor(time * 4) / 4, muted]);
+
+  return null;
+}
+
+// ─── ROOT VIDEO COMPONENT ──────────────────────────────────────────────────
+function PropairtyVideo({ muted, onLoadState }) {
+  const time = useTime();
+
+  React.useEffect(() => {
+    const el = document.getElementById('vid-root');
+    if (el) el.setAttribute('data-screen-label', `t=${Math.floor(time)}s`);
+  }, [Math.floor(time)]);
+
+  return (
+    <div id="vid-root" style={{
+      position: 'relative', width: '100%', height: '100%',
+      background: BR.bg, overflow: 'hidden', fontFamily: BR.font,
+    }}>
+      <VoiceoverController muted={muted} onLoadState={onLoadState} />
+      <GridBg opacity={0.7} />
+      <ParticleField count={50} />
+
+      {/* Scenes */}
+      <Sprite start={2}  end={13}><ChaosScene  time={time} /></Sprite>
+      <Sprite start={12} end={23}><BreakScene  time={time} /></Sprite>
+      <Sprite start={22} end={34}><HeroScene   time={time} /></Sprite>
+      <Sprite start={34} end={50}><AIScene     time={time} /></Sprite>
+      <Sprite start={50} end={70}><BlitzScene  time={time} /></Sprite>
+      <Sprite start={70} end={82}><HubScene    time={time} /></Sprite>
+      <Sprite start={82} end={90}><CTAScene    time={time} /></Sprite>
+
+      {/* Always-on subtitles */}
+      <SubtitleBar time={time} />
+    </div>
+  );
+}
+
+// ─── TWEAKS + APP ──────────────────────────────────────────────────────────
+const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
+  "accentColor": "#00C6FF",
+  "bgColor": "#020B18",
+  "subtitleSize": 24,
+  "showParticles": true
+}/*EDITMODE-END*/;
+
+function App() {
+  const [tweaks, setTweaks] = React.useState(TWEAK_DEFAULTS);
+  const [showTweaks, setShowTweaks] = React.useState(false);
+  const [muted, setMuted] = React.useState(false);
+  const [voiceLoad, setVoiceLoad] = React.useState('loading');
+  const [loadedCount, setLoadedCount] = React.useState(0);
+
+  React.useEffect(() => {
+    window.addEventListener('message', (e) => {
+      if (e.data?.type === '__activate_edit_mode')   setShowTweaks(true);
+      if (e.data?.type === '__deactivate_edit_mode') setShowTweaks(false);
+    });
+    window.parent.postMessage({ type: '__edit_mode_available' }, '*');
+  }, []);
+
+  const updateTweak = (key, val) => {
+    const v = { ...tweaks, [key]: val };
+    setTweaks(v);
+    window.parent.postMessage({ type: '__edit_mode_set_keys', edits: v }, '*');
+  };
+
+  return (
+    <>
+      <Stage width={1920} height={1080} duration={90} background={tweaks.bgColor}>
+        <PropairtyVideo muted={muted} onLoadState={(s, c) => { setVoiceLoad(s); setLoadedCount(c || 0); }} />
+      </Stage>
+
+      {/* Mute button — always visible, outside Stage scaling */}
+      <div
+        onClick={() => {
+          setMuted(m => !m);
+        }}
+        title={voiceLoad === 'loading' ? `Loading voiceover… (${loadedCount}/11)` : muted ? 'Unmute voiceover' : 'Mute voiceover'}
+        style={{
+          position: 'fixed', bottom: 56, right: 16, zIndex: 9998,
+          width: voiceLoad === 'loading' ? 52 : 36, height: 36, borderRadius: voiceLoad === 'loading' ? 18 : '50%',
+          background: 'rgba(2,11,24,0.88)',
+          border: `1px solid ${muted ? 'rgba(255,255,255,0.15)' : voiceLoad === 'loading' ? 'rgba(245,158,11,0.5)' : 'rgba(0,198,255,0.4)'}`,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          cursor: 'pointer', backdropFilter: 'blur(8px)',
+          fontSize: voiceLoad === 'loading' ? 11 : 16, userSelect: 'none',
+          boxShadow: '0 2px 12px rgba(0,0,0,0.4)',
+          transition: 'border-color 0.3s',
+          color: voiceLoad === 'loading' ? '#F59E0B' : '#fff',
+          fontFamily: BR.font, fontWeight: 700,
+          animation: voiceLoad === 'loading' ? 'pulse 1.2s ease-in-out infinite' : 'none',
+        }}>
+        {voiceLoad === 'loading' ? `${loadedCount}/11` : muted ? '🔇' : '🔊'}
+      </div>
+
+      {showTweaks && (
+        <div style={{
+          position: 'fixed', bottom: 100, right: 20, zIndex: 9999,
+          background: 'rgba(2,11,24,0.96)', border: '1px solid rgba(0,198,255,0.25)',
+          borderRadius: 14, padding: '20px 22px', width: 270,
+          backdropFilter: 'blur(16px)',
+          boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
+          fontFamily: BR.font,
+        }}>
+          <div style={{ color: '#fff', fontWeight: 700, fontSize: 14, marginBottom: 18, letterSpacing: '-0.01em' }}>Tweaks</div>
+
+          {[
+            { label: 'Accent Color', key: 'accentColor', type: 'color' },
+            { label: 'Background Color', key: 'bgColor',    type: 'color' },
+          ].map(({ label, key, type }) => (
+            <div key={key} style={{ marginBottom: 14 }}>
+              <div style={{ color: BR.muted, fontSize: 11, fontWeight: 600, marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{label}</div>
+              <input type={type} value={tweaks[key]}
+                style={{ width: '100%', height: 36, borderRadius: 8, border: 'none', cursor: 'pointer', background: 'none' }}
+                onChange={e => updateTweak(key, e.target.value)} />
+            </div>
+          ))}
+
+          <div style={{ marginBottom: 14 }}>
+            <div style={{ color: BR.muted, fontSize: 11, fontWeight: 600, marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+              Subtitle Size: {tweaks.subtitleSize}px
+            </div>
+            <input type="range" min={16} max={30} step={1} value={tweaks.subtitleSize}
+              style={{ width: '100%', accentColor: BR.accent }}
+              onChange={e => updateTweak('subtitleSize', +e.target.value)} />
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div style={{ color: BR.muted, fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Particles</div>
+            <div onClick={() => updateTweak('showParticles', !tweaks.showParticles)}
+              style={{
+                width: 40, height: 22, borderRadius: 100, cursor: 'pointer',
+                background: tweaks.showParticles ? BR.accent : BR.dimmed,
+                position: 'relative', transition: 'background 0.2s',
+              }}>
+              <div style={{
+                position: 'absolute', top: 3, left: tweaks.showParticles ? 20 : 3,
+                width: 16, height: 16, borderRadius: '50%', background: '#fff',
+                transition: 'left 0.2s',
+              }} />
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</head>
+<body>
+<div id="root"></div>
+</body>
+</html>

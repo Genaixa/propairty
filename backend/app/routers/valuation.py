@@ -86,7 +86,7 @@ def portfolio_summary(
 
         value = latest.estimated_value if latest else None
         gross_yield = _yield(annual_rent, 0, value) if value else None
-        net_yield = _yield(annual_rent, annual_maintenance, value) if value else None
+        net_yield = _yield(annual_rent, annual_maintenance, value, net=True) if value else None
 
         # Unit counts
         units = db.query(Unit).filter(Unit.property_id == prop.id).all()
@@ -118,13 +118,14 @@ def portfolio_summary(
         total_annual_maintenance += annual_maintenance
 
     valued_count = sum(1 for i in items if i["estimated_value"])
+    # Weighted by value rather than a simple average of per-property yields
     avg_gross = (
-        round(sum(i["gross_yield"] for i in items if i["gross_yield"] is not None) / valued_count, 2)
-        if valued_count else None
+        round((total_annual_rent / total_value) * 100, 2)
+        if total_value else None
     )
     avg_net = (
-        round(sum(i["net_yield"] for i in items if i["net_yield"] is not None) / valued_count, 2)
-        if valued_count else None
+        round(((total_annual_rent - total_annual_maintenance) / total_value) * 100, 2)
+        if total_value else None
     )
 
     return {

@@ -1,0 +1,114 @@
+{% extends "documents/base.html" %}
+{% block content %}
+<h1>Rent Review Recommendation</h1>
+<p style="text-align:center; font-size:10pt; color:#555; margin-bottom:20px;">
+  Confidential — For Landlord Review
+</p>
+
+<div class="parties">
+  <table>
+    <tr><td>To (Landlord):</td><td><strong>{{ landlord_name }}</strong></td></tr>
+    <tr><td>Re (Property):</td><td>{{ property_address }}</td></tr>
+    <tr><td>Unit:</td><td>{{ unit_name }}</td></tr>
+    <tr><td>From (Agent):</td><td>{{ org_name }}</td></tr>
+    <tr><td>Date:</td><td>{{ today }}</td></tr>
+    <tr><td>Current Rent:</td><td>£{{ current_rent }}/mo</td></tr>
+    <tr><td>Recommended Rent:</td><td class="amount">£{{ proposed_rent }}/mo</td></tr>
+    <tr><td>Annual Uplift:</td><td class="amount">£{{ annual_uplift }}</td></tr>
+    <tr><td>Proposed Effective Date:</td><td><strong>{{ effective_date }}</strong></td></tr>
+  </table>
+</div>
+
+<h2>Summary</h2>
+<p>Dear {{ landlord_name }},</p>
+
+<p>
+  We have conducted a rent review for <strong>{{ unit_name }}</strong> at <strong>{{ property_address }}</strong>.
+  Based on our analysis of comparable units within the property and current market conditions,
+  we recommend adjusting the rent from <strong>£{{ current_rent }}/mo</strong> to
+  <strong>£{{ proposed_rent }}/mo</strong>.
+</p>
+
+<div class="notice-box info" style="margin-top:16px; margin-bottom:16px;">
+  <strong>Recommended rent: £{{ proposed_rent }}/mo from {{ effective_date }}</strong><br>
+  Annual income uplift: £{{ annual_uplift }} · {{ months_on_rent }} months since last review
+</div>
+
+<h2>Market Analysis</h2>
+<table style="width:100%; border-collapse:collapse; margin: 8px 0 12px 0;">
+  <thead>
+    <tr style="background:#f8fafc;">
+      <th style="text-align:left; padding:6px 8px; font-size:9pt; border-bottom:1px solid #e2e8f0;">Unit</th>
+      <th style="text-align:right; padding:6px 8px; font-size:9pt; border-bottom:1px solid #e2e8f0;">Bedrooms</th>
+      <th style="text-align:right; padding:6px 8px; font-size:9pt; border-bottom:1px solid #e2e8f0;">Rent/mo</th>
+      <th style="text-align:center; padding:6px 8px; font-size:9pt; border-bottom:1px solid #e2e8f0;">Note</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr style="background:#eff6ff;">
+      <td style="padding:5px 8px; font-size:9pt; border-bottom:1px solid #e2e8f0;"><strong>{{ unit_name }} (this unit)</strong></td>
+      <td style="text-align:right; padding:5px 8px; font-size:9pt; border-bottom:1px solid #e2e8f0;">{{ bedrooms }}</td>
+      <td style="text-align:right; padding:5px 8px; font-size:9pt; border-bottom:1px solid #e2e8f0;">£{{ current_rent }}</td>
+      <td style="text-align:center; padding:5px 8px; font-size:9pt; border-bottom:1px solid #e2e8f0;">Current</td>
+    </tr>
+    {% for peer in peers %}
+    <tr>
+      <td style="padding:5px 8px; font-size:9pt; border-bottom:1px solid #e2e8f0;">{{ peer.name }}</td>
+      <td style="text-align:right; padding:5px 8px; font-size:9pt; border-bottom:1px solid #e2e8f0;">{{ peer.bedrooms }}</td>
+      <td style="text-align:right; padding:5px 8px; font-size:9pt; border-bottom:1px solid #e2e8f0;">£{{ peer.rent }}</td>
+      <td style="text-align:center; padding:5px 8px; font-size:9pt; border-bottom:1px solid #e2e8f0;">Comparable</td>
+    </tr>
+    {% endfor %}
+    <tr style="background:#f0fdf4; font-weight:bold;">
+      <td colspan="2" style="padding:5px 8px; font-size:9pt;">Peer median</td>
+      <td style="text-align:right; padding:5px 8px; font-size:9pt;">£{{ peer_median }}</td>
+      <td style="text-align:center; padding:5px 8px; font-size:9pt;">Recommended</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2>Next Steps</h2>
+<table style="width:100%;">
+  <tr><td style="width:18px; vertical-align:top; padding:2px 6px 4px 0;">1.</td><td style="padding:2px 0 4px;">Please confirm your approval by signing below or replying to this letter.</td></tr>
+  <tr><td style="vertical-align:top; padding:2px 6px 4px 0;">2.</td><td style="padding:2px 0 4px;">Upon approval, we will serve a Section 13 Notice on the tenant giving at least one month's notice.</td></tr>
+  <tr><td style="vertical-align:top; padding:2px 6px 4px 0;">3.</td><td style="padding:2px 0 4px;">The new rent will take effect from {{ effective_date }}.</td></tr>
+</table>
+
+{% if custom_notes %}
+<h2>Additional Notes</h2>
+<p>{{ custom_notes }}</p>
+{% endif %}
+
+<p>Please do not hesitate to contact us if you have any questions.</p>
+
+<p>Yours sincerely,</p>
+<div class="signature-block">
+  <div class="signature-line">
+    {% if signature_block %}
+    <div style="margin-bottom:8px;">{{ signature_block | safe }}</div>
+    {% else %}
+    <hr>
+    {% endif %}
+    <p>{{ org_name }}</p>
+    <p>Date: {{ today }}</p>
+  </div>
+</div>
+
+<div style="margin-top:30px; border-top:2px solid #1e293b; padding-top:16px;">
+  <p style="font-size:9pt; font-weight:bold; margin-bottom:8px;">LANDLORD APPROVAL</p>
+  <p style="font-size:9pt;">I, <strong>{{ landlord_name }}</strong>, approve the proposed rent increase to
+  <strong>£{{ proposed_rent }}/mo</strong> effective <strong>{{ effective_date }}</strong>.</p>
+  <table style="width:100%; margin-top:12px;">
+    <tr>
+      <td style="width:50%; padding-right:20px;">
+        <p style="font-size:9pt; margin-bottom:4px;">Signature:</p>
+        <hr style="border-top:1px solid #64748b;">
+      </td>
+      <td style="width:50%;">
+        <p style="font-size:9pt; margin-bottom:4px;">Date:</p>
+        <hr style="border-top:1px solid #64748b;">
+      </td>
+    </tr>
+  </table>
+</div>
+{% endblock %}

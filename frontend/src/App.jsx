@@ -89,6 +89,7 @@ import EmailTriage from './pages/EmailTriage'
 import Workflows from './pages/Workflows'
 import Checklists from './pages/Checklists'
 import AuditLog from './pages/AuditLog'
+import Demos from './pages/Demos'
 
 function ScrollToTop() {
   const { pathname } = useLocation()
@@ -156,6 +157,7 @@ export default function App() {
         <Route path="/landlord/reset-password" element={<ResetPassword />} />
         <Route path="/contractor/reset-password" element={<ResetPassword />} />
         <Route path="/features/:slug" element={<FeaturePage />} />
+        <Route path="/demos" element={<Demos />} />
         <Route path="/privacy" element={<Privacy />} />
         <Route path="/sign/:token" element={<Sign />} />
         <Route path="/terms" element={<Terms />} />

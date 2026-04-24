@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, ForeignKey, DateTime
+from sqlalchemy import Column, Integer, String, Float, ForeignKey, DateTime, Text, Date, Numeric
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.database import Base
@@ -13,6 +13,17 @@ class Unit(Base):
     bathrooms = Column(Integer, default=1)
     monthly_rent = Column(Float, nullable=False)
     status = Column(String, default="vacant")  # vacant, occupied, maintenance
+    amenities = Column(Text, nullable=True)  # JSON list of amenity keys
+    rooms = Column(Text, nullable=True)      # JSON list of {type, label, size_sqm}
+    occupancy_type = Column(String, nullable=True)   # single, couple, family, sharers, students, corporate
+    max_occupants = Column(Integer, nullable=True)
+    occupancy_notes = Column(Text, nullable=True)
+    date_listed = Column(Date, nullable=True)           # when first listed publicly
+    previous_rent = Column(Numeric(10, 2), nullable=True)  # for "Reduced" badge
+    reception_rooms = Column(Integer, default=0)
+    available_from = Column(Date, nullable=True)        # availability date
+    furnished = Column(String, nullable=True)            # furnished | unfurnished | part-furnished
+    deposit_weeks = Column(Integer, default=5)          # weeks of rent as deposit (5-week cap)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     property = relationship("Property", back_populates="units")

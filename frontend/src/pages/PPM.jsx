@@ -1,3 +1,4 @@
+import { PageHeader } from '../components/Illustration'
 import { useEffect, useState } from 'react'
 import api from '../lib/api'
 
@@ -26,6 +27,34 @@ export default function PPM() {
   const [form, setForm] = useState(empty)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [sortCol, setSortCol] = useState('next_due')
+  const [sortDir, setSortDir] = useState('asc')
+
+  function toggleSort(col) {
+    if (sortCol === col) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+    else { setSortCol(col); setSortDir('asc') }
+  }
+
+  const FREQ_ORDER = { weekly: 0, monthly: 1, quarterly: 2, biannual: 3, annual: 4 }
+  const sorted = [...schedules].sort((a, b) => {
+    let av, bv
+    if      (sortCol === 'title')      { av = a.title;            bv = b.title }
+    else if (sortCol === 'property')   { av = a.property_name || ''; bv = b.property_name || '' }
+    else if (sortCol === 'frequency')  { av = FREQ_ORDER[a.frequency] ?? 9; bv = FREQ_ORDER[b.frequency] ?? 9 }
+    else if (sortCol === 'contractor') { av = a.contractor_name || ''; bv = b.contractor_name || '' }
+    else if (sortCol === 'status')     { av = a.is_active ? 0 : 1; bv = b.is_active ? 0 : 1 }
+    else                               { av = a[sortCol] || '';    bv = b[sortCol] || '' }
+    if (av < bv) return sortDir === 'asc' ? -1 : 1
+    if (av > bv) return sortDir === 'asc' ? 1 : -1
+    return 0
+  })
+
+  const SortTh = ({ col, label }) => (
+    <th onClick={() => toggleSort(col)}
+      className="text-left px-5 py-3 font-medium text-gray-500 text-xs uppercase tracking-wide cursor-pointer select-none hover:text-gray-800 whitespace-nowrap">
+      {label} {sortCol === col ? (sortDir === 'asc' ? '▲' : '▼') : <span className="text-gray-300">↕</span>}
+    </th>
+  )
 
   const load = () => api.get('/ppm').then(r => setSchedules(r.data))
 
@@ -100,17 +129,42 @@ export default function PPM() {
   }
 
   const today = new Date().toISOString().slice(0, 10)
+  const in30 = new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10)
+
+  const overdue = schedules.filter(s => s.is_active && s.next_due < today).length
+  const dueThisMonth = schedules.filter(s => {
+    if (!s.is_active || !s.next_due) return false
+    const d = new Date(s.next_due)
+    const now = new Date()
+    return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && s.next_due >= today
+  }).length
+  const dueIn30 = schedules.filter(s => s.is_active && s.next_due >= today && s.next_due <= in30).length
 
   return (
     <div>
-      <div className="flex justify-between items-center mb-6">
-        <div>
-          <h2 className="text-2xl font-bold text-gray-900">Planned Maintenance</h2>
-          <p className="text-sm text-gray-500 mt-0.5">Recurring tasks that auto-create maintenance jobs when due.</p>
-        </div>
+      <PageHeader title="Planned Maintenance" subtitle="Recurring tasks that auto-create maintenance jobs when due">
         <button onClick={openNew} className="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-indigo-700">
           + New Schedule
         </button>
+      </PageHeader>
+
+      {/* Summary cards */}
+      <div className="grid grid-cols-3 gap-4 mb-6">
+        <div className={`rounded-xl border p-5 ${overdue > 0 ? 'bg-red-50 border-red-200' : 'bg-white border-gray-200'}`}>
+          <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Overdue</p>
+          <p className={`text-3xl font-bold mt-1 ${overdue > 0 ? 'text-red-600' : 'text-gray-400'}`}>{overdue}</p>
+          <p className="text-xs text-gray-400 mt-1">past due date</p>
+        </div>
+        <div className={`rounded-xl border p-5 ${dueThisMonth > 0 ? 'bg-amber-50 border-amber-200' : 'bg-white border-gray-200'}`}>
+          <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Due this month</p>
+          <p className={`text-3xl font-bold mt-1 ${dueThisMonth > 0 ? 'text-amber-600' : 'text-gray-400'}`}>{dueThisMonth}</p>
+          <p className="text-xs text-gray-400 mt-1">remaining this month</p>
+        </div>
+        <div className="bg-white rounded-xl border border-gray-200 p-5">
+          <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Due in 30 days</p>
+          <p className="text-3xl font-bold mt-1 text-indigo-600">{dueIn30}</p>
+          <p className="text-xs text-gray-400 mt-1">upcoming schedules</p>
+        </div>
       </div>
 
       {/* Table */}
@@ -118,9 +172,14 @@ export default function PPM() {
         <table className="w-full text-sm">
           <thead className="bg-gray-50 border-b border-gray-200">
             <tr>
-              {['Task', 'Property / Unit', 'Frequency', 'Next Due', 'Last Triggered', 'Contractor', 'Status', ''].map(h => (
-                <th key={h} className="text-left px-5 py-3 font-medium text-gray-500 text-xs uppercase tracking-wide">{h}</th>
-              ))}
+              <SortTh col="title" label="Task" />
+              <SortTh col="property" label="Property / Unit" />
+              <SortTh col="frequency" label="Frequency" />
+              <SortTh col="next_due" label="Next Due" />
+              <SortTh col="last_triggered" label="Last Triggered" />
+              <SortTh col="contractor" label="Contractor" />
+              <SortTh col="status" label="Status" />
+              <th />
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
@@ -131,7 +190,7 @@ export default function PPM() {
                 </td>
               </tr>
             )}
-            {schedules.map(s => {
+            {sorted.map(s => {
               const overdue = s.is_active && s.next_due < today
               const dueSoon = s.is_active && !overdue && s.next_due <= new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10)
               return (
@@ -217,7 +276,7 @@ export default function PPM() {
               <select value={form.contractor_id} onChange={e => setForm({ ...form, contractor_id: e.target.value })}
                 className="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
                 <option value="">No contractor assigned</option>
-                {contractors.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                {contractors.map(c => <option key={c.id} value={c.id}>{c.company_name || c.full_name}</option>)}
               </select>
               <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
                 <input type="checkbox" checked={form.is_active} onChange={e => setForm({ ...form, is_active: e.target.checked })}

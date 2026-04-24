@@ -27,7 +27,11 @@ class TenancyDeposit(Base):
     returned_date = Column(Date, nullable=True)
     dispute_notes = Column(String, nullable=True)
     notes = Column(String, nullable=True)
+    checkin_inspection_id = Column(Integer, ForeignKey("inspections.id"), nullable=True)
+    checkout_inspection_id = Column(Integer, ForeignKey("inspections.id"), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     lease = relationship("Lease", backref="deposit_record")
+    checkin_inspection = relationship("Inspection", foreign_keys=[checkin_inspection_id])
+    checkout_inspection = relationship("Inspection", foreign_keys=[checkout_inspection_id])

@@ -13,4 +13,5 @@ class PortalMessage(Base):
     sender_type = Column(String, nullable=False)  # "landlord" or "agent"
     body = Column(String, nullable=False)
     read = Column(Boolean, default=False)  # True once the other party has seen it
+    read_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())

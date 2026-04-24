@@ -10,22 +10,24 @@ from app.database import get_db
 from app.auth import get_current_user
 from app.models.user import User
 from app.models.upload import UploadedFile
+from app import notifications
 
 router = APIRouter(prefix="/api/uploads", tags=["uploads"])
 
 UPLOAD_DIR = Path("/root/propairty/uploads")
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
-MAX_FILE_SIZE = 25 * 1024 * 1024  # 25 MB
+MAX_FILE_SIZE = 100 * 1024 * 1024  # 100 MB (videos)
 
 ALLOWED_MIME_PREFIXES = [
-    "image/", "application/pdf", "application/msword",
+    "image/", "video/", "audio/",
+    "application/pdf", "application/msword",
     "application/vnd.openxmlformats-officedocument",
     "text/plain", "application/zip",
 ]
 
 CATEGORIES = ["certificate", "agreement", "photo", "invoice", "correspondence", "other"]
-ENTITY_TYPES = ["property", "tenant", "lease", "inspection", "maintenance"]
+ENTITY_TYPES = ["property", "unit", "tenant", "lease", "inspection", "maintenance", "landlord", "contractor", "insurance_claim", "inventory_room", "compliance_certificate"]
 
 
 def _is_allowed(mime: str) -> bool:
@@ -44,6 +46,7 @@ def _file_out(f: UploadedFile) -> dict:
         "file_size": f.file_size,
         "category": f.category,
         "description": f.description,
+        "url": f"/uploads/{f.filename}",
         "created_at": f.created_at.isoformat() if f.created_at else None,
     }
 
@@ -89,6 +92,28 @@ async def upload_file(
     db.add(record)
     db.commit()
     db.refresh(record)
+
+    # Invalidate brochure cache when property photos/files change
+    if entity_type == "property":
+        from app.brochure import invalidate_brochure_cache
+        invalidate_brochure_cache(entity_id)
+
+    # Forward maintenance attachments to Telegram
+    if entity_type == "maintenance":
+        from app.models.maintenance import MaintenanceRequest
+        req = db.query(MaintenanceRequest).filter(MaintenanceRequest.id == entity_id).first()
+        caption = f"📎 <b>Attachment</b> — {file.filename or 'file'}"
+        if req:
+            caption = f"📎 <b>{req.title}</b>\n{file.filename or 'file'}"
+        file_path = str(UPLOAD_DIR / stored_name)
+        mime = file.content_type or ""
+        if mime.startswith("image/"):
+            notifications.send_photo(file_path, caption)
+        elif mime.startswith("video/"):
+            notifications.send_video(file_path, caption)
+        elif mime.startswith("audio/"):
+            notifications.send_audio(file_path, caption)
+
     return _file_out(record)
 
 
@@ -148,6 +173,11 @@ def delete_file(
     ).first()
     if not record:
         raise HTTPException(status_code=404, detail="File not found")
+
+    # Invalidate brochure cache when property file is removed
+    if record.entity_type == "property":
+        from app.brochure import invalidate_brochure_cache
+        invalidate_brochure_cache(record.entity_id)
 
     path = UPLOAD_DIR / record.filename
     if path.exists():

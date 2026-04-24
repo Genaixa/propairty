@@ -1,7 +1,7 @@
 import axios from 'axios'
 
 const tenantApi = axios.create({
-  baseURL: (import.meta.env.VITE_API_URL || 'http://localhost:8000/api') + '/tenant',
+  baseURL: (import.meta.env.VITE_API_URL || '/api') + '/tenant',
 })
 
 tenantApi.interceptors.request.use(config => {

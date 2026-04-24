@@ -286,6 +286,7 @@ def portfolio_yield(
         ])
 
         result.append({
+            "property_id": prop.id,
             "property": prop.name,
             "address": f"{prop.address_line1}, {prop.city}",
             "units": len(units),
@@ -300,3 +301,190 @@ def portfolio_yield(
 
     result.sort(key=lambda x: -x["annual_rent"])
     return result
+
+
+@router.get("/pnl")
+def profit_and_loss(
+    months: int = 12,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Monthly P&L: income (rent collected) vs expenses (maintenance costs).
+    Returns per-month breakdown + totals + per-property summary.
+    """
+    org_id = current_user.organisation_id
+    properties = db.query(Property).filter(Property.organisation_id == org_id).all()
+    prop_ids = [p.id for p in properties]
+    prop_names = {p.id: p.name for p in properties}
+
+    if not prop_ids:
+        return {"by_month": [], "by_property": [], "totals": {}}
+
+    units = db.query(Unit).filter(Unit.property_id.in_(prop_ids)).all()
+    unit_ids = [u.id for u in units]
+    unit_to_prop = {u.id: u.property_id for u in units}
+
+    leases = db.query(Lease).filter(Lease.unit_id.in_(unit_ids)).all() if unit_ids else []
+    lease_ids = [l.id for l in leases]
+
+    maintenance_jobs = db.query(MaintenanceRequest).filter(
+        MaintenanceRequest.unit_id.in_(unit_ids),
+        MaintenanceRequest.actual_cost.isnot(None),
+    ).all() if unit_ids else []
+
+    periods = _months_back(months)
+
+    # ── Per-month P&L ──────────────────────────────────────────────────────────
+    by_month = []
+    total_income = total_expenses = 0.0
+
+    for label, start, end in periods:
+        # Income: rent payments collected in this period
+        payments = db.query(RentPayment).filter(
+            RentPayment.lease_id.in_(lease_ids),
+            RentPayment.due_date >= start,
+            RentPayment.due_date <= end,
+        ).all() if lease_ids else []
+
+        income = sum(p.amount_paid or 0 for p in payments if p.status == "paid")
+        partial = sum(p.amount_paid or 0 for p in payments if p.status == "partial")
+        income += partial
+
+        # Expenses: maintenance actual costs (by job created_at)
+        expenses = sum(
+            j.actual_cost or 0
+            for j in maintenance_jobs
+            if j.created_at and start <= j.created_at.date() <= end
+        )
+
+        net = income - expenses
+        total_income += income
+        total_expenses += expenses
+
+        by_month.append({
+            "month": label,
+            "income": round(income, 2),
+            "expenses": round(expenses, 2),
+            "net": round(net, 2),
+            "margin": round((net / income * 100) if income > 0 else 0, 1),
+        })
+
+    # ── Per-property P&L ───────────────────────────────────────────────────────
+    prop_income: dict[int, float] = defaultdict(float)
+    prop_expenses: dict[int, float] = defaultdict(float)
+
+    # Allocate rent income to property via unit
+    for lease in leases:
+        prop_id = unit_to_prop.get(lease.unit_id)
+        if not prop_id:
+            continue
+        payments = db.query(RentPayment).filter(
+            RentPayment.lease_id == lease.id,
+            RentPayment.due_date >= periods[0][1],  # start of window
+        ).all()
+        for p in payments:
+            if p.status in ("paid", "partial"):
+                prop_income[prop_id] += p.amount_paid or 0
+
+    # Allocate maintenance costs to property
+    for j in maintenance_jobs:
+        prop_id = unit_to_prop.get(j.unit_id)
+        if prop_id:
+            prop_expenses[prop_id] += j.actual_cost or 0
+
+    all_prop_ids = set(list(prop_income.keys()) + list(prop_expenses.keys()))
+    by_property = []
+    for pid in all_prop_ids:
+        inc = prop_income[pid]
+        exp = prop_expenses[pid]
+        net = inc - exp
+        by_property.append({
+            "property": prop_names.get(pid, "Unknown"),
+            "income": round(inc, 2),
+            "expenses": round(exp, 2),
+            "net": round(net, 2),
+            "margin": round((net / inc * 100) if inc > 0 else 0, 1),
+        })
+    by_property.sort(key=lambda x: -x["net"])
+
+    total_net = total_income - total_expenses
+    return {
+        "by_month": by_month,
+        "by_property": by_property,
+        "totals": {
+            "income": round(total_income, 2),
+            "expenses": round(total_expenses, 2),
+            "net": round(total_net, 2),
+            "margin": round((total_net / total_income * 100) if total_income > 0 else 0, 1),
+            "months": months,
+        },
+    }
+
+
+@router.get("/agent-performance")
+def agent_performance(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Per-agent pipeline performance metrics."""
+    from app.models.applicant import Applicant
+    from datetime import date, timedelta
+    from collections import defaultdict
+
+    applicants = db.query(Applicant).filter(
+        Applicant.organisation_id == current_user.organisation_id,
+    ).all()
+
+    # Group by assigned_agent (use "Unassigned" for blanks)
+    agents = defaultdict(lambda: {
+        "agent": "",
+        "total": 0,
+        "enquiries": 0,
+        "viewings": 0,
+        "referencing": 0,
+        "converted": 0,
+        "rejected": 0,
+        "active": 0,
+    })
+
+    for a in applicants:
+        key = a.assigned_agent or "Unassigned"
+        d = agents[key]
+        d["agent"] = key
+        d["total"] += 1
+        if a.status == "enquiry":
+            d["enquiries"] += 1
+        elif a.status in ("viewing_booked", "viewed"):
+            d["viewings"] += 1
+        elif a.status == "referencing":
+            d["referencing"] += 1
+        elif a.status == "tenancy_created":
+            d["converted"] += 1
+        elif a.status in ("rejected", "withdrawn"):
+            d["rejected"] += 1
+
+        if a.status not in ("rejected", "withdrawn", "tenancy_created"):
+            d["active"] += 1
+
+    result = sorted(agents.values(), key=lambda x: -x["converted"])
+
+    # Add conversion rate
+    for r in result:
+        r["conversion_rate"] = round(r["converted"] / r["total"] * 100, 1) if r["total"] else 0
+
+    # Follow-ups due today
+    today = date.today()
+    follow_ups_due = db.query(Applicant).filter(
+        Applicant.organisation_id == current_user.organisation_id,
+        Applicant.follow_up_date <= today,
+        Applicant.follow_up_date != None,
+        ~Applicant.status.in_(["rejected", "withdrawn", "tenancy_created"]),
+    ).count()
+
+    return {
+        "agents": result,
+        "follow_ups_due": follow_ups_due,
+        "total_applicants": len(applicants),
+        "total_converted": sum(1 for a in applicants if a.status == "tenancy_created"),
+    }

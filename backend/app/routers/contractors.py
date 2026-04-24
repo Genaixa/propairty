@@ -7,6 +7,7 @@ from app.auth import get_current_user
 from app.models.user import User
 from app.models.contractor import Contractor
 from app.models.maintenance import MaintenanceRequest
+from app.models.contractor_review import ContractorReview
 from app.models.unit import Unit
 from app.models.property import Property
 from app import emails, notifications
@@ -33,6 +34,9 @@ class ContractorOut(BaseModel):
     notes: Optional[str] = None
     is_active: bool
     portal_enabled: bool = False
+    avg_rating: Optional[float] = None
+    review_count: int = 0
+    avatar_url: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -45,12 +49,26 @@ class AssignContractor(BaseModel):
     invoice_ref: Optional[str] = None
 
 
+def _rating_summary(contractor_id: int, db: Session) -> dict:
+    reviews = db.query(ContractorReview).filter(ContractorReview.contractor_id == contractor_id).all()
+    if not reviews:
+        return {"avg_rating": None, "review_count": 0}
+    avg = round(sum(r.stars for r in reviews) / len(reviews), 1)
+    return {"avg_rating": avg, "review_count": len(reviews)}
+
+
 @router.get("", response_model=list[ContractorOut])
 def list_contractors(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    return db.query(Contractor).filter(
+    contractors = db.query(Contractor).filter(
         Contractor.organisation_id == current_user.organisation_id,
         Contractor.is_active == True
     ).order_by(Contractor.full_name).all()
+    result = []
+    for c in contractors:
+        d = ContractorOut.model_validate(c).model_dump()
+        d.update(_rating_summary(c.id, db))
+        result.append(d)
+    return result
 
 
 @router.post("", response_model=ContractorOut)
@@ -60,6 +78,61 @@ def create_contractor(data: ContractorCreate, db: Session = Depends(get_db), cur
     db.commit()
     db.refresh(contractor)
     return contractor
+
+
+@router.get("/{contractor_id}/profile")
+def get_contractor_profile(contractor_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """Full contractor profile: details, jobs, reviews, messages."""
+    c = db.query(Contractor).filter(Contractor.id == contractor_id, Contractor.organisation_id == current_user.organisation_id).first()
+    if not c:
+        raise HTTPException(status_code=404, detail="Contractor not found")
+
+    jobs = db.query(MaintenanceRequest).filter(
+        MaintenanceRequest.contractor_id == contractor_id,
+        MaintenanceRequest.organisation_id == current_user.organisation_id,
+    ).order_by(MaintenanceRequest.created_at.desc()).all()
+
+    jobs_out = []
+    for j in jobs:
+        unit = db.query(Unit).get(j.unit_id) if j.unit_id else None
+        prop = db.query(Property).get(j.property_id) if j.property_id else None
+        jobs_out.append({
+            "id": j.id,
+            "title": j.title,
+            "description": j.description,
+            "status": j.status,
+            "priority": j.priority,
+            "property": prop.name if prop else "—",
+            "unit": unit.name if unit else "—",
+            "estimated_cost": j.estimated_cost,
+            "actual_cost": j.actual_cost,
+            "invoice_ref": j.invoice_ref,
+            "created_at": str(j.created_at)[:10] if j.created_at else None,
+        })
+
+    reviews = db.query(ContractorReview).filter(ContractorReview.contractor_id == contractor_id).order_by(ContractorReview.created_at.desc()).all()
+    reviews_out = [{"id": r.id, "rating": r.rating, "comment": r.comment, "created_at": str(r.created_at)[:10] if r.created_at else None} for r in reviews]
+
+    rating = _rating_summary(contractor_id, db)
+
+    return {
+        "id": c.id,
+        "full_name": c.full_name,
+        "company_name": c.company_name,
+        "contact_name": c.contact_name,
+        "trade": c.trade,
+        "email": c.email,
+        "phone": c.phone,
+        "notes": c.notes,
+        "avatar_url": c.avatar_url,
+        "is_active": c.is_active,
+        "portal_enabled": c.portal_enabled,
+        "created_at": str(c.created_at)[:10] if c.created_at else None,
+        "avg_rating": rating.get("avg_rating"),
+        "review_count": rating.get("review_count", 0),
+        "jobs": jobs_out,
+        "reviews": reviews_out,
+    }
 
 
 @router.put("/{contractor_id}", response_model=ContractorOut)
@@ -136,6 +209,35 @@ def assign_contractor(job_id: int, data: AssignContractor, db: Session = Depends
     }
 
 
+@router.get("/{contractor_id}/reviews")
+def get_contractor_reviews(contractor_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    contractor = db.query(Contractor).filter(
+        Contractor.id == contractor_id,
+        Contractor.organisation_id == current_user.organisation_id,
+    ).first()
+    if not contractor:
+        raise HTTPException(status_code=404, detail="Contractor not found")
+    reviews = db.query(ContractorReview).filter(
+        ContractorReview.contractor_id == contractor_id
+    ).order_by(ContractorReview.created_at.desc()).all()
+    summary = _rating_summary(contractor_id, db)
+    return {
+        **summary,
+        "reviews": [
+            {
+                "id": r.id,
+                "reviewer_type": r.reviewer_type,
+                "reviewer_name": r.reviewer_name,
+                "stars": r.stars,
+                "comment": r.comment,
+                "created_at": r.created_at.isoformat() if r.created_at else None,
+                "job_id": r.maintenance_request_id,
+            }
+            for r in reviews
+        ],
+    }
+
+
 @router.get("/jobs")
 def jobs_by_contractor(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """All maintenance jobs with contractor and cost info."""
@@ -161,3 +263,98 @@ def jobs_by_contractor(db: Session = Depends(get_db), current_user: User = Depen
         }
         for j in jobs
     ]
+
+
+# --- Contractor Messages ---
+
+from app.models.contractor_message import ContractorMessage
+from pydantic import BaseModel as _BM
+
+class ContractorMsgCreate(_BM):
+    body: str
+
+@router.get("/messages/inbox")
+def contractor_messages_inbox(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """All contractor conversations for this org grouped by contractor, most recent first."""
+    msgs = db.query(ContractorMessage).filter(
+        ContractorMessage.organisation_id == current_user.organisation_id
+    ).order_by(ContractorMessage.created_at.desc()).all()
+
+    seen = {}
+    for m in msgs:
+        if m.contractor_id not in seen:
+            contractor = db.query(Contractor).filter(Contractor.id == m.contractor_id).first()
+            seen[m.contractor_id] = {
+                "contractor_id": m.contractor_id,
+                "contractor_name": contractor.full_name if contractor else "Unknown",
+                "contractor_email": contractor.email if contractor else "",
+                "last_message": m.body,
+                "last_message_at": m.created_at.isoformat() if m.created_at else None,
+                "last_sender": m.sender_type,
+                "unread": 0,
+            }
+        if m.sender_type == "contractor" and not m.read:
+            seen[m.contractor_id]["unread"] += 1
+
+    return list(seen.values())
+
+@router.get("/{contractor_id}/messages")
+def get_contractor_messages(contractor_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    contractor = db.query(Contractor).filter(Contractor.id == contractor_id, Contractor.organisation_id == current_user.organisation_id).first()
+    if not contractor:
+        raise HTTPException(status_code=404, detail="Contractor not found")
+    msgs = db.query(ContractorMessage).filter(
+        ContractorMessage.contractor_id == contractor_id
+    ).order_by(ContractorMessage.created_at.asc()).all()
+    for m in msgs:
+        if m.sender_type == "contractor" and not m.read:
+            m.read = True
+    db.commit()
+    return [
+        {
+            "id": m.id,
+            "sender_type": m.sender_type,
+            "sender_name": m.sender_name,
+            "body": m.body,
+            "read": m.read,
+            "created_at": m.created_at.isoformat() if m.created_at else None,
+        }
+        for m in msgs
+    ]
+
+@router.post("/{contractor_id}/messages")
+def send_contractor_message(contractor_id: int, data: ContractorMsgCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    contractor = db.query(Contractor).filter(Contractor.id == contractor_id, Contractor.organisation_id == current_user.organisation_id).first()
+    if not contractor:
+        raise HTTPException(status_code=404, detail="Contractor not found")
+    msg = ContractorMessage(
+        organisation_id=current_user.organisation_id,
+        contractor_id=contractor_id,
+        sender_type="agent",
+        sender_name=current_user.full_name or current_user.email,
+        body=data.body.strip(),
+        read=False,
+    )
+    db.add(msg)
+    db.commit()
+    db.refresh(msg)
+    # Notify contractor via their chosen channels
+    try:
+        from app.models.organisation import Organisation as _Org
+        from app import emails as _emails
+        org = db.query(_Org).filter(_Org.id == current_user.organisation_id).first()
+        _emails.send_portal_message_notification(
+            contractor, current_user.full_name or current_user.email,
+            data.body.strip(), org,
+            "https://propairty.co.uk/contractor/portal"
+        )
+    except Exception as e:
+        print(f"[email] contractor message notify failed: {e}")
+    return {
+        "id": msg.id,
+        "sender_type": msg.sender_type,
+        "sender_name": msg.sender_name,
+        "body": msg.body,
+        "read": msg.read,
+        "created_at": msg.created_at.isoformat() if msg.created_at else None,
+    }

@@ -146,6 +146,84 @@ def create_certificate(data: CertCreate, db: Session = Depends(get_db), current_
     return _enrich(cert)
 
 
+@router.post("/seed")
+def seed_compliance(
+    data: dict,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Auto-create placeholder compliance records when a new tenancy is set up.
+    Creates Gas Safety, EICR, EPC and Deposit Protection entries as 'due now'
+    so they appear in the compliance dashboard for the agent to action.
+    Skips any cert type that already has a record for this property.
+    """
+    from datetime import date as date_type, timedelta
+    property_id = data.get("property_id")
+    start_date_str = data.get("start_date")  # YYYY-MM-DD
+
+    prop = db.query(Property).filter(
+        Property.id == property_id,
+        Property.organisation_id == current_user.organisation_id,
+    ).first()
+    if not prop:
+        raise HTTPException(status_code=404, detail="Property not found")
+
+    try:
+        start_date = date_type.fromisoformat(start_date_str)
+    except Exception:
+        start_date = date_type.today()
+
+    today = date_type.today()
+    deadline_30 = start_date + timedelta(days=30)
+
+    # Certs to seed for every new tenancy
+    # Gas/EICR/EPC expire yesterday → immediately show as Expired, forcing agent to upload real certs
+    # Deposit protection expires 30 days after tenancy start → shows as Expiring Soon with countdown
+    to_seed = [
+        {
+            "cert_type": "gas_safety",
+            "issue_date": today - timedelta(days=1),
+            "expiry_date": today - timedelta(days=1),
+            "notes": "Auto-created from lease import. Please upload the current Gas Safety Certificate.",
+        },
+        {
+            "cert_type": "eicr",
+            "issue_date": today - timedelta(days=1),
+            "expiry_date": today - timedelta(days=1),
+            "notes": "Auto-created from lease import. Please upload the current EICR.",
+        },
+        {
+            "cert_type": "epc",
+            "issue_date": today - timedelta(days=1),
+            "expiry_date": today - timedelta(days=1),
+            "notes": "Auto-created from lease import. Please upload the current EPC.",
+        },
+        {
+            "cert_type": "deposit_protection",
+            "issue_date": start_date,
+            "expiry_date": deadline_30,
+            "notes": "Auto-created from lease import. Confirm deposit is registered with TDS/DPS/mydeposits within 30 days of tenancy start.",
+        },
+    ]
+
+    created = []
+    for item in to_seed:
+        # Skip if a record of this type already exists for the property
+        existing = db.query(ComplianceCertificate).filter(
+            ComplianceCertificate.property_id == property_id,
+            ComplianceCertificate.cert_type == item["cert_type"],
+        ).first()
+        if existing:
+            continue
+        cert = ComplianceCertificate(property_id=property_id, **item)
+        db.add(cert)
+        db.flush()
+        created.append(cert.cert_type)
+
+    db.commit()
+    return {"seeded": created}
+
+
 @router.delete("/{cert_id}")
 def delete_certificate(cert_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     cert = db.query(ComplianceCertificate).join(Property).filter(

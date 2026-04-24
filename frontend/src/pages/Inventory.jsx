@@ -1,7 +1,10 @@
+import { PageHeader } from '../components/Illustration'
 import { useState, useEffect } from 'react'
+import { Link } from 'react-router-dom'
 import api from '../lib/api'
 
-const BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000/api'
+const BASE = import.meta.env.VITE_API_URL || '/api'
+const fmt = d => d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
 const CONDITIONS = ['excellent', 'good', 'fair', 'poor', 'missing', 'n/a']
 
 const condColor = {
@@ -32,22 +35,26 @@ function downloadPdf(url, filename) {
 
 export default function Inventory() {
   const [inventories, setInventories] = useState([])
+  const [drafts, setDrafts] = useState([])
   const [leases, setLeases] = useState([])
   const [defaultRooms, setDefaultRooms] = useState({})
-  const [view, setView] = useState('list')    // list | create | detail | compare
+  const [view, setView] = useState('list')    // list | create | detail | compare | review_draft
   const [selected, setSelected] = useState(null)
   const [compareData, setCompareData] = useState(null)
   const [compareLease, setCompareLease] = useState(null)
+  const [reviewDraft, setReviewDraft] = useState(null)
 
   const load = async () => {
-    const [ir, lr, dr] = await Promise.all([
+    const [ir, lr, dr, draftsR] = await Promise.all([
       api.get('/inventory'),
       api.get('/inventory/leases'),
       api.get('/inventory/default-rooms'),
+      api.get('/inventory/drafts'),
     ])
     setInventories(ir.data)
     setLeases(lr.data)
     setDefaultRooms(dr.data)
+    setDrafts(draftsR.data)
   }
 
   useEffect(() => { load() }, [])
@@ -58,6 +65,12 @@ export default function Inventory() {
     setView('detail')
   }
 
+  async function openDraftReview(draft) {
+    const r = await api.get(`/inventory/${draft.id}`)
+    setReviewDraft(r.data)
+    setView('review_draft')
+  }
+
   async function openCompare(lease) {
     const r = await api.get(`/inventory/compare/${lease.id}`)
     setCompareData(r.data)
@@ -66,79 +79,169 @@ export default function Inventory() {
   }
 
   const leasesWithBoth = leases.filter(l => l.has_check_in && l.has_check_out)
-  const leasesWithCheckIn = leases.filter(l => l.has_check_in)
+
+  // Group inventories by tenant+unit into single rows
+  const grouped = Object.values(
+    inventories.reduce((acc, inv) => {
+      const key = `${inv.tenant_name}||${inv.unit}`
+      if (!acc[key]) acc[key] = {
+        tenant_name: inv.tenant_name,
+        tenant_id: inv.tenant_id,
+        unit: inv.unit,
+        unit_id: inv.unit_id,
+        property_id: inv.property_id,
+        check_in: null,
+        check_out: null,
+      }
+      if (inv.inv_type === 'check_in') acc[key].check_in = inv
+      else acc[key].check_out = inv
+      return acc
+    }, {})
+  )
+
+  const [sortCol, setSortCol] = useState('tenant_name')
+  const [sortDir, setSortDir] = useState('asc')
+
+  function toggleSort(col) {
+    if (sortCol === col) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+    else { setSortCol(col); setSortDir('asc') }
+  }
+
+  const SortTh = ({ col, label }) => (
+    <th onClick={() => toggleSort(col)}
+      className="text-left px-5 py-3 font-medium text-gray-500 text-xs uppercase cursor-pointer select-none hover:text-gray-800 whitespace-nowrap">
+      {label} {sortCol === col ? (sortDir === 'asc' ? '▲' : '▼') : <span className="text-gray-300">↕</span>}
+    </th>
+  )
+
+  const sortedGrouped = [...grouped].sort((a, b) => {
+    let av, bv
+    if      (sortCol === 'unit')       { av = a.unit;                              bv = b.unit }
+    else if (sortCol === 'check_in')   { av = a.check_in?.inv_date || '';          bv = b.check_in?.inv_date || '' }
+    else if (sortCol === 'check_out')  { av = a.check_out?.inv_date || '';         bv = b.check_out?.inv_date || '' }
+    else                               { av = a.tenant_name;                       bv = b.tenant_name }
+    if (av < bv) return sortDir === 'asc' ? -1 : 1
+    if (av > bv) return sortDir === 'asc' ? 1 : -1
+    return 0
+  })
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
-        <h2 className="text-2xl font-bold text-gray-900">Inventory</h2>
-        <div className="flex gap-2">
-          {view !== 'list' && (
-            <button onClick={() => { setView('list'); setSelected(null); setCompareData(null) }}
-              className="text-sm text-gray-500 hover:text-gray-700 border border-gray-300 px-4 py-2 rounded-lg">
-              ← Back
-            </button>
-          )}
-          {view === 'list' && (
-            <button onClick={() => setView('create')}
-              className="bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold px-4 py-2 rounded-lg transition-colors">
-              + New Inventory
-            </button>
-          )}
+      <PageHeader title="Inventory" subtitle="Room-by-room item tracking & condition records">
+        {view !== 'list' && (
+          <button onClick={() => { setView('list'); setSelected(null); setCompareData(null); setReviewDraft(null) }}
+            className="text-sm text-gray-500 hover:text-gray-700 border border-gray-300 px-4 py-2 rounded-lg">
+            ← Back
+          </button>
+        )}
+        {view === 'list' && (
+          <button onClick={() => setView('create')}
+            className="bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold px-4 py-2 rounded-lg transition-colors">
+            + New Inventory
+          </button>
+        )}
+      </PageHeader>
+
+      {/* Telegram Drafts */}
+      {view === 'list' && drafts.length > 0 && (
+        <div className="mb-6">
+          <div className="flex items-center gap-2 mb-3">
+            <h3 className="font-semibold text-gray-800">Telegram Drafts</h3>
+            <span className="bg-amber-100 text-amber-700 text-xs font-semibold px-2 py-0.5 rounded-full">{drafts.length}</span>
+          </div>
+          <div className="space-y-2">
+            {drafts.map(draft => (
+              <div key={draft.id} className="bg-amber-50 border border-amber-200 rounded-xl px-5 py-4 flex items-center justify-between">
+                <div>
+                  <p className="font-medium text-gray-900 text-sm">{draft.tenant_name} — {draft.unit}</p>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    {draft.inv_type === 'check_in' ? 'Check-In' : 'Check-Out'} · {fmt(draft.inv_date)} · {draft.rooms?.length ?? 0} rooms
+                  </p>
+                </div>
+                <div className="flex gap-2">
+                  <button onClick={() => openDraftReview(draft)}
+                    className="bg-amber-500 hover:bg-amber-600 text-white text-sm font-semibold px-4 py-1.5 rounded-lg transition-colors">
+                    Review &amp; Confirm
+                  </button>
+                  <button onClick={async () => { if (confirm('Discard this draft?')) { await api.delete(`/inventory/${draft.id}`); load() } }}
+                    className="text-xs text-red-400 hover:text-red-600 border border-red-200 px-3 py-1.5 rounded-lg">
+                    Discard
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* List view */}
       {view === 'list' && (
         <div className="space-y-6">
-          {/* Comparison prompt */}
-          {leasesWithBoth.length > 0 && (
-            <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-4">
-              <p className="text-sm font-semibold text-indigo-800 mb-3">Check-In vs Check-Out Comparison Available</p>
-              <div className="flex flex-wrap gap-2">
-                {leasesWithBoth.map(l => (
-                  <button key={l.id} onClick={() => openCompare(l)}
-                    className="text-sm bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-lg transition-colors">
-                    {l.tenant_name} — {l.unit}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
           <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-            {inventories.length === 0 ? (
+            {grouped.length === 0 ? (
               <div className="p-10 text-center text-gray-400 text-sm">No inventories recorded yet.</div>
             ) : (
               <table className="w-full text-sm">
                 <thead className="bg-gray-50 border-b border-gray-100">
                   <tr>
-                    {['Type', 'Tenant', 'Property', 'Date', 'Conducted By', ''].map(h => (
-                      <th key={h} className="text-left px-5 py-3 font-medium text-gray-500 text-xs uppercase">{h}</th>
-                    ))}
+                    <th className="text-left px-5 py-3 font-medium text-gray-500 text-xs uppercase w-10"></th>
+                    <SortTh col="unit" label="Property / Unit" />
+                    <SortTh col="tenant_name" label="Tenant" />
+                    <SortTh col="check_in" label="Check-In" />
+                    <SortTh col="check_out" label="Check-Out" />
+                    <th className="text-left px-5 py-3 font-medium text-gray-500 text-xs uppercase"></th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
-                  {inventories.map(inv => (
-                    <tr key={inv.id} className="hover:bg-gray-50">
-                      <td className="px-5 py-3.5">
-                        <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${
-                          inv.inv_type === 'check_in' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'
-                        }`}>
-                          {inv.inv_type === 'check_in' ? 'Check-In' : 'Check-Out'}
-                        </span>
-                      </td>
-                      <td className="px-5 py-3.5 font-medium text-gray-900">{inv.tenant_name}</td>
-                      <td className="px-5 py-3.5 text-gray-500 text-xs">{inv.unit}</td>
-                      <td className="px-5 py-3.5 text-gray-500">{inv.inv_date}</td>
-                      <td className="px-5 py-3.5 text-gray-500">{inv.conducted_by || '—'}</td>
-                      <td className="px-5 py-3.5 flex gap-3">
-                        <button onClick={() => openDetail(inv)} className="text-xs text-indigo-600 hover:text-indigo-800 font-medium">View</button>
-                        <button onClick={() => downloadPdf(`${BASE}/inventory/${inv.id}/report`, `Inventory_${inv.inv_type}_${inv.tenant_name.replace(' ', '_')}.pdf`)}
-                          className="text-xs text-gray-500 hover:text-gray-700">PDF</button>
-                      </td>
-                    </tr>
-                  ))}
+                  {sortedGrouped.map(row => {
+                    const lease = leasesWithBoth.find(l => l.tenant_name === row.tenant_name && l.unit === row.unit)
+                    return (
+                      <tr key={`${row.tenant_name}||${row.unit}`} className="hover:bg-gray-50">
+                        <td className="px-5 py-3.5">
+                          <button onClick={() => openDetail(row.check_in || row.check_out)}
+                            className="text-xs bg-gray-100 hover:bg-indigo-600 hover:text-white text-gray-600 px-2.5 py-1 rounded-lg font-medium transition-colors whitespace-nowrap">
+                            View
+                          </button>
+                        </td>
+                        <td className="px-5 py-3.5 text-xs">
+                          {row.property_id
+                            ? <Link to={`/properties/${row.property_id}`} className="text-indigo-600 hover:underline">{row.unit}</Link>
+                            : <span className="text-gray-500">{row.unit}</span>
+                          }
+                        </td>
+                        <td className="px-5 py-3.5 font-medium">
+                          {row.tenant_id
+                            ? <Link to={`/tenants/${row.tenant_id}`} className="text-indigo-600 hover:underline">{row.tenant_name}</Link>
+                            : <span>{row.tenant_name}</span>
+                          }
+                        </td>
+                        <td className="px-5 py-3.5">
+                          {row.check_in ? (
+                            <div className="flex items-center gap-2">
+                              <button onClick={() => openDetail(row.check_in)} className="text-gray-700 hover:text-indigo-600 hover:underline">{fmt(row.check_in.inv_date)}</button>
+                              <button onClick={() => downloadPdf(`${BASE}/inventory/${row.check_in.id}/report`, `CheckIn_${row.tenant_name.replace(' ','_')}.pdf`)} className="text-xs text-gray-400 hover:text-gray-600">PDF</button>
+                            </div>
+                          ) : <span className="text-gray-300 text-xs">—</span>}
+                        </td>
+                        <td className="px-5 py-3.5">
+                          {row.check_out ? (
+                            <div className="flex items-center gap-2">
+                              <button onClick={() => openDetail(row.check_out)} className="text-gray-700 hover:text-indigo-600 hover:underline">{fmt(row.check_out.inv_date)}</button>
+                              <button onClick={() => downloadPdf(`${BASE}/inventory/${row.check_out.id}/report`, `CheckOut_${row.tenant_name.replace(' ','_')}.pdf`)} className="text-xs text-gray-400 hover:text-gray-600">PDF</button>
+                            </div>
+                          ) : <span className="text-gray-300 text-xs">—</span>}
+                        </td>
+                        <td className="px-5 py-3.5">
+                          {lease && (
+                            <button onClick={() => openCompare(lease)}
+                              className="text-xs bg-indigo-600 hover:bg-indigo-700 text-white px-2.5 py-1 rounded-lg font-medium">
+                              Compare
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    )
+                  })}
                 </tbody>
               </table>
             )}
@@ -151,6 +254,17 @@ export default function Inventory() {
         <InventoryBuilder
           leases={leases}
           defaultRooms={defaultRooms}
+          onSaved={() => { load(); setView('list') }}
+          onCancel={() => setView('list')}
+        />
+      )}
+
+      {/* Review draft (from Telegram bot) */}
+      {view === 'review_draft' && reviewDraft && (
+        <InventoryBuilder
+          leases={leases}
+          defaultRooms={defaultRooms}
+          draft={reviewDraft}
           onSaved={() => { load(); setView('list') }}
           onCancel={() => setView('list')}
         />
@@ -183,18 +297,33 @@ export default function Inventory() {
 }
 
 
-function InventoryBuilder({ leases, defaultRooms, onSaved, onCancel }) {
-  const [leaseId, setLeaseId] = useState('')
-  const [invType, setInvType] = useState('check_in')
-  const [invDate, setInvDate] = useState(new Date().toISOString().slice(0, 10))
-  const [conductedBy, setConductedBy] = useState('')
-  const [tenantPresent, setTenantPresent] = useState(true)
-  const [overallNotes, setOverallNotes] = useState('')
-  const [meterElectric, setMeterElectric] = useState('')
-  const [meterGas, setMeterGas] = useState('')
-  const [meterWater, setMeterWater] = useState('')
-  const [keysHanded, setKeysHanded] = useState('')
-  const [rooms, setRooms] = useState([])
+function InventoryBuilder({ leases, defaultRooms, draft, onSaved, onCancel }) {
+  const [leaseId, setLeaseId] = useState(draft ? String(draft.lease_id) : '')
+  const [invType, setInvType] = useState(draft?.inv_type ?? 'check_in')
+  const [invDate, setInvDate] = useState(draft?.inv_date ?? new Date().toISOString().slice(0, 10))
+  const [conductedBy, setConductedBy] = useState(draft?.conducted_by ?? '')
+  const [tenantPresent, setTenantPresent] = useState(draft?.tenant_present ?? true)
+  const [overallNotes, setOverallNotes] = useState(draft?.overall_notes ?? '')
+  const [meterElectric, setMeterElectric] = useState(draft?.meter_electric ?? '')
+  const [meterGas, setMeterGas] = useState(draft?.meter_gas ?? '')
+  const [meterWater, setMeterWater] = useState(draft?.meter_water ?? '')
+  const [keysHanded, setKeysHanded] = useState(draft?.keys_handed ?? '')
+  const [rooms, setRooms] = useState(() => {
+    if (draft?.rooms?.length) {
+      return draft.rooms.map((r, ri) => ({
+        room_name: r.room_name,
+        order: ri,
+        notes: r.notes ?? '',
+        items: r.items.map((i, ii) => ({
+          item_name: i.item_name,
+          condition: i.condition ?? '',
+          notes: i.notes ?? '',
+          order: ii,
+        })),
+      }))
+    }
+    return []
+  })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
@@ -245,30 +374,35 @@ function InventoryBuilder({ leases, defaultRooms, onSaved, onCancel }) {
     if (rooms.length === 0) { setError('Add at least one room'); return }
     setSaving(true)
     setError('')
+    const payload = {
+      lease_id: parseInt(leaseId),
+      inv_type: invType,
+      inv_date: invDate,
+      conducted_by: conductedBy || null,
+      tenant_present: tenantPresent,
+      overall_notes: overallNotes || null,
+      meter_electric: meterElectric || null,
+      meter_gas: meterGas || null,
+      meter_water: meterWater || null,
+      keys_handed: keysHanded || null,
+      rooms: rooms.map((r, ri) => ({
+        room_name: r.room_name,
+        order: ri,
+        notes: r.notes || null,
+        items: r.items.map((i, ii) => ({
+          item_name: i.item_name,
+          condition: i.condition || null,
+          notes: i.notes || null,
+          order: ii,
+        })).filter(i => i.item_name),
+      })).filter(r => r.room_name),
+    }
     try {
-      await api.post('/inventory', {
-        lease_id: parseInt(leaseId),
-        inv_type: invType,
-        inv_date: invDate,
-        conducted_by: conductedBy || null,
-        tenant_present: tenantPresent,
-        overall_notes: overallNotes || null,
-        meter_electric: meterElectric || null,
-        meter_gas: meterGas || null,
-        meter_water: meterWater || null,
-        keys_handed: keysHanded || null,
-        rooms: rooms.map((r, ri) => ({
-          room_name: r.room_name,
-          order: ri,
-          notes: r.notes || null,
-          items: r.items.map((i, ii) => ({
-            item_name: i.item_name,
-            condition: i.condition || null,
-            notes: i.notes || null,
-            order: ii,
-          })).filter(i => i.item_name),
-        })).filter(r => r.room_name),
-      })
+      if (draft) {
+        await api.post(`/inventory/${draft.id}/confirm`, payload)
+      } else {
+        await api.post('/inventory', payload)
+      }
       onSaved()
     } catch (err) {
       setError(err.response?.data?.detail || 'Failed to save')
@@ -393,7 +527,7 @@ function InventoryBuilder({ leases, defaultRooms, onSaved, onCancel }) {
         <button onClick={onCancel} className="px-4 py-2 text-sm text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50">Cancel</button>
         <button onClick={handleSave} disabled={saving}
           className="px-6 py-2 text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg disabled:opacity-60 transition-colors">
-          {saving ? 'Saving…' : 'Save Inventory'}
+          {saving ? 'Saving…' : draft ? 'Confirm & Save' : 'Save Inventory'}
         </button>
       </div>
     </div>
@@ -418,7 +552,7 @@ function InventoryDetail({ inv, onDelete }) {
           </div>
         </div>
         <div className="grid grid-cols-4 gap-3 text-sm">
-          {[['Date', inv.inv_date], ['Conducted By', inv.conducted_by || '—'],
+          {[['Date', fmt(inv.inv_date)], ['Conducted By', inv.conducted_by || '—'],
             ['Tenant Present', inv.tenant_present ? 'Yes' : 'No'],
             ['Electric', inv.meter_electric || '—'], ['Gas', inv.meter_gas || '—'],
             ['Water', inv.meter_water || '—'], ['Keys', inv.keys_handed || '—']].map(([l, v]) => (
@@ -430,25 +564,41 @@ function InventoryDetail({ inv, onDelete }) {
         </div>
       </div>
 
-      {inv.rooms.map(room => (
-        <div key={room.id} className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-          <div className="px-5 py-3 bg-gray-50 border-b border-gray-100">
-            <h4 className="font-semibold text-gray-800">{room.room_name}</h4>
-            {room.notes && <p className="text-xs text-gray-500 mt-0.5">{room.notes}</p>}
-          </div>
-          <table className="w-full text-sm">
-            <tbody className="divide-y divide-gray-100">
-              {room.items.map(item => (
-                <tr key={item.id} className="hover:bg-gray-50">
-                  <td className="px-5 py-2.5 text-gray-700 w-1/2">{item.item_name}</td>
-                  <td className="px-5 py-2.5"><CondBadge cond={item.condition} /></td>
-                  <td className="px-5 py-2.5 text-xs text-gray-400">{item.notes || '—'}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      ))}
+      {inv.rooms
+        .filter(room => room.items.some(i => i.item_name?.trim() && i.condition && i.condition !== 'n/a'))
+        .map(room => {
+          const filledItems = room.items.filter(i => i.item_name?.trim() && i.condition && i.condition !== 'n/a')
+          return (
+            <div key={room.id} className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+              <div className="px-5 py-3 bg-gray-50 border-b border-gray-100">
+                <h4 className="font-semibold text-gray-800">{room.room_name}</h4>
+                {room.notes && <p className="text-xs text-gray-500 mt-0.5">{room.notes}</p>}
+              </div>
+              <table className="w-full text-sm">
+                <tbody className="divide-y divide-gray-100">
+                  {filledItems.map(item => (
+                    <tr key={item.id} className="hover:bg-gray-50">
+                      <td className="px-5 py-2.5 text-gray-700 w-1/2">{item.item_name}</td>
+                      <td className="px-5 py-2.5"><CondBadge cond={item.condition} /></td>
+                      <td className="px-5 py-2.5 text-xs text-gray-400">{item.notes || '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {room.photos?.length > 0 && (
+                <div className="px-5 py-3 border-t border-gray-100 flex flex-wrap gap-2">
+                  {room.photos.map(p => (
+                    <a key={p.id} href={p.url} target="_blank" rel="noreferrer">
+                      <img src={p.url} alt={p.original_name}
+                        className="h-20 w-20 object-cover rounded-lg border border-gray-200 hover:opacity-90 transition-opacity" />
+                    </a>
+                  ))}
+                </div>
+              )}
+            </div>
+          )
+        })
+      }
     </div>
   )
 }
@@ -488,8 +638,9 @@ function ComparisonView({ data, lease, onDownload }) {
         </div>
       )}
 
-      {comparison?.map(room => {
-        const hasChanges = room.items.some(i => i.changed)
+      {comparison?.filter(room => room.items.some(i => i.item_name?.trim() && (i.condition || i.out_condition))).map(room => {
+        const filledItems = room.items.filter(i => i.item_name?.trim() && (i.condition || i.out_condition))
+        const hasChanges = filledItems.some(i => i.changed)
         return (
           <div key={room.room_name} className={`bg-white rounded-xl border overflow-hidden ${hasChanges ? 'border-amber-200' : 'border-gray-200'}`}>
             <div className={`px-5 py-3 border-b ${hasChanges ? 'bg-amber-50 border-amber-100' : 'bg-gray-50 border-gray-100'}`}>
@@ -505,7 +656,7 @@ function ComparisonView({ data, lease, onDownload }) {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {room.items.map((item, i) => (
+                {filledItems.map((item, i) => (
                   <tr key={i} className={item.changed ? 'bg-red-50/40' : 'hover:bg-gray-50'}>
                     <td className="px-5 py-2.5 text-gray-700">{item.item_name}</td>
                     <td className="px-5 py-2.5 text-center"><CondBadge cond={item.condition} /></td>

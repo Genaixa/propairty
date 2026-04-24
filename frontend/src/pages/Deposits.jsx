@@ -1,5 +1,9 @@
+import { PageHeader } from '../components/Illustration'
 import { useState, useEffect } from 'react'
+import { Link } from 'react-router-dom'
 import api from '../lib/api'
+
+const fmt = d => d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
 
 const SCHEMES = ['TDS', 'DPS', 'MyDeposits', 'Other']
 const STATUS_STEPS = ['unprotected', 'protected', 'pi_served', 'returned']
@@ -50,6 +54,20 @@ export default function Deposits() {
   const [addError, setAddError] = useState('')
   const [saving, setSaving] = useState(false)
   const [filter, setFilter] = useState('all')
+  const [sortCol, setSortCol] = useState('tenant_name')
+  const [sortDir, setSortDir] = useState('asc')
+
+  function toggleSort(col) {
+    if (sortCol === col) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+    else { setSortCol(col); setSortDir('asc') }
+  }
+
+  const SortTh = ({ col, label }) => (
+    <th onClick={() => toggleSort(col)}
+      className="text-left px-5 py-3 font-medium text-gray-500 text-xs uppercase cursor-pointer select-none hover:text-gray-800 whitespace-nowrap">
+      {label} {sortCol === col ? (sortDir === 'asc' ? '▲' : '▼') : <span className="text-gray-300">↕</span>}
+    </th>
+  )
 
   const load = async () => {
     const [dr, cr] = await Promise.all([api.get('/deposits'), api.get('/deposits/compliance')])
@@ -69,6 +87,19 @@ export default function Deposits() {
     return true
   })
 
+  const sortedFiltered = [...filtered].sort((a, b) => {
+    let av, bv
+    if      (sortCol === 'unit')          { av = a.unit || '';           bv = b.unit || '' }
+    else if (sortCol === 'amount')        { av = a.amount || 0;          bv = b.amount || 0; return sortDir === 'asc' ? av - bv : bv - av }
+    else if (sortCol === 'received_date') { av = a.received_date || '';  bv = b.received_date || '' }
+    else if (sortCol === 'scheme')        { av = a.scheme || '';         bv = b.scheme || '' }
+    else if (sortCol === 'status')        { av = a.status || '';         bv = b.status || '' }
+    else                                  { av = a.tenant_name || '';    bv = b.tenant_name || '' }
+    if (av < bv) return sortDir === 'asc' ? -1 : 1
+    if (av > bv) return sortDir === 'asc' ? 1 : -1
+    return 0
+  })
+
   async function handleAdd(e) {
     e.preventDefault()
     setAddError('')
@@ -86,13 +117,12 @@ export default function Deposits() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
-        <h2 className="text-2xl font-bold text-gray-900">Deposits</h2>
+      <PageHeader title="Deposits" subtitle="Deposit protection & compliance">
         <button onClick={() => setShowAdd(true)}
           className="bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold px-4 py-2 rounded-lg transition-colors">
           + Register Deposit
         </button>
-      </div>
+      </PageHeader>
 
       {/* Compliance summary */}
       {compliance && (
@@ -159,18 +189,31 @@ export default function Deposits() {
           <table className="w-full text-sm">
             <thead className="bg-gray-50 border-b border-gray-100">
               <tr>
-                {['Tenant', 'Property', 'Amount', 'Received', 'Scheme', 'Status', 'Flag', ''].map(h => (
-                  <th key={h} className="text-left px-5 py-3 font-medium text-gray-500 text-xs uppercase">{h}</th>
-                ))}
+                <SortTh col="tenant_name" label="Tenant" />
+                <SortTh col="unit" label="Property" />
+                <SortTh col="amount" label="Amount" />
+                <SortTh col="received_date" label="Received" />
+                <SortTh col="scheme" label="Scheme" />
+                <SortTh col="status" label="Status" />
+                <th className="text-left px-5 py-3 font-medium text-gray-500 text-xs uppercase">Flag</th>
+                <th className="px-5 py-3"></th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {filtered.map(d => (
+              {sortedFiltered.map(d => (
                 <tr key={d.id} className={`hover:bg-gray-50 ${d.protection_overdue || d.pi_overdue ? 'bg-red-50/40' : ''}`}>
-                  <td className="px-5 py-3.5 font-medium text-gray-900">{d.tenant_name}</td>
-                  <td className="px-5 py-3.5 text-gray-500 text-xs">{d.unit}</td>
+                  <td className="px-5 py-3.5 font-medium">
+                    {d.tenant_id
+                      ? <Link to={`/tenants/${d.tenant_id}`} className="text-indigo-600 hover:underline">{d.tenant_name}</Link>
+                      : <span className="text-gray-900">{d.tenant_name}</span>}
+                  </td>
+                  <td className="px-5 py-3.5 text-xs">
+                    {d.property_id
+                      ? <Link to={`/properties/${d.property_id}`} className="text-indigo-600 hover:underline">{d.unit}</Link>
+                      : <span className="text-gray-500">{d.unit}</span>}
+                  </td>
                   <td className="px-5 py-3.5 font-semibold text-gray-700">£{d.amount?.toLocaleString()}</td>
-                  <td className="px-5 py-3.5 text-gray-500">{d.received_date}</td>
+                  <td className="px-5 py-3.5 text-gray-500">{fmt(d.received_date)}</td>
                   <td className="px-5 py-3.5 text-gray-500">{d.scheme || '—'}</td>
                   <td className="px-5 py-3.5"><Badge status={d.status} /></td>
                   <td className="px-5 py-3.5"><UrgencyFlag d={d} /></td>
@@ -265,9 +308,20 @@ function ManageModal({ deposit, onClose }) {
     dispute_notes: deposit.dispute_notes || '',
     notes: deposit.notes || '',
     status: deposit.status,
+    checkin_inspection_id: deposit.checkin_inspection_id || '',
+    checkout_inspection_id: deposit.checkout_inspection_id || '',
   })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [inspections, setInspections] = useState([])
+
+  useEffect(() => {
+    if (deposit.unit_id) {
+      api.get('/inspections', { params: { status: 'completed' } })
+        .then(r => setInspections(r.data.filter(i => i.unit_id === deposit.unit_id)))
+        .catch(() => {})
+    }
+  }, [deposit.unit_id])
 
   async function handleSave(e) {
     e.preventDefault()
@@ -280,6 +334,8 @@ function ManageModal({ deposit, onClose }) {
       }
       if (payload.return_amount) payload.return_amount = parseFloat(payload.return_amount)
       if (payload.deductions) payload.deductions = parseFloat(payload.deductions)
+      if (payload.checkin_inspection_id) payload.checkin_inspection_id = parseInt(payload.checkin_inspection_id)
+      if (payload.checkout_inspection_id) payload.checkout_inspection_id = parseInt(payload.checkout_inspection_id)
       await api.put(`/deposits/${deposit.id}`, payload)
       onClose()
     } catch (err) {
@@ -322,7 +378,7 @@ function ManageModal({ deposit, onClose }) {
         </div>
         <div className="bg-gray-50 rounded-lg p-3">
           <p className="text-xs text-gray-500">Received</p>
-          <p className="font-bold text-gray-900">{deposit.received_date}</p>
+          <p className="font-bold text-gray-900">{fmt(deposit.received_date)}</p>
         </div>
         <div className="bg-gray-50 rounded-lg p-3">
           <p className="text-xs text-gray-500">Property</p>
@@ -392,6 +448,39 @@ function ManageModal({ deposit, onClose }) {
               rows={2} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
           </div>
         </fieldset>
+
+        {/* Linked Inspections */}
+        {inspections.length > 0 && (
+          <fieldset className="border border-gray-200 rounded-lg p-4">
+            <legend className="text-xs font-semibold text-gray-500 uppercase px-1">Linked Inspections</legend>
+            <div className="grid grid-cols-2 gap-4 mt-2">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Check-In Inspection</label>
+                <select value={form.checkin_inspection_id} onChange={e => setForm({...form, checkin_inspection_id: e.target.value})}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                  <option value="">None</option>
+                  {inspections.filter(i => i.type === 'check_in').map(i => (
+                    <option key={i.id} value={i.id}>
+                      {i.completed_date || i.scheduled_date} — {i.overall_condition || 'no condition'}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Check-Out Inspection</label>
+                <select value={form.checkout_inspection_id} onChange={e => setForm({...form, checkout_inspection_id: e.target.value})}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                  <option value="">None</option>
+                  {inspections.filter(i => i.type === 'check_out').map(i => (
+                    <option key={i.id} value={i.id}>
+                      {i.completed_date || i.scheduled_date} — {i.overall_condition || 'no condition'}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          </fieldset>
+        )}
 
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>

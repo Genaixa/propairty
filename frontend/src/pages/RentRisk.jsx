@@ -1,3 +1,4 @@
+import { PageHeader } from '../components/Illustration'
 import { useState, useEffect } from 'react'
 import api from '../lib/api'
 
@@ -34,11 +35,9 @@ export default function RentRisk() {
   }
 
   const tenants = data?.tenants || []
-  const filtered = filter === 'all' ? tenants : tenants.filter(t => {
-    if (filter === 'action') return t.risk_score >= 3
-    if (filter === 'critical') return t.risk_score >= 4
-    return true
-  })
+  const filtered = filter === 'all' ? tenants : tenants.filter(t =>
+    filter.startsWith('score_') ? t.risk_score === parseInt(filter.split('_')[1]) : true
+  )
 
   if (loading) {
     return (
@@ -53,18 +52,14 @@ export default function RentRisk() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Rent Risk Scoring</h1>
-          <p className="text-sm text-gray-500 mt-1">AI-powered arrears risk assessment across your portfolio</p>
-        </div>
+      <PageHeader title="Rent Risk Scoring" subtitle="AI-powered arrears risk assessment across your portfolio">
         <button
           onClick={load}
           className="flex items-center gap-2 border border-gray-300 rounded-lg px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
         >
           <span>↻</span> Refresh
         </button>
-      </div>
+      </PageHeader>
 
       {/* AI Summary */}
       {data?.summary && (
@@ -116,24 +111,14 @@ export default function RentRisk() {
         </div>
       )}
 
-      {/* Filter tabs */}
-      <div className="flex gap-1 mb-4 bg-gray-100 rounded-lg p-1 w-fit">
-        {[
-          ['all', 'All Tenants'],
-          ['action', 'Action Required'],
-          ['critical', 'Critical / High'],
-        ].map(([key, label]) => (
-          <button
-            key={key}
-            onClick={() => setFilter(key)}
-            className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${
-              filter === key ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-600 hover:text-gray-900'
-            }`}
-          >
-            {label}
+      {/* Reset filter */}
+      {filter !== 'all' && (
+        <div className="mb-4">
+          <button onClick={() => setFilter('all')} className="text-sm text-indigo-600 hover:underline">
+            ← Show all tenants
           </button>
-        ))}
-      </div>
+        </div>
+      )}
 
       {/* Tenant list */}
       {filtered.length === 0 ? (

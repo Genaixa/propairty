@@ -53,6 +53,7 @@ def _renewal_out(r: LeaseRenewal) -> dict:
         "tenant_notes": r.tenant_notes,
         "sent_at": r.sent_at.isoformat() if r.sent_at else None,
         "responded_at": r.responded_at.isoformat() if r.responded_at else None,
+        "landlord_viewed_at": r.landlord_viewed_at.isoformat() if r.landlord_viewed_at else None,
     }
 
 
@@ -69,7 +70,9 @@ def _lease_out(lease: Lease, renewal: LeaseRenewal = None) -> dict:
         "tenant_email": tenant.email if tenant else None,
         "tenant_id": tenant.id if tenant else None,
         "property": prop.name if prop else None,
+        "property_id": prop.id if prop else None,
         "unit": unit.name if unit else None,
+        "unit_id": unit.id if unit else None,
         "monthly_rent": lease.monthly_rent,
         "start_date": lease.start_date.isoformat(),
         "end_date": lease.end_date.isoformat() if lease.end_date else None,

@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, Text
+from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, Text, Boolean
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.database import Base
@@ -16,6 +16,17 @@ class Property(Base):
     postcode = Column(String, nullable=False)
     property_type = Column(String, default="residential")  # residential, commercial, HMO
     description = Column(Text, nullable=True)
+    epc_rating = Column(String(1), nullable=True)   # A-G
+    epc_potential = Column(String(1), nullable=True) # A-G potential after improvements
+    tenure = Column(String, nullable=True)           # Freehold, Leasehold, Share of Freehold
+    features = Column(Text, nullable=True)            # Newline-separated key features
+    virtual_tour_url = Column(String, nullable=True)  # URL to Matterport/YouTube tour
+    council_tax_band = Column(String(1), nullable=True) # A-H
+    bills_included = Column(Boolean, default=False, nullable=True)
+    featured = Column(Boolean, default=False, nullable=True)   # show prominently on public listings site
+    reference_number = Column(String(50), nullable=True)
+    emergency_contacts = Column(Text, nullable=True)  # JSON: [{role, name, phone}]
+    utility_info = Column(Text, nullable=True)         # JSON: {electricity, gas, water, council, bin_days, meter_elec, meter_gas}
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     organisation = relationship("Organisation", back_populates="properties")

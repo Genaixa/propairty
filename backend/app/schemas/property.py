@@ -27,9 +27,20 @@ class PropertyBase(BaseModel):
     postcode: str
     property_type: str = "residential"
     description: Optional[str] = None
+    epc_rating: Optional[str] = None
+    epc_potential: Optional[str] = None
+    tenure: Optional[str] = None
+    features: Optional[str] = None
+    virtual_tour_url: Optional[str] = None
+    council_tax_band: Optional[str] = None
+    bills_included: Optional[bool] = False
+    featured: Optional[bool] = False
+    reference_number: Optional[str] = None
+    emergency_contacts: Optional[str] = None
+    utility_info: Optional[str] = None
 
 class PropertyCreate(PropertyBase):
-    pass
+    landlord_id: Optional[int] = None
 
 class PropertyOut(PropertyBase):
     id: int

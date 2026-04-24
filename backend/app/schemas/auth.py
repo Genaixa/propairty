@@ -10,8 +10,10 @@ class UserOut(BaseModel):
     email: str
     full_name: str
     role: str
+    restrict_to_assigned: Optional[bool] = False
     organisation_id: int
     organisation_name: Optional[str] = None
+    avatar_url: Optional[str] = None
 
     @model_validator(mode='before')
     @classmethod

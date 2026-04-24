@@ -1,7 +1,40 @@
+import { PageHeader } from '../components/Illustration'
 import { useState, useEffect } from 'react'
 import api from '../lib/api'
 
-const BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000/api'
+const fmt = d => d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
+
+function useSortable(defaultCol, defaultDir = 'asc') {
+  const [sortCol, setSortCol] = useState(defaultCol)
+  const [sortDir, setSortDir] = useState(defaultDir)
+  function toggleSort(col) {
+    if (sortCol === col) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+    else { setSortCol(col); setSortDir('asc') }
+  }
+  function SortTh({ col, label, right }) {
+    return (
+      <th onClick={() => toggleSort(col)}
+        className={`px-3 py-2 font-medium text-gray-500 text-xs cursor-pointer select-none hover:text-gray-800 whitespace-nowrap ${right ? 'text-right' : 'text-left'}`}>
+        {label} {sortCol === col ? (sortDir === 'asc' ? '▲' : '▼') : <span className="text-gray-300">↕</span>}
+      </th>
+    )
+  }
+  function sortRows(rows, getters) {
+    return [...rows].sort((a, b) => {
+      const getter = getters[sortCol]
+      if (!getter) return 0
+      const av = getter(a), bv = getter(b)
+      if (typeof av === 'number' && typeof bv === 'number') return sortDir === 'asc' ? av - bv : bv - av
+      const as = String(av ?? ''), bs = String(bv ?? '')
+      if (as < bs) return sortDir === 'asc' ? -1 : 1
+      if (as > bs) return sortDir === 'asc' ? 1 : -1
+      return 0
+    })
+  }
+  return { SortTh, sortRows }
+}
+
+const BASE = import.meta.env.VITE_API_URL || '/api'
 
 function ukTaxYears() {
   const now = new Date()
@@ -75,8 +108,7 @@ export default function Accounting() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
-        <h2 className="text-2xl font-bold text-gray-900">Accounting Export</h2>
+      <PageHeader title="Accounting" subtitle="Income & expense reporting for tax and landlord statements">
         {report && (
           <div className="flex gap-2">
             <button onClick={() => downloadFile('csv')} disabled={exporting === 'csv'}
@@ -89,7 +121,7 @@ export default function Accounting() {
             </button>
           </div>
         )}
-      </div>
+      </PageHeader>
 
       {/* Filters */}
       <div className="bg-white rounded-xl border border-gray-200 p-5 mb-6 space-y-4">
@@ -177,39 +209,7 @@ export default function Accounting() {
           </div>
 
           {/* Per-property summary table */}
-          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-            <div className="px-5 py-4 border-b border-gray-100 bg-gray-50">
-              <h3 className="font-semibold text-gray-700 text-sm">Per-Property Summary</h3>
-            </div>
-            <table className="w-full text-sm">
-              <thead className="bg-gray-50 border-b border-gray-100">
-                <tr>
-                  {['Property', 'Income', 'Expenditure', 'Net'].map(h => (
-                    <th key={h} className={`px-5 py-3 font-medium text-gray-500 text-xs uppercase ${h === 'Property' ? 'text-left' : 'text-right'}`}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {report.properties.map(p => (
-                  <tr key={p.name} className="hover:bg-gray-50">
-                    <td className="px-5 py-3 font-medium text-gray-900">
-                      {p.name}
-                      <span className="text-xs text-gray-400 ml-2">{p.income_rows.length} payments · {p.expenditure_rows.length} jobs</span>
-                    </td>
-                    <td className="px-5 py-3 text-right text-green-600 font-semibold">£{p.total_income.toLocaleString('en-GB', { minimumFractionDigits: 2 })}</td>
-                    <td className="px-5 py-3 text-right text-red-500 font-semibold">£{p.total_expenditure.toLocaleString('en-GB', { minimumFractionDigits: 2 })}</td>
-                    <td className={`px-5 py-3 text-right font-bold ${p.net >= 0 ? 'text-blue-600' : 'text-amber-600'}`}>£{p.net.toLocaleString('en-GB', { minimumFractionDigits: 2 })}</td>
-                  </tr>
-                ))}
-                <tr className="bg-gray-50 font-bold border-t-2 border-gray-300">
-                  <td className="px-5 py-3 text-gray-700">Total</td>
-                  <td className="px-5 py-3 text-right text-green-700">£{report.total_income.toLocaleString('en-GB', { minimumFractionDigits: 2 })}</td>
-                  <td className="px-5 py-3 text-right text-red-600">£{report.total_expenditure.toLocaleString('en-GB', { minimumFractionDigits: 2 })}</td>
-                  <td className={`px-5 py-3 text-right ${report.net_profit >= 0 ? 'text-blue-700' : 'text-amber-700'}`}>£{report.net_profit.toLocaleString('en-GB', { minimumFractionDigits: 2 })}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
+          <SummaryTable properties={report.properties} totals={{ income: report.total_income, expenditure: report.total_expenditure, net: report.net_profit }} />
 
           {/* Expanded per-property detail */}
           {report.properties.map(p => (
@@ -234,8 +234,74 @@ export default function Accounting() {
 }
 
 
+function SummaryTable({ properties, totals }) {
+  const { SortTh, sortRows } = useSortable('name')
+  const getters = {
+    name:              p => p.name,
+    total_income:      p => p.total_income,
+    total_expenditure: p => p.total_expenditure,
+    net:               p => p.net,
+  }
+  const sorted = sortRows(properties, getters)
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+      <div className="px-5 py-4 border-b border-gray-100 bg-gray-50">
+        <h3 className="font-semibold text-gray-700 text-sm">Per-Property Summary</h3>
+      </div>
+      <table className="w-full text-sm">
+        <thead className="bg-gray-50 border-b border-gray-100">
+          <tr>
+            <SortTh col="name" label="Property" />
+            <SortTh col="total_income" label="Income" right />
+            <SortTh col="total_expenditure" label="Expenditure" right />
+            <SortTh col="net" label="Net" right />
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-gray-100">
+          {sorted.map(p => (
+            <tr key={p.name} className="hover:bg-gray-50">
+              <td className="px-5 py-3 font-medium text-gray-900">
+                {p.name}
+                <span className="text-xs text-gray-400 ml-2">{p.income_rows.length} payments · {p.expenditure_rows.length} jobs</span>
+              </td>
+              <td className="px-5 py-3 text-right text-green-600 font-semibold">£{p.total_income.toLocaleString('en-GB', { minimumFractionDigits: 2 })}</td>
+              <td className="px-5 py-3 text-right text-red-500 font-semibold">£{p.total_expenditure.toLocaleString('en-GB', { minimumFractionDigits: 2 })}</td>
+              <td className={`px-5 py-3 text-right font-bold ${p.net >= 0 ? 'text-blue-600' : 'text-amber-600'}`}>£{p.net.toLocaleString('en-GB', { minimumFractionDigits: 2 })}</td>
+            </tr>
+          ))}
+          <tr className="bg-gray-50 font-bold border-t-2 border-gray-300">
+            <td className="px-5 py-3 text-gray-700">Total</td>
+            <td className="px-5 py-3 text-right text-green-700">£{totals.income.toLocaleString('en-GB', { minimumFractionDigits: 2 })}</td>
+            <td className="px-5 py-3 text-right text-red-600">£{totals.expenditure.toLocaleString('en-GB', { minimumFractionDigits: 2 })}</td>
+            <td className={`px-5 py-3 text-right ${totals.net >= 0 ? 'text-blue-700' : 'text-amber-700'}`}>£{totals.net.toLocaleString('en-GB', { minimumFractionDigits: 2 })}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+
 function PropertyDetail({ prop }) {
   const [open, setOpen] = useState(false)
+  const { SortTh: ISortTh, sortRows: iSortRows } = useSortable('paid_date')
+  const { SortTh: ESortTh, sortRows: eSortRows } = useSortable('date')
+
+  const sortedIncome = iSortRows(prop.income_rows, {
+    paid_date:   r => r.paid_date,
+    tenant_name: r => r.tenant_name,
+    unit_name:   r => r.unit_name,
+    period:      r => r.period,
+    amount:      r => r.amount,
+  })
+  const sortedExpenditure = eSortRows(prop.expenditure_rows, {
+    date:        r => r.date,
+    title:       r => r.title,
+    contractor:  r => r.contractor || '',
+    invoice_ref: r => r.invoice_ref || '',
+    amount:      r => r.amount,
+  })
+
   return (
     <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
       <button onClick={() => setOpen(v => !v)}
@@ -259,18 +325,18 @@ function PropertyDetail({ prop }) {
               <h4 className="text-xs font-semibold text-green-600 uppercase mb-3">Income — Rent Received</h4>
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="text-xs text-gray-500 bg-green-50">
-                    <th className="text-left px-3 py-2">Date Paid</th>
-                    <th className="text-left px-3 py-2">Tenant</th>
-                    <th className="text-left px-3 py-2">Unit</th>
-                    <th className="text-left px-3 py-2">Period</th>
-                    <th className="text-right px-3 py-2">Amount</th>
+                  <tr className="text-xs bg-green-50">
+                    <ISortTh col="paid_date" label="Date Paid" />
+                    <ISortTh col="tenant_name" label="Tenant" />
+                    <ISortTh col="unit_name" label="Unit" />
+                    <ISortTh col="period" label="Period" />
+                    <ISortTh col="amount" label="Amount" right />
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50">
-                  {prop.income_rows.map((r, i) => (
+                  {sortedIncome.map((r, i) => (
                     <tr key={i} className="hover:bg-gray-50">
-                      <td className="px-3 py-2 text-gray-600">{r.paid_date}</td>
+                      <td className="px-3 py-2 text-gray-600">{fmt(r.paid_date)}</td>
                       <td className="px-3 py-2 font-medium text-gray-900">{r.tenant_name}</td>
                       <td className="px-3 py-2 text-gray-500">{r.unit_name}</td>
                       <td className="px-3 py-2 text-gray-500">{r.period}</td>
@@ -287,18 +353,18 @@ function PropertyDetail({ prop }) {
               <h4 className="text-xs font-semibold text-red-500 uppercase mb-3">Expenditure — Maintenance &amp; Repairs</h4>
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="text-xs text-gray-500 bg-red-50">
-                    <th className="text-left px-3 py-2">Date</th>
-                    <th className="text-left px-3 py-2">Description</th>
-                    <th className="text-left px-3 py-2">Contractor</th>
-                    <th className="text-left px-3 py-2">Invoice Ref</th>
-                    <th className="text-right px-3 py-2">Amount</th>
+                  <tr className="text-xs bg-red-50">
+                    <ESortTh col="date" label="Date" />
+                    <ESortTh col="title" label="Description" />
+                    <ESortTh col="contractor" label="Contractor" />
+                    <ESortTh col="invoice_ref" label="Invoice Ref" />
+                    <ESortTh col="amount" label="Amount" right />
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50">
-                  {prop.expenditure_rows.map((r, i) => (
+                  {sortedExpenditure.map((r, i) => (
                     <tr key={i} className="hover:bg-gray-50">
-                      <td className="px-3 py-2 text-gray-600">{r.date}</td>
+                      <td className="px-3 py-2 text-gray-600">{fmt(r.date)}</td>
                       <td className="px-3 py-2 font-medium text-gray-900">{r.title}</td>
                       <td className="px-3 py-2 text-gray-500">{r.contractor || '—'}</td>
                       <td className="px-3 py-2 text-gray-400 text-xs">{r.invoice_ref || '—'}</td>

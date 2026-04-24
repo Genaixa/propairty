@@ -1,3 +1,4 @@
+import { PageHeader } from '../components/Illustration'
 import { useEffect, useState } from 'react'
 import api from '../lib/api'
 
@@ -206,10 +207,7 @@ export default function Valuation() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900">Portfolio Valuation</h1>
-        <p className="text-sm text-gray-500 mt-1">Estimated market values, rental yield and net income across your portfolio</p>
-      </div>
+      <PageHeader title="Portfolio Valuation" subtitle="Estimated market values, rental yield and net income across your portfolio" />
 
       {/* Summary cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">

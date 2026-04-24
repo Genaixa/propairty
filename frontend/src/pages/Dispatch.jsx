@@ -1,4 +1,6 @@
+import { PageHeader } from '../components/Illustration'
 import { useState, useEffect } from 'react'
+import { Link } from 'react-router-dom'
 import api from '../lib/api'
 
 const URGENCY_CFG = {
@@ -69,34 +71,23 @@ export default function Dispatch() {
 
   return (
     <div>
-      {/* Header with mode toggle */}
-      <div className="flex items-start justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Maintenance Dispatch</h1>
-          <p className="text-sm text-gray-500 mt-1">AI triage · area batching · smart dispatch</p>
-        </div>
-
+      <PageHeader title="Maintenance Dispatch" subtitle="AI triage · area batching · smart dispatch">
         {/* AUTO/MANUAL toggle */}
-        <div className={`flex items-center gap-4 rounded-2xl px-5 py-4 border-2 ${settings?.auto_mode ? 'bg-green-50 border-green-300' : 'bg-gray-50 border-gray-200'}`}>
+        <div className={`flex items-center gap-3 rounded-xl px-4 py-2.5 border-2 ${settings?.auto_mode ? 'bg-green-50 border-green-300' : 'bg-gray-50 border-gray-200'}`}>
           <div>
             <p className={`text-sm font-bold ${settings?.auto_mode ? 'text-green-700' : 'text-gray-600'}`}>
               {settings?.auto_mode ? '🤖 Auto Mode ON' : '👤 Manual Mode'}
-            </p>
-            <p className="text-xs text-gray-500 mt-0.5">
-              {settings?.auto_mode
-                ? `Dispatches when ${settings.area_threshold} jobs in area or ${settings.max_wait_days}d wait`
-                : 'You review and approve all dispatches'}
             </p>
           </div>
           <button
             onClick={toggleAutoMode}
             disabled={saving}
-            className={`relative inline-flex h-7 w-14 items-center rounded-full transition-colors ${settings?.auto_mode ? 'bg-green-500' : 'bg-gray-300'}`}
+            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${settings?.auto_mode ? 'bg-green-500' : 'bg-gray-300'}`}
           >
-            <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${settings?.auto_mode ? 'translate-x-8' : 'translate-x-1'}`} />
+            <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${settings?.auto_mode ? 'translate-x-6' : 'translate-x-1'}`} />
           </button>
         </div>
-      </div>
+      </PageHeader>
 
       {/* Settings bar */}
       {settings && (
@@ -217,27 +208,10 @@ export default function Dispatch() {
           {history.length === 0 ? (
             <div className="bg-white border border-gray-200 rounded-xl p-12 text-center text-gray-400">No dispatch history yet.</div>
           ) : history.map(b => (
-            <div key={b.id} className="bg-white border border-gray-200 rounded-xl p-5">
-              <div className="flex items-start justify-between mb-3">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-bold text-gray-900">{b.trade_label} · {b.area}</span>
-                    <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${b.dispatched_by?.startsWith('auto') ? 'bg-green-100 text-green-700' : 'bg-indigo-100 text-indigo-700'}`}>
-                      {b.dispatched_by?.startsWith('auto') ? '🤖 Auto' : '👤 Manual'}
-                    </span>
-                  </div>
-                  <p className="text-xs text-gray-500 mt-0.5">
-                    {b.contractor}{b.contractor_company ? ` (${b.contractor_company})` : ''} · {b.job_count} job{b.job_count !== 1 ? 's' : ''} · {b.created_at?.slice(0, 10)}
-                  </p>
-                </div>
-              </div>
-              <div className="space-y-1">
-                {b.jobs.map((j, i) => (
-                  <p key={i} className="text-xs text-gray-600">• <strong>{j.property} · {j.unit}</strong> — {j.ai_summary || j.title}</p>
-                ))}
-              </div>
-              {b.note && <p className="text-xs text-amber-700 bg-amber-50 rounded px-3 py-2 mt-3">{b.note}</p>}
-            </div>
+            <HistoryCard key={b.id} b={b} onRefresh={loadAll} onChase={async () => {
+              await api.post(`/dispatch/batch/${b.id}/chase`)
+              loadAll()
+            }} />
           ))}
         </div>
       )}
@@ -445,6 +419,124 @@ function DispatchModal({ modal, contractors, onClose, onDispatched }) {
           </div>
         </form>
       </div>
+    </div>
+  )
+}
+
+const STATUS_DOT = {
+  completed: 'bg-green-500',
+  in_progress: 'bg-blue-500',
+  open: 'bg-yellow-400',
+  cancelled: 'bg-gray-300',
+}
+
+function HistoryCard({ b, onChase, onRefresh }) {
+  const [chasing, setChasing] = useState(false)
+  const [chased, setChased] = useState(false)
+  const outstanding = b.job_count - b.completed_count
+
+  async function toggleInvoicePaid(jobId, currentPaid) {
+    if (!jobId) return
+    await api.post(`/maintenance/${jobId}/invoice-paid`)
+    if (onRefresh) onRefresh()
+  }
+  const allDone = outstanding === 0
+  const pct = b.job_count > 0 ? Math.round((b.completed_count / b.job_count) * 100) : 0
+
+  const lastLoginText = () => {
+    if (!b.contractor_last_login) return 'Never logged in'
+    const days = Math.floor((Date.now() - new Date(b.contractor_last_login)) / 86400000)
+    if (days === 0) return 'Logged in today'
+    if (days === 1) return 'Logged in yesterday'
+    return `Last login ${days}d ago`
+  }
+
+  async function handleChase() {
+    setChasing(true)
+    try { await onChase(); setChased(true) } finally { setChasing(false) }
+  }
+
+  return (
+    <div className={`bg-white border rounded-xl p-5 ${allDone ? 'border-gray-200' : 'border-amber-200'}`}>
+      <div className="flex items-start justify-between mb-3">
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-sm font-bold text-gray-900">{b.trade_label} · {b.area}</span>
+            <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${b.dispatched_by?.startsWith('auto') ? 'bg-green-100 text-green-700' : 'bg-indigo-100 text-indigo-700'}`}>
+              {b.dispatched_by?.startsWith('auto') ? '🤖 Auto' : '👤 Manual'}
+            </span>
+            {allDone
+              ? <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-semibold">✓ All complete</span>
+              : <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-semibold">{outstanding} outstanding</span>
+            }
+          </div>
+          <p className="text-xs text-gray-500 mt-0.5">
+            {b.contractor}{b.contractor_company ? ` (${b.contractor_company})` : ''} · {b.job_count} job{b.job_count !== 1 ? 's' : ''} · {b.created_at?.slice(0, 10)}
+            {b.dispatched_days_ago != null && <span className="ml-1 text-gray-400">({b.dispatched_days_ago}d ago)</span>}
+          </p>
+          <p className={`text-xs mt-0.5 ${b.contractor_last_login ? 'text-green-600' : 'text-red-400'}`}>
+            {lastLoginText()}
+          </p>
+        </div>
+
+        {!allDone && (
+          <button
+            onClick={handleChase}
+            disabled={chasing || chased}
+            className="ml-4 shrink-0 text-xs border border-amber-400 text-amber-700 px-3 py-1.5 rounded-lg hover:bg-amber-50 disabled:opacity-50 font-medium"
+          >
+            {chased ? '✓ Chased' : chasing ? 'Sending…' : '📧 Chase'}
+          </button>
+        )}
+      </div>
+
+      {/* Progress bar */}
+      <div className="mb-3">
+        <div className="flex items-center justify-between text-xs text-gray-500 mb-1">
+          <span>{b.completed_count}/{b.job_count} completed</span>
+          <span>{pct}%</span>
+        </div>
+        <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+          <div className={`h-full rounded-full transition-all ${allDone ? 'bg-green-500' : 'bg-indigo-500'}`} style={{ width: `${pct}%` }} />
+        </div>
+      </div>
+
+      {/* Job list */}
+      <div className="space-y-1.5">
+        {b.jobs.map((j, i) => (
+          <div key={i} className="flex items-start gap-2 text-xs text-gray-600">
+            <span className={`w-1.5 h-1.5 rounded-full shrink-0 mt-1.5 ${STATUS_DOT[j.status] || 'bg-gray-300'}`} />
+            <div className="flex-1 min-w-0">
+              {j.id
+                ? <Link to={`/maintenance?job=${j.id}`} className="hover:text-indigo-600 hover:underline">
+                    <strong>{j.property} · {j.unit}</strong> — {j.ai_summary || j.title}
+                  </Link>
+                : <span><strong>{j.property} · {j.unit}</strong> — {j.ai_summary || j.title}</span>
+              }
+              {j.invoice_ref && (
+                <div className="flex items-center gap-1.5 mt-0.5">
+                  <span className="text-gray-400">Invoice: {j.invoice_ref}</span>
+                  <button
+                    onClick={() => toggleInvoicePaid(j.id, j.invoice_paid)}
+                    className={`px-1.5 py-0.5 rounded text-[10px] font-semibold border transition-colors ${
+                      j.invoice_paid
+                        ? 'bg-green-50 border-green-300 text-green-700'
+                        : 'bg-gray-50 border-gray-200 text-gray-500 hover:bg-yellow-50 hover:border-yellow-300 hover:text-yellow-700'
+                    }`}
+                  >
+                    {j.invoice_paid ? '✓ paid' : '£ mark paid'}
+                  </button>
+                </div>
+              )}
+            </div>
+            <span className={`shrink-0 capitalize ${j.status === 'completed' ? 'text-green-600' : j.status === 'in_progress' ? 'text-blue-600' : 'text-yellow-600'}`}>
+              {j.status?.replace('_', ' ')}
+            </span>
+          </div>
+        ))}
+      </div>
+
+      {b.note && <p className="text-xs text-amber-700 bg-amber-50 rounded px-3 py-2 mt-3">{b.note}</p>}
     </div>
   )
 }

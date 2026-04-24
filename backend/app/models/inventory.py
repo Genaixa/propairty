@@ -29,6 +29,7 @@ class Inventory(Base):
     meter_gas = Column(String, nullable=True)
     meter_water = Column(String, nullable=True)
     keys_handed = Column(String, nullable=True)       # e.g. "2 front door, 1 postbox"
+    status = Column(String, default="confirmed")   # confirmed | draft
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     lease = relationship("Lease")

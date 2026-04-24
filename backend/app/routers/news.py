@@ -1,27 +1,21 @@
 import feedparser
-import httpx
-import os
 import json
 from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends
-from sqlalchemy.orm import Session
-from app.database import get_db
 from app.auth import get_current_user
 from app.models.user import User
 
 router = APIRouter(prefix="/api/news", tags=["news"])
 
-# UK property industry RSS feeds
 RSS_FEEDS = [
-    {"name": "Estate Agent Today", "url": "https://www.estateagenttoday.co.uk/rss.xml"},
-    {"name": "Property Industry Eye", "url": "https://propertyindustryeye.com/feed/"},
-    {"name": "Property Reporter", "url": "https://www.propertyreporter.co.uk/feed/"},
-    {"name": "The Negotiator", "url": "https://thenegotiator.co.uk/feed/"},
+    {"name": "Estate Agent Today",   "url": "https://www.estateagenttoday.co.uk/rss.xml"},
+    {"name": "Property Industry Eye","url": "https://propertyindustryeye.com/feed/"},
+    {"name": "Property Reporter",    "url": "https://www.propertyreporter.co.uk/feed/"},
+    {"name": "The Negotiator",       "url": "https://thenegotiator.co.uk/feed/"},
 ]
 
-# In-memory cache: {articles: [...], summary: "...", cached_at: datetime}
 _cache = {}
-CACHE_TTL_HOURS = 4
+CACHE_TTL_HOURS = 1
 
 
 def _is_cache_fresh():
@@ -30,7 +24,8 @@ def _is_cache_fresh():
     return datetime.utcnow() - _cache["cached_at"] < timedelta(hours=CACHE_TTL_HOURS)
 
 
-def fetch_articles(max_per_feed=5):
+def fetch_all_articles(max_per_feed=10):
+    """Pull up to max_per_feed articles from each feed — broad pool for AI to select from."""
     articles = []
     for feed_info in RSS_FEEDS:
         try:
@@ -38,9 +33,9 @@ def fetch_articles(max_per_feed=5):
             for entry in feed.entries[:max_per_feed]:
                 articles.append({
                     "source": feed_info["name"],
-                    "title": entry.get("title", ""),
-                    "url": entry.get("link", ""),
-                    "summary": entry.get("summary", entry.get("description", ""))[:300],
+                    "title": entry.get("title", "").strip(),
+                    "url":   entry.get("link", ""),
+                    "summary": entry.get("summary", entry.get("description", ""))[:300].strip(),
                     "published": entry.get("published", ""),
                 })
         except Exception:
@@ -48,101 +43,71 @@ def fetch_articles(max_per_feed=5):
     return articles
 
 
-def ai_curate(articles: list) -> dict:
-    """Send headlines to AI and get a curated briefing."""
+def score_and_select(articles: list) -> list:
+    """
+    Use Claude to pick the ~20 most relevant articles for a UK letting agent
+    and score each 1-5. Returns articles sorted by score descending.
+    """
     if not articles:
-        return {"briefing": "No news available right now.", "highlights": [], "flagged": []}
+        return []
 
-    # Use top 8 articles to keep prompt short enough for small models
-    top = articles[:8]
-    headlines = "\n".join(
-        f"- {a['title']} ({a['source']})"
-        for a in top
+    from app.routers.intelligence import _claude
+
+    numbered = "\n".join(
+        f"{i}. [{a['source']}] {a['title']}"
+        for i, a in enumerate(articles)
     )
 
-    prompt = f"""You are an assistant for a UK letting agent. Analyse these property news headlines and return ONLY a JSON object, no markdown, no explanation.
+    prompt = f"""You are an expert assistant for a UK residential letting agent.
+
+Below are {len(articles)} property news headlines (numbered). Your job:
+1. Select the ~20 most relevant and important ones for a UK letting agent to read today.
+   Prioritise: legislation/regulation changes, rental market trends, landlord/tenant law,
+   deposit rules, eviction law, energy efficiency requirements, interest rates affecting
+   landlords, housing supply, Rightmove/Zoopla/portal news, agent industry news.
+   Deprioritise: housebuilding, commercial property, mortgages for buyers, overseas property.
+2. Score each selected article 1–5 (5 = critical/must-read, 1 = mildly interesting).
+3. Return ONLY a JSON array, no markdown, no explanation:
+[{{"index": 0, "score": 5}}, {{"index": 3, "score": 3}}, ...]
 
 Headlines:
-{headlines}
+{numbered}"""
 
-Return this exact JSON structure:
-{{"briefing":"2-3 sentences summarising key themes and what letting agents should know","highlights":[{{"title":"short headline","reason":"why it matters to a letting agent"}}],"flagged":[{{"title":"headline","action":"what the agent should do"}}]}}
+    raw = _claude(prompt, max_tokens=600)
 
-Rules: highlights has 3-5 items, flagged has 0-3 items, return only JSON."""
-
-    # Try Ollama first, then Mistral
-    client = model = None
     try:
-        r = httpx.get("http://localhost:11434/api/tags", timeout=2)
-        if r.status_code == 200:
-            from openai import OpenAI
-            client = OpenAI(base_url="http://localhost:11434/v1", api_key="ollama")
-            model = "llama3.2:3b"
+        # Extract JSON array
+        import re
+        match = re.search(r'\[.*\]', raw, re.DOTALL)
+        scored = json.loads(match.group()) if match else []
     except Exception:
-        pass
+        # Fallback: return all articles unscored
+        return [dict(a, score=3) for a in articles[:20]]
 
-    if not client:
-        mistral_key = os.environ.get("MISTRAL_API_KEY", "")
-        if mistral_key:
-            from openai import OpenAI
-            client = OpenAI(base_url="https://api.mistral.ai/v1", api_key=mistral_key)
-            model = "mistral-small-latest"
+    # Build sorted result
+    result = []
+    for item in scored:
+        idx = item.get("index")
+        score = item.get("score", 3)
+        if idx is not None and 0 <= idx < len(articles):
+            result.append(dict(articles[idx], score=score))
 
-    if not client:
-        return {
-            "briefing": "AI briefing unavailable — showing raw headlines.",
-            "highlights": [{"title": a["title"], "reason": a["source"]} for a in articles[:5]],
-            "flagged": [],
-        }
-
-    try:
-        resp = client.chat.completions.create(
-            model=model,
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.3,
-            timeout=60,
-        )
-        text = resp.choices[0].message.content.strip()
-        # Strip markdown code fences if present
-        if "```" in text:
-            text = text.split("```")[1]
-            if text.startswith("json"):
-                text = text[4:].strip()
-        # Extract JSON object if there's surrounding text
-        start = text.find("{")
-        end = text.rfind("}") + 1
-        if start != -1 and end > start:
-            text = text[start:end]
-        return json.loads(text)
-    except Exception as e:
-        return {
-            "briefing": "AI briefing could not be generated right now. Here are the latest headlines.",
-            "highlights": [{"title": a["title"], "reason": a["source"]} for a in articles[:5]],
-            "flagged": [],
-        }
+    # Sort by score descending
+    result.sort(key=lambda a: a["score"], reverse=True)
+    return result
 
 
 def refresh_cache():
-    articles = fetch_articles()
-    curation = ai_curate(articles)
-    _cache["articles"] = articles
-    _cache["curation"] = curation
+    articles = fetch_all_articles()
+    scored = score_and_select(articles)
+    _cache["articles"] = scored
     _cache["cached_at"] = datetime.utcnow()
 
 
 @router.get("")
 def get_news(current_user: User = Depends(get_current_user)):
-    if not _is_cache_fresh():
-        refresh_cache()
     return {
         "articles": _cache.get("articles", []),
-        "curation": _cache.get("curation", {}),
         "cached_at": _cache["cached_at"].isoformat() if _cache.get("cached_at") else None,
-        "next_refresh_hours": CACHE_TTL_HOURS,
+        "is_fresh": _is_cache_fresh(),
     }
-
-
-@router.post("/refresh")
-def force_refresh(current_user: User = Depends(get_current_user)):
-    refresh_cache()
-    return {"ok": True, "article_count": len(_cache.get("articles", []))}

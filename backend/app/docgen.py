@@ -24,6 +24,11 @@ def _render_pdf(template_name: str, context: dict) -> bytes:
     return weasyprint.HTML(string=html_str).write_pdf()
 
 
+def _inject_sig(ctx: dict, signature_block: str | None):
+    """Attach optional signature block to context."""
+    ctx["signature_block"] = signature_block or ""
+
+
 def _base_context(org_name: str, ref: str = "") -> dict:
     return {
         "org_name": org_name,
@@ -32,7 +37,8 @@ def _base_context(org_name: str, ref: str = "") -> dict:
     }
 
 
-def generate_ast(lease, tenant, unit, org) -> bytes:
+def generate_ast(lease, tenant, unit, org, deposit_override=None, signature_block=None) -> bytes:
+    deposit_amount = deposit_override if deposit_override is not None else (lease.deposit or 0)
     ctx = _base_context(org.name, ref=f"AST-{lease.id:04d}")
     ctx.update({
         "tenant_name": tenant.full_name,
@@ -43,26 +49,34 @@ def generate_ast(lease, tenant, unit, org) -> bytes:
         "end_date": lease.end_date.strftime("%-d %B %Y") if lease.end_date else "Periodic (no fixed end date)",
         "monthly_rent": f"{lease.monthly_rent:,.2f}",
         "rent_day": lease.rent_day,
-        "deposit": f"{lease.deposit:,.2f}" if lease.deposit else "0.00",
+        "deposit": f"{deposit_amount:,.2f}",
         "is_periodic": lease.is_periodic,
     })
+    _inject_sig(ctx, signature_block)
     return _render_pdf("documents/ast_agreement.html", ctx)
 
 
-def generate_section21(lease, tenant, unit, org, notice_months: int = 2) -> bytes:
+def generate_section21(lease, tenant, unit, org, notice_months: int = 2, checks: dict = None, signature_block=None) -> bytes:
     today = date.today()
     possession_date = today + timedelta(days=notice_months * 30)
     ctx = _base_context(org.name, ref=f"S21-{lease.id:04d}")
+    checks = checks or {}
     ctx.update({
         "tenant_name": tenant.full_name,
         "property_address": f"{unit.property.address_line1}, {unit.property.city}, {unit.property.postcode}",
         "start_date": lease.start_date.strftime("%-d %B %Y"),
         "possession_date": possession_date.strftime("%-d %B %Y"),
+        "check_gas": checks.get("gas_cert") == "pass",
+        "check_epc": checks.get("epc") == "pass",
+        "check_how_to_rent": checks.get("how_to_rent") == "pass",
+        "check_deposit": checks.get("deposit") in ("pass", "warn", "n/a"),
+        "any_check_confirmed": any(checks.get(k) in ("pass", "warn", "n/a") for k in ("gas_cert", "epc", "how_to_rent", "deposit")),
     })
+    _inject_sig(ctx, signature_block)
     return _render_pdf("documents/section_21.html", ctx)
 
 
-def generate_section8(lease, tenant, unit, org, arrears_amount: float, custom_notes: str = "") -> bytes:
+def generate_section8(lease, tenant, unit, org, arrears_amount: float, custom_notes: str = "", signature_block=None) -> bytes:
     today = date.today()
     court_date = today + timedelta(days=14)
     ctx = _base_context(org.name, ref=f"S8-{lease.id:04d}")
@@ -73,11 +87,12 @@ def generate_section8(lease, tenant, unit, org, arrears_amount: float, custom_no
         "court_date": court_date.strftime("%-d %B %Y"),
         "custom_notes": custom_notes,
     })
+    _inject_sig(ctx, signature_block)
     return _render_pdf("documents/section_8.html", ctx)
 
 
-def generate_rent_increase(lease, tenant, unit, org, new_rent: float, effective_date: date, custom_notes: str = "") -> bytes:
-    current = lease.monthly_rent
+def generate_rent_increase(lease, tenant, unit, org, new_rent: float, effective_date: date, custom_notes: str = "", old_rent: float = None, signature_block=None) -> bytes:
+    current = old_rent if old_rent is not None else lease.monthly_rent
     increase = new_rent - current
     pct = round((increase / current) * 100, 1)
     ctx = _base_context(org.name, ref=f"RI-{lease.id:04d}")
@@ -91,6 +106,7 @@ def generate_rent_increase(lease, tenant, unit, org, new_rent: float, effective_
         "effective_date": effective_date.strftime("%-d %B %Y"),
         "custom_notes": custom_notes,
     })
+    _inject_sig(ctx, signature_block)
     return _render_pdf("documents/rent_increase.html", ctx)
 
 
@@ -175,7 +191,48 @@ def generate_inspection_report(inspection, org, tenant=None) -> bytes:
     return _render_pdf("documents/inspection_report.html", ctx)
 
 
-def generate_deposit_receipt(lease, tenant, unit, org) -> bytes:
+def generate_management_agreement(
+    landlord,
+    org,
+    properties: list,
+    management_fee_pct: float = 10.0,
+    tenant_find_fee: str = "One month's rent (inc. VAT)",
+    renewal_fee: str = "£150 + VAT",
+    maintenance_limit: int = 250,
+    notice_period: int = 60,
+    inspection_frequency: str = "twice per year",
+) -> bytes:
+    landlord_addr_parts = [
+        landlord.address_line1, landlord.address_line2,
+        landlord.city, landlord.postcode,
+    ]
+    landlord_address = ", ".join(p for p in landlord_addr_parts if p)
+
+    property_list = ", ".join(
+        f"{p.address_line1}, {p.city} {p.postcode}" for p in properties
+    ) if properties else "As agreed"
+
+    ctx = _base_context(org.name, ref=f"MGA-{landlord.id:04d}")
+    ctx.update({
+        "org_address": getattr(org, "address", "") or "",
+        "org_email": getattr(org, "email", "") or "",
+        "landlord_name": landlord.full_name,
+        "landlord_company": landlord.company_name or "",
+        "landlord_address": landlord_address or "—",
+        "landlord_email": landlord.email,
+        "landlord_phone": landlord.phone or "",
+        "property_list": property_list,
+        "management_fee_pct": management_fee_pct,
+        "tenant_find_fee": tenant_find_fee,
+        "renewal_fee": renewal_fee,
+        "maintenance_limit": f"{maintenance_limit:,}",
+        "notice_period": notice_period,
+        "inspection_frequency": inspection_frequency,
+    })
+    return _render_pdf("documents/management_agreement.html", ctx)
+
+
+def generate_deposit_receipt(lease, tenant, unit, org, signature_block=None) -> bytes:
     ctx = _base_context(org.name, ref=f"DEP-{lease.id:04d}")
     ctx.update({
         "tenant_name": tenant.full_name,
@@ -183,4 +240,5 @@ def generate_deposit_receipt(lease, tenant, unit, org) -> bytes:
         "start_date": lease.start_date.strftime("%-d %B %Y"),
         "deposit": f"{lease.deposit:,.2f}" if lease.deposit else "0.00",
     })
+    _inject_sig(ctx, signature_block)
     return _render_pdf("documents/deposit_receipt.html", ctx)

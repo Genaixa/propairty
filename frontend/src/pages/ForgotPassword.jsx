@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import axios from 'axios'
 
-const BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000/api'
+const BASE = import.meta.env.VITE_API_URL || '/api'
 
 const CONFIG = {
   agent:      { endpoint: '/auth/forgot-password',       color: 'indigo',  label: 'PropAIrty',                  back: '/login' },

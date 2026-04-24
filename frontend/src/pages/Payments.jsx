@@ -1,6 +1,10 @@
+import { PageHeader } from '../components/Illustration'
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import api from '../lib/api'
 import Badge from '../components/Badge'
+
+const fmt = d => d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
 
 function today() {
   return new Date().toISOString().slice(0, 7) // YYYY-MM
@@ -16,6 +20,8 @@ export default function Payments() {
   const [payments, setPayments] = useState([])
   const [arrears, setArrears] = useState(null)
   const [markingId, setMarkingId] = useState(null)
+  const [remindingId, setRemindingId] = useState(null)
+  const [reminderSent, setReminderSent] = useState({})
   const [loading, setLoading] = useState(false)
   const [onlinePayments, setOnlinePayments] = useState([])
   const [showOnline, setShowOnline] = useState(false)
@@ -47,30 +53,69 @@ export default function Payments() {
     setMarkingId(null)
   }
 
+  const sendReminder = async (id) => {
+    setRemindingId(id)
+    try {
+      await api.post(`/payments/${id}/send-reminder`)
+      setReminderSent(prev => ({ ...prev, [id]: true }))
+    } catch {
+      // silently reset so button is usable again
+    } finally {
+      setRemindingId(null)
+    }
+  }
+
   const paid = payments.filter(p => p.status === 'paid')
   const pending = payments.filter(p => p.status === 'pending')
   const overdue = payments.filter(p => p.status === 'overdue' || p.status === 'partial')
   const collected = paid.reduce((s, p) => s + (p.amount_paid || 0), 0)
   const expected = payments.reduce((s, p) => s + p.amount_due, 0)
 
+  const [sortCol, setSortCol] = useState('due_date')
+  const [sortDir, setSortDir] = useState('asc')
+
+  function toggleSort(col) {
+    if (sortCol === col) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+    else { setSortCol(col); setSortDir('asc') }
+  }
+
+  const SortTh = ({ col, label }) => (
+    <th onClick={() => toggleSort(col)}
+      className="text-left px-5 py-3 font-medium text-gray-500 text-xs uppercase cursor-pointer select-none hover:text-gray-800 whitespace-nowrap">
+      {label} {sortCol === col ? (sortDir === 'asc' ? '▲' : '▼') : <span className="text-gray-300">↕</span>}
+    </th>
+  )
+
+  const sortedPayments = [...payments].sort((a, b) => {
+    let av, bv
+    if      (sortCol === 'tenant_name') { av = a.tenant_name || ''; bv = b.tenant_name || '' }
+    else if (sortCol === 'unit')        { av = a.unit || '';         bv = b.unit || '' }
+    else if (sortCol === 'amount_due')  { av = a.amount_due;         bv = b.amount_due; return sortDir === 'asc' ? av - bv : bv - av }
+    else if (sortCol === 'amount_paid') { av = a.amount_paid || 0;   bv = b.amount_paid || 0; return sortDir === 'asc' ? av - bv : bv - av }
+    else if (sortCol === 'status')      { av = a.status || '';        bv = b.status || '' }
+    else                                { av = a.due_date || '';      bv = b.due_date || '' }
+    if (av < bv) return sortDir === 'asc' ? -1 : 1
+    if (av > bv) return sortDir === 'asc' ? 1 : -1
+    return 0
+  })
+
   return (
     <div>
-      <div className="flex justify-between items-center mb-6">
-        <h2 className="text-2xl font-bold text-gray-900">Rent Payments</h2>
-        <div className="flex items-center gap-3">
+      <PageHeader title="Rent Payments" subtitle="Track, record & chase rent across your portfolio">
+        <div className="flex items-center gap-1">
           <button onClick={() => {
             const [y, m] = month.split('-').map(Number)
             const prev = m === 1 ? `${y - 1}-12` : `${y}-${String(m - 1).padStart(2, '0')}`
             setMonth(prev)
           }} className="text-gray-400 hover:text-gray-600 text-xl px-2">‹</button>
-          <span className="font-medium text-gray-700 w-44 text-center">{monthLabel(month)}</span>
+          <span className="font-medium text-gray-700 w-40 text-center text-sm">{monthLabel(month)}</span>
           <button onClick={() => {
             const [y, m] = month.split('-').map(Number)
             const next = m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, '0')}`
             setMonth(next)
           }} className="text-gray-400 hover:text-gray-600 text-xl px-2">›</button>
         </div>
-      </div>
+      </PageHeader>
 
       {/* Summary cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
@@ -106,13 +151,23 @@ export default function Payments() {
             {arrears.payments.map(p => (
               <div key={p.id} className="flex justify-between items-center bg-white rounded-lg px-4 py-2.5 border border-red-100">
                 <div>
-                  <span className="font-medium text-gray-900 text-sm">{p.tenant_name}</span>
-                  <span className="text-gray-400 text-xs ml-2">{p.unit}</span>
+                  {p.tenant_id
+                    ? <Link to={`/tenants/${p.tenant_id}`} className="font-medium text-indigo-600 hover:underline text-sm">{p.tenant_name}</Link>
+                    : <span className="font-medium text-gray-900 text-sm">{p.tenant_name}</span>}
+                  {p.property_id
+                    ? <Link to={`/properties/${p.property_id}`} className="text-gray-400 text-xs ml-2 hover:text-indigo-600 hover:underline">{p.unit}</Link>
+                    : <span className="text-gray-400 text-xs ml-2">{p.unit}</span>}
+
                   {p.tenant_phone && <span className="text-gray-400 text-xs ml-2">· {p.tenant_phone}</span>}
                 </div>
                 <div className="flex items-center gap-3">
-                  <span className="text-xs text-red-500">Due {p.due_date}</span>
+                  <span className="text-xs text-red-500">Due {fmt(p.due_date)}</span>
                   <span className="font-semibold text-red-600 text-sm">£{p.amount_due}</span>
+                  <button onClick={() => sendReminder(p.id)}
+                    disabled={remindingId === p.id || reminderSent[p.id]}
+                    className="text-xs bg-amber-50 text-amber-700 border border-amber-200 px-3 py-1.5 rounded-lg hover:bg-amber-100 disabled:opacity-50">
+                    {reminderSent[p.id] ? 'Sent ✓' : remindingId === p.id ? 'Sending…' : 'Send Reminder'}
+                  </button>
                   <button onClick={() => markPaid(p.id, p.amount_due)}
                     disabled={markingId === p.id}
                     className="text-xs bg-green-100 text-green-700 border border-green-200 px-3 py-1.5 rounded-lg hover:bg-green-200 disabled:opacity-50">
@@ -153,10 +208,14 @@ export default function Payments() {
                 {onlinePayments.map(p => (
                   <tr key={p.id} className="hover:bg-gray-50">
                     <td className="px-5 py-3 font-medium text-gray-900">{p.tenant_name}</td>
-                    <td className="px-5 py-3 text-gray-500 text-xs">{p.unit}</td>
+                    <td className="px-5 py-3 text-gray-500 text-xs">
+                      {p.property_id
+                        ? <Link to={`/properties/${p.property_id}`} className="text-indigo-600 hover:underline">{p.unit}</Link>
+                        : p.unit}
+                    </td>
                     <td className="px-5 py-3 text-gray-500">{p.due_date ? new Date(p.due_date).toLocaleString('en-GB', { month: 'long', year: 'numeric' }) : '—'}</td>
                     <td className="px-5 py-3 font-semibold text-green-600">£{p.amount_paid?.toFixed(2)}</td>
-                    <td className="px-5 py-3 text-gray-500">{p.paid_date}</td>
+                    <td className="px-5 py-3 text-gray-500">{fmt(p.paid_date)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -178,27 +237,46 @@ export default function Payments() {
           <table className="w-full text-sm">
             <thead className="bg-gray-50 border-b border-gray-100">
               <tr>
-                {['Tenant', 'Unit', 'Due Date', 'Amount Due', 'Paid', 'Status', ''].map(h => (
-                  <th key={h} className="text-left px-5 py-3 font-medium text-gray-500">{h}</th>
-                ))}
+                <SortTh col="tenant_name" label="Tenant" />
+                <SortTh col="unit" label="Unit" />
+                <SortTh col="due_date" label="Due Date" />
+                <SortTh col="amount_due" label="Amount Due" />
+                <SortTh col="amount_paid" label="Paid" />
+                <SortTh col="status" label="Status" />
+                <th className="px-5 py-3"></th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {payments.map(p => (
+              {sortedPayments.map(p => (
                 <tr key={p.id} className={`hover:bg-gray-50 ${p.status === 'overdue' ? 'bg-red-50/40' : ''}`}>
-                  <td className="px-5 py-3.5 font-medium text-gray-900">{p.tenant_name}</td>
-                  <td className="px-5 py-3.5 text-gray-500 text-xs">{p.unit}</td>
-                  <td className="px-5 py-3.5 text-gray-500">{p.due_date}</td>
+                  <td className="px-5 py-3.5 font-medium">
+                    {p.tenant_id
+                      ? <Link to={`/tenants/${p.tenant_id}`} className="text-indigo-600 hover:underline">{p.tenant_name}</Link>
+                      : <span className="text-gray-900">{p.tenant_name}</span>}
+                  </td>
+                  <td className="px-5 py-3.5 text-xs">
+                    {p.property_id
+                      ? <Link to={`/properties/${p.property_id}`} className="text-indigo-600 hover:underline">{p.unit}</Link>
+                      : <span className="text-gray-500">{p.unit}</span>}
+                  </td>
+                  <td className="px-5 py-3.5 text-gray-500">{fmt(p.due_date)}</td>
                   <td className="px-5 py-3.5 font-semibold text-gray-700">£{p.amount_due}</td>
                   <td className="px-5 py-3.5 text-green-600">{p.amount_paid ? `£${p.amount_paid}` : '—'}</td>
                   <td className="px-5 py-3.5"><Badge value={p.status} /></td>
                   <td className="px-5 py-3.5">
                     {(p.status === 'pending' || p.status === 'overdue') && (
-                      <button onClick={() => markPaid(p.id, p.amount_due)}
-                        disabled={markingId === p.id}
-                        className="text-xs bg-green-50 text-green-700 border border-green-200 px-3 py-1.5 rounded-lg hover:bg-green-100 disabled:opacity-50">
-                        Mark Paid
-                      </button>
+                      <div className="flex gap-2">
+                        <button onClick={() => sendReminder(p.id)}
+                          disabled={remindingId === p.id || reminderSent[p.id]}
+                          className="text-xs bg-amber-50 text-amber-700 border border-amber-200 px-3 py-1.5 rounded-lg hover:bg-amber-100 disabled:opacity-50">
+                          {reminderSent[p.id] ? 'Sent ✓' : remindingId === p.id ? 'Sending…' : 'Remind'}
+                        </button>
+                        <button onClick={() => markPaid(p.id, p.amount_due)}
+                          disabled={markingId === p.id}
+                          className="text-xs bg-green-50 text-green-700 border border-green-200 px-3 py-1.5 rounded-lg hover:bg-green-100 disabled:opacity-50">
+                          Mark Paid
+                        </button>
+                      </div>
                     )}
                   </td>
                 </tr>

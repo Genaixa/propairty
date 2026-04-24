@@ -1,0 +1,163 @@
+{% extends "documents/base.html" %}
+{% block content %}
+<h1>Property Management Agreement</h1>
+<p style="text-align:center; color:#555; font-size:10pt; margin-bottom:20px;">
+  Letting and Management Services Agreement
+</p>
+
+<div class="parties">
+  <table>
+    <tr><td>Agent (Managing Agent):</td><td>{{ org_name }}</td></tr>
+    <tr><td>Agent Address:</td><td>{{ org_address }}</td></tr>
+    <tr><td>Agent Email:</td><td>{{ org_email or '—' }}</td></tr>
+    <tr><td>Landlord:</td><td>{{ landlord_name }}</td></tr>
+    {% if landlord_company %}<tr><td>Company:</td><td>{{ landlord_company }}</td></tr>{% endif %}
+    <tr><td>Landlord Address:</td><td>{{ landlord_address }}</td></tr>
+    <tr><td>Landlord Email:</td><td>{{ landlord_email }}</td></tr>
+    <tr><td>Landlord Phone:</td><td>{{ landlord_phone or '—' }}</td></tr>
+    <tr><td>Property/Properties:</td><td>{{ property_list }}</td></tr>
+    <tr><td>Agreement Date:</td><td>{{ today }}</td></tr>
+    <tr><td>Agreement Ref:</td><td>{{ ref }}</td></tr>
+  </table>
+</div>
+
+<h2>1. Appointment</h2>
+<div class="clause">
+<p>The Landlord hereby appoints <strong>{{ org_name }}</strong> as sole managing agent for the
+property or properties listed above, and the Agent accepts such appointment on the terms
+and conditions set out in this Agreement.</p>
+<p>This Agreement shall commence on <strong>{{ today }}</strong> and shall continue until
+terminated by either party giving not less than <strong>{{ notice_period }} days'</strong>
+written notice to the other party.</p>
+</div>
+
+<h2>2. Services Provided</h2>
+<div class="clause">
+<p>The Agent agrees to provide the following services on behalf of the Landlord:</p>
+<ul>
+  <li><strong>Letting Service:</strong> Marketing the property, conducting viewings, referencing prospective tenants, preparing and executing Assured Shorthold Tenancy Agreements.</li>
+  <li><strong>Rent Collection:</strong> Collecting rent on the due date and remitting net proceeds to the Landlord monthly, after deducting fees and authorised expenditure.</li>
+  <li><strong>Property Management:</strong> Dealing with day-to-day management queries from tenants, arranging repairs and maintenance with pre-approved limits.</li>
+  <li><strong>Inspections:</strong> Conducting periodic property inspections (minimum {{ inspection_frequency }}) and reporting findings to the Landlord.</li>
+  <li><strong>Compliance:</strong> Monitoring statutory compliance requirements including Gas Safety, EICR, EPC, and Right to Rent checks, and advising the Landlord accordingly.</li>
+  <li><strong>Deposit Management:</strong> Collecting and registering security deposits with a government-approved tenancy deposit scheme.</li>
+  <li><strong>Legal Notices:</strong> Serving legally required notices (Section 21, Section 8, Section 13, etc.) as instructed by the Landlord.</li>
+  <li><strong>Statements:</strong> Providing monthly income and expenditure statements.</li>
+</ul>
+</div>
+
+<h2>3. Agent's Fees</h2>
+<div class="clause">
+<table style="width:100%; border-collapse:collapse; margin: 8px 0 12px 0;">
+  <thead>
+    <tr style="background:#f0f0ff;">
+      <th style="padding:6px 10px; text-align:left; font-size:10pt; border-bottom:1px solid #ccc;">Service</th>
+      <th style="padding:6px 10px; text-align:right; font-size:10pt; border-bottom:1px solid #ccc;">Fee</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td style="padding:6px 10px; border-bottom:1px solid #eee;">Tenant Find Fee</td>
+      <td style="padding:6px 10px; text-align:right; border-bottom:1px solid #eee; font-weight:bold;">{{ tenant_find_fee }}</td>
+    </tr>
+    <tr>
+      <td style="padding:6px 10px; border-bottom:1px solid #eee;">Monthly Management Fee</td>
+      <td style="padding:6px 10px; text-align:right; border-bottom:1px solid #eee; font-weight:bold;" class="amount">{{ management_fee_pct }}% of monthly rent (inc. VAT)</td>
+    </tr>
+    <tr>
+      <td style="padding:6px 10px; border-bottom:1px solid #eee;">Renewal Fee</td>
+      <td style="padding:6px 10px; text-align:right; border-bottom:1px solid #eee;">{{ renewal_fee }}</td>
+    </tr>
+    <tr>
+      <td style="padding:6px 10px; border-bottom:1px solid #eee;">Check-in / Check-out Inventory</td>
+      <td style="padding:6px 10px; text-align:right; border-bottom:1px solid #eee;">By quotation</td>
+    </tr>
+    <tr>
+      <td style="padding:6px 10px; border-bottom:1px solid #eee;">Additional property visits (beyond scheduled)</td>
+      <td style="padding:6px 10px; text-align:right; border-bottom:1px solid #eee;">By agreement</td>
+    </tr>
+  </tbody>
+</table>
+<p>All fees are subject to VAT at the prevailing rate where applicable. The Agent reserves the
+right to review fees annually with 30 days' written notice to the Landlord.</p>
+</div>
+
+<h2>4. Maintenance Authority</h2>
+<div class="clause">
+<p>The Agent is authorised to arrange and approve emergency and routine repairs up to
+<strong>£{{ maintenance_limit }}</strong> per instruction without seeking the Landlord's prior
+approval. Works exceeding this limit will be submitted to the Landlord for approval before
+being instructed, except in genuine emergency where safety or habitability is at risk.</p>
+<p>All contractor costs shall be deducted from rental income or invoiced separately as agreed.</p>
+</div>
+
+<h2>5. Landlord's Obligations</h2>
+<div class="clause">
+<p>The Landlord agrees to:</p>
+<ul>
+  <li>Ensure the property is fit for habitation and complies with all relevant legislation at the commencement of any tenancy;</li>
+  <li>Hold valid buildings and contents insurance, and landlord liability insurance;</li>
+  <li>Maintain a valid Gas Safety Certificate (where applicable), EICR, and EPC in date;</li>
+  <li>Provide the Agent with sufficient funds to cover expenditure where rental income is insufficient;</li>
+  <li>Notify the Agent of any change of ownership, mortgage, or legal charge over the property;</li>
+  <li>Comply with the Landlord and Tenant Act 1985, Housing Act 1988, and all other applicable legislation;</li>
+  <li>Ensure any mortgage lender's consent to let is in place where required.</li>
+</ul>
+</div>
+
+<h2>6. Agent's Obligations</h2>
+<div class="clause">
+<p>The Agent agrees to:</p>
+<ul>
+  <li>Act in the best interests of the Landlord at all times;</li>
+  <li>Hold client money in a designated client account, separate from the Agent's own funds;</li>
+  <li>Be a member of a recognised Client Money Protection scheme;</li>
+  <li>Be a member of a Property Redress Scheme;</li>
+  <li>Maintain professional indemnity insurance;</li>
+  <li>Comply with the provisions of the Tenant Fees Act 2019 and all other applicable legislation.</li>
+</ul>
+</div>
+
+<h2>7. Termination</h2>
+<div class="clause">
+<p>Either party may terminate this Agreement by giving not less than <strong>{{ notice_period }} days'</strong>
+written notice. On termination, the Agent shall provide the Landlord with all relevant
+documentation, keys, deposit scheme details, and outstanding rental funds within 14 days.</p>
+<p>The Landlord shall remain liable for the Agent's fees in respect of any tenancy arranged by
+the Agent that is still subsisting at the date of termination.</p>
+</div>
+
+<h2>8. Data Protection</h2>
+<div class="clause">
+<p>Both parties agree to comply with the UK General Data Protection Regulation (UK GDPR) and
+the Data Protection Act 2018. The Agent will process personal data of the Landlord and
+tenants only for the purposes of providing the services under this Agreement.</p>
+</div>
+
+<h2>9. Governing Law</h2>
+<div class="clause">
+<p>This Agreement shall be governed by and construed in accordance with the law of England
+and Wales, and both parties submit to the exclusive jurisdiction of the courts of England
+and Wales.</p>
+</div>
+
+<!-- Signature block -->
+<div class="signature-block" style="margin-top:48px;">
+  <div class="signature-line">
+    <hr/>
+    <p><strong>Signed for and on behalf of the Agent</strong></p>
+    <p>Name: ______________________________</p>
+    <p>Position: ______________________________</p>
+    <p>Date: ______________________________</p>
+    <p style="margin-top:6px;">{{ org_name }}</p>
+  </div>
+  <div class="signature-line">
+    <hr/>
+    <p><strong>Signed by the Landlord</strong></p>
+    <p>Name: ______________________________</p>
+    <p>Date: ______________________________</p>
+    <p style="margin-top:6px;">{{ landlord_name }}</p>
+    {% if landlord_company %}<p>{{ landlord_company }}</p>{% endif %}
+  </div>
+</div>
+{% endblock %}

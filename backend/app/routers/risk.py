@@ -191,65 +191,67 @@ def _ai_portfolio_summary(risk_data: list[dict]) -> str:
     low = [r for r in risk_data if r["risk_score"] <= 2]
     total_arrears = sum(r["stats"]["current_arrears"] for r in risk_data)
 
+    in_arrears = [r for r in risk_data if r["stats"]["current_arrears"] > 0]
     prompt = (
         f"Portfolio risk summary: {len(risk_data)} active tenants. "
-        f"{len(critical)} critical/high risk, {len(medium)} medium risk, {len(low)} low risk. "
+        f"{len(critical)} critical/high risk (based on payment history), {len(medium)} medium risk, {len(low)} low risk. "
         f"Total current arrears: £{total_arrears:,.0f}. "
     )
-    if critical:
+    if in_arrears:
+        arrears_detail = ", ".join(
+            f"{r['tenant_name']} (£{r['stats']['current_arrears']:,.0f})"
+            for r in in_arrears[:3]
+        )
+        prompt += f"Tenants with current arrears: {arrears_detail}. "
+    elif critical:
         names = ", ".join(r["tenant_name"] for r in critical[:3])
-        prompt += f"High/critical tenants: {names}. "
+        prompt += f"High/critical risk tenants (late payments, no current arrears): {names}. "
 
     prompt += (
         "Write a 2-sentence plain-English portfolio risk briefing for the letting agent. "
-        "Be direct and actionable. No markdown."
+        "Only mention arrears for tenants who actually have them. Be direct and actionable. No markdown."
     )
 
     try:
-        import httpx
         from openai import OpenAI
-
-        ollama_url = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434/v1")
-        r = httpx.get("http://localhost:11434/api/tags", timeout=2)
-        if r.status_code == 200:
-            client = OpenAI(base_url=ollama_url, api_key="ollama")
-            model = "llama3.2:3b"
-        else:
-            raise Exception("Ollama not available")
-    except Exception:
-        mistral_key = os.environ.get("MISTRAL_API_KEY", "")
-        if not mistral_key:
+        from app.config import settings
+        if not settings.groq_api_key:
             return _fallback_summary(risk_data)
-        from openai import OpenAI
-        client = OpenAI(base_url="https://api.mistral.ai/v1", api_key=mistral_key)
-        model = "mistral-small-latest"
-
-    try:
+        client = OpenAI(base_url="https://api.groq.com/openai/v1", api_key=settings.groq_api_key)
         resp = client.chat.completions.create(
-            model=model,
+            model="llama-3.3-70b-versatile",
             messages=[{"role": "user", "content": prompt}],
             max_tokens=120,
         )
-        text = resp.choices[0].message.content.strip()
-        return text
+        return resp.choices[0].message.content.strip()
     except Exception:
         return _fallback_summary(risk_data)
 
 
-def _fallback_summary(risk_data: list[dict]) -> str:
-    critical = [r for r in risk_data if r["risk_score"] >= 4]
-    total_arrears = sum(r["stats"]["current_arrears"] for r in risk_data)
+def _portfolio_summary(risk_data: list[dict]) -> str:
     if not risk_data:
         return "No active tenants to assess."
+    critical = [r for r in risk_data if r["risk_score"] >= 4]
+    in_arrears = [r for r in risk_data if r["stats"]["current_arrears"] > 0]
+    total_arrears = sum(r["stats"]["current_arrears"] for r in risk_data)
+
     if not critical and total_arrears == 0:
-        return f"All {len(risk_data)} tenants are paying on time. Portfolio is in good health."
+        return f"All {len(risk_data)} tenants are paying on time — portfolio is in good health."
+
     parts = []
+    if in_arrears:
+        arrears_names = ", ".join(
+            f"{r['tenant_name']} (£{r['stats']['current_arrears']:,.0f})"
+            for r in in_arrears[:3]
+        )
+        parts.append(f"current arrears of £{total_arrears:,.0f} from {arrears_names}")
     if critical:
-        names = ", ".join(r["tenant_name"] for r in critical[:3])
-        parts.append(f"{len(critical)} tenant{'s' if len(critical) > 1 else ''} require urgent attention ({names})")
-    if total_arrears > 0:
-        parts.append(f"total current arrears of £{total_arrears:,.0f}")
-    return "Your portfolio has " + " and ".join(parts) + ". Immediate follow-up is recommended."
+        critical_no_arrears = [r for r in critical if r["stats"]["current_arrears"] == 0]
+        if critical_no_arrears:
+            names = ", ".join(r["tenant_name"] for r in critical_no_arrears[:3])
+            parts.append(f"{len(critical_no_arrears)} high-risk tenant{'s' if len(critical_no_arrears) > 1 else ''} with poor payment history ({names})")
+    return ("Your portfolio has " + " and ".join(parts) + ". Immediate follow-up is recommended."
+            if parts else f"{len(risk_data)} active tenants assessed — monitor closely.")
 
 
 @router.get("")
@@ -269,15 +271,23 @@ def get_risk_scores(
         .all()
     )
 
-    results = []
+    scored = []
     for lease in leases:
         payments = db.query(RentPayment).filter(RentPayment.lease_id == lease.id).all()
-        results.append(_score_tenant(lease, payments))
+        scored.append(_score_tenant(lease, payments))
+
+    # Deduplicate by tenant — keep worst (highest) risk score per tenant
+    seen = {}
+    for r in scored:
+        tid = r["tenant_id"]
+        if tid not in seen or r["risk_score"] > seen[tid]["risk_score"]:
+            seen[tid] = r
+    results = list(seen.values())
 
     # Sort: critical first
     results.sort(key=lambda r: (-r["risk_score"], r["tenant_name"]))
 
-    summary = _ai_portfolio_summary(results)
+    summary = _portfolio_summary(results)
 
     return {
         "tenants": results,

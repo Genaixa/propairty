@@ -173,6 +173,218 @@ def send_payment_receipt(tenant: Tenant, payment, prop: Property, unit: Unit, or
     _send_email(tenant.email, subject, html)
 
 
+def send_agent_new_tenant_message(agent_emails: list, tenant: "Tenant", body: str, org: "Organisation", prop_name: str = "", unit_name: str = ""):
+    if not agent_emails:
+        return
+    safe_name = html.escape(tenant.full_name)
+    safe_body = html.escape(body)
+    location = f"{html.escape(prop_name)} · {html.escape(unit_name)}" if prop_name else ""
+    subject = f"New message from {tenant.full_name}"
+    email_body = f"""
+    <h2>New tenant message</h2>
+    <p><strong>{safe_name}</strong> has sent you a message{f' regarding <em>{location}</em>' if location else ''}.</p>
+    <div class="amount-box">
+      <div class="label">Message</div>
+      <div class="amount" style="font-size:15px;line-height:1.5">{safe_body}</div>
+    </div>
+    <a href="{settings.app_base_url}/messages" class="cta">Reply in PropAIrty</a>
+    """
+    email_html = _base_template(subject, email_body, org.name)
+    for email in agent_emails:
+        _send_email(email, subject, email_html)
+
+
+def send_tenant_agent_reply(tenant: "Tenant", agent_name: str, body: str, org: "Organisation"):
+    if not tenant.email:
+        return
+    safe_agent = html.escape(agent_name)
+    safe_body = html.escape(body)
+    first = html.escape(tenant.full_name.split()[0])
+    subject = f"New message from {agent_name}"
+    email_body = f"""
+    <h2>Message from your letting agent</h2>
+    <p>Hi {first},</p>
+    <p><strong>{safe_agent}</strong> at {html.escape(org.name)} has sent you a message:</p>
+    <div class="amount-box">
+      <div class="label">Message</div>
+      <div class="amount" style="font-size:15px;line-height:1.5">{safe_body}</div>
+    </div>
+    <a href="{settings.app_base_url}/tenant/portal" class="cta">Reply in your tenant portal</a>
+    """
+    email_html = _base_template(subject, email_body, org.name)
+    _send_email(tenant.email, subject, email_html)
+
+
+def send_agent_maintenance_raised(agent_emails: list, tenant: "Tenant", title: str, description: str, org: "Organisation", prop_name: str = "", unit_name: str = ""):
+    if not agent_emails:
+        return
+    safe_title = html.escape(title)
+    safe_desc = html.escape(description or "")
+    safe_name = html.escape(tenant.full_name)
+    location = f"{html.escape(prop_name)} · {html.escape(unit_name)}" if prop_name else ""
+    subject = f"New maintenance request — {title}"
+    email_body = f"""
+    <h2>New maintenance request</h2>
+    <p><strong>{safe_name}</strong>{f' at <em>{location}</em>' if location else ''} has raised a maintenance request.</p>
+    <div class="amount-box">
+      <div class="label">Issue</div>
+      <div class="amount" style="font-size:16px">{safe_title}</div>
+    </div>
+    {f'<p>{safe_desc}</p>' if safe_desc else ''}
+    <a href="{settings.app_base_url}/maintenance" class="cta">View in PropAIrty</a>
+    """
+    email_html = _base_template(subject, email_body, org.name)
+    for email in agent_emails:
+        _send_email(email, subject, email_html)
+
+
+def send_landlord_agent_reply(landlord, agent_name: str, body: str, org):
+    if not landlord.email:
+        return
+    safe_agent = html.escape(agent_name)
+    safe_body = html.escape(body)
+    first = html.escape(landlord.full_name.split()[0])
+    subject = f"New message from {agent_name}"
+    email_body = f"""
+    <h2>Message from your letting agent</h2>
+    <p>Hi {first},</p>
+    <p><strong>{safe_agent}</strong> at {html.escape(org.name if org else 'your letting agent')} has sent you a message:</p>
+    <div class="amount-box">
+      <div class="label">Message</div>
+      <div class="amount" style="font-size:15px;line-height:1.5">{safe_body}</div>
+    </div>
+    <a href="{settings.app_base_url}/landlord/portal" class="cta">Reply in your landlord portal</a>
+    """
+    email_html = _base_template(subject, email_body, org.name if org else "PropAIrty")
+    _send_email(landlord.email, subject, email_html)
+
+
+def send_agent_new_landlord_message(agent_emails: list, landlord, body: str, org):
+    if not agent_emails:
+        return
+    safe_name = html.escape(landlord.full_name)
+    safe_body = html.escape(body)
+    subject = f"New message from landlord {landlord.full_name}"
+    email_body = f"""
+    <h2>New landlord message</h2>
+    <p><strong>{safe_name}</strong> has sent you a message via the landlord portal.</p>
+    <div class="amount-box">
+      <div class="label">Message</div>
+      <div class="amount" style="font-size:15px;line-height:1.5">{safe_body}</div>
+    </div>
+    <a href="{settings.app_base_url}/landlord-messages" class="cta">Reply in PropAIrty</a>
+    """
+    email_html = _base_template(subject, email_body, org.name if org else "PropAIrty")
+    for email in agent_emails:
+        _send_email(email, subject, email_html)
+
+
+def send_monthly_landlord_statements(db):
+    """Email each landlord their previous month's rent statement as a PDF attachment."""
+    import calendar as _cal
+    from datetime import date
+    from app.models.landlord import Landlord as LandlordModel
+    from app.models.property import Property as PropertyModel
+    from app.models.unit import Unit as UnitModel
+    from app.models.lease import Lease as LeaseModel
+    from app.models.payment import RentPayment as RentPaymentModel
+    from app.models.organisation import Organisation as OrgModel
+    from app import docgen as _docgen
+    from email.mime.application import MIMEApplication
+    import smtplib, ssl
+
+    if not settings.smtp_host or not settings.smtp_user:
+        print("[email] SMTP not configured — skipping landlord statements")
+        return
+
+    today = date.today()
+    # Previous month
+    if today.month == 1:
+        year, month = today.year - 1, 12
+    else:
+        year, month = today.year, today.month - 1
+
+    month_start = date(year, month, 1)
+    month_end = date(year, month, _cal.monthrange(year, month)[1])
+    report_month = month_start.strftime("%B %Y")
+
+    landlords = db.query(LandlordModel).filter(LandlordModel.is_active == True).all()
+    for landlord in landlords:
+        if not landlord.email:
+            continue
+        props = db.query(PropertyModel).filter(PropertyModel.landlord_id == landlord.id).all()
+        if not props:
+            continue
+        org = db.query(OrgModel).filter(OrgModel.id == landlord.organisation_id).first()
+
+        properties_data = []
+        for p in props:
+            units = db.query(UnitModel).filter(UnitModel.property_id == p.id).all()
+            unit_data = []
+            for u in units:
+                lease = db.query(LeaseModel).filter(LeaseModel.unit_id == u.id, LeaseModel.status == "active").first()
+                payment = None
+                if lease:
+                    payment = db.query(RentPaymentModel).filter(
+                        RentPaymentModel.lease_id == lease.id,
+                        RentPaymentModel.due_date >= month_start,
+                        RentPaymentModel.due_date <= month_end,
+                    ).first()
+                status = "vacant"
+                if lease:
+                    status = payment.status if payment else "pending"
+                unit_data.append({
+                    "name": u.name,
+                    "tenant_name": lease.tenant.full_name if lease and lease.tenant else None,
+                    "expected": payment.amount_due if payment else (lease.monthly_rent if lease else 0),
+                    "collected": payment.amount_paid or 0 if payment and payment.status == "paid" else 0,
+                    "status": status,
+                })
+            properties_data.append({
+                "name": p.name,
+                "address": f"{p.address_line1}, {p.city}, {p.postcode}",
+                "units": unit_data,
+            })
+
+        try:
+            pdf = _docgen.generate_financial_report(
+                landlord, properties_data, [], [], report_month, org.name if org else "PropAIrty"
+            )
+        except Exception as e:
+            print(f"[email] statement PDF failed for landlord {landlord.id}: {e}")
+            continue
+
+        subject = f"Your rent statement — {report_month}"
+        body_html = _base_template(subject, f"""
+        <h2>Monthly Rent Statement — {report_month}</h2>
+        <p>Hi {html.escape(landlord.full_name.split()[0])},</p>
+        <p>Please find your rent statement for <strong>{report_month}</strong> attached as a PDF.</p>
+        <p>If you have any questions about this statement, please log in to your landlord portal or contact your letting agent.</p>
+        <a href="{settings.app_base_url}/landlord/portal" class="cta">View landlord portal</a>
+        """, org.name if org else "PropAIrty")
+
+        try:
+            msg = MIMEMultipart("mixed")
+            msg["Subject"] = subject
+            msg["From"] = settings.smtp_from
+            msg["To"] = landlord.email
+            from email.mime.multipart import MIMEMultipart as _MM
+            alt = _MM("alternative")
+            alt.attach(MIMEText(body_html, "html"))
+            msg.attach(alt)
+            filename = f"Statement-{report_month.replace(' ', '-')}.pdf"
+            pdf_part = MIMEApplication(pdf, _subtype="pdf")
+            pdf_part.add_header("Content-Disposition", "attachment", filename=filename)
+            msg.attach(pdf_part)
+            ctx = ssl.create_default_context()
+            with smtplib.SMTP_SSL(settings.smtp_host, settings.smtp_port, context=ctx) as server:
+                server.login(settings.smtp_user, settings.smtp_password)
+                server.sendmail(settings.smtp_user, landlord.email, msg.as_string())
+            print(f"[email] Statement sent to {landlord.email} for {report_month}")
+        except Exception as e:
+            print(f"[email] Failed to send statement to {landlord.email}: {e}")
+
+
 def send_maintenance_update(tenant: Tenant, job_title: str, new_status: str, org: Organisation):
     if not tenant.email:
         return
@@ -200,6 +412,54 @@ def send_maintenance_update(tenant: Tenant, job_title: str, new_status: str, org
     """
     html = _base_template(subject, body, org.name)
     _send_email(tenant.email, subject, html)
+
+
+def send_void_renewal_chaser(tenant: Tenant, lease, unit: Unit, prop: Property, org: Organisation, agent_name: str):
+    """Send a renewal chaser email to a tenant from the Void Minimiser."""
+    if not tenant.email:
+        return False
+    first = tenant.full_name.split()[0]
+    lease_end = lease.end_date.strftime('%d %B %Y')
+    subject = f"Your tenancy at {prop.name} — renewal reminder"
+    body = f"""
+    <h2>Your tenancy renewal</h2>
+    <p>Hi {html.escape(first)},</p>
+    <p>We're reaching out regarding your tenancy at <strong>{html.escape(prop.name)}, {html.escape(unit.name)}</strong>,
+    which is due to end on <strong>{lease_end}</strong>.</p>
+    <p>We'd love for you to stay! Please get in touch with us as soon as possible to discuss renewing your tenancy.</p>
+    <p>If you have already been in contact or have decided not to renew, please disregard this message.</p>
+    <p style="margin-top:24px;">Kind regards,<br>
+    <strong>{html.escape(agent_name)}</strong><br>
+    {html.escape(org.name)}</p>
+    <a href="https://propairty.co.uk/tenant/portal" class="cta">View your tenant portal</a>
+    """
+    return _send_email(tenant.email, subject, _base_template(subject, body, org.name))
+
+
+def send_rent_review_recommendation(landlord, unit: Unit, prop: Property, org: Organisation,
+                                     current_rent: int, market_rent: int, agent_name: str):
+    """Notify a landlord that one of their units is underpriced vs market rate."""
+    if not landlord or not landlord.email:
+        return False
+    diff = market_rent - current_rent
+    pct = round((diff / market_rent) * 100, 1)
+    subject = f"Rent review opportunity — {prop.name}, {unit.name}"
+    body = f"""
+    <h2>Rent review recommendation</h2>
+    <p>Hi {html.escape(landlord.full_name or 'Landlord')},</p>
+    <p>We've been monitoring local market rents and wanted to flag an opportunity for
+    <strong>{html.escape(prop.name)}, {html.escape(unit.name)}</strong>.</p>
+    <table style="border-collapse:collapse;margin:16px 0;">
+      <tr><td style="padding:6px 16px 6px 0;color:#6b7280;">Current rent</td><td style="font-weight:bold;">£{current_rent:,}/mo</td></tr>
+      <tr><td style="padding:6px 16px 6px 0;color:#6b7280;">Local market rate</td><td style="font-weight:bold;color:#4f46e5;">£{market_rent:,}/mo</td></tr>
+      <tr><td style="padding:6px 16px 6px 0;color:#6b7280;">Potential uplift</td><td style="font-weight:bold;color:#16a34a;">+£{diff:,}/mo ({pct}%)</td></tr>
+    </table>
+    <p>We recommend discussing a rent increase at the next renewal opportunity. We can handle this on your behalf — please get in touch if you'd like to proceed.</p>
+    <p style="margin-top:24px;">Kind regards,<br>
+    <strong>{html.escape(agent_name)}</strong><br>
+    {html.escape(org.name)}</p>
+    """
+    return _send_email(landlord.email, subject, _base_template(subject, body, org.name))
 
 
 def send_agent_renewal_reminders(db: Session):
@@ -367,14 +627,14 @@ def _notification_type(days_until_due: int) -> str:
 
 
 def run_rent_reminders(db: Session):
-    """Run daily — send reminders for payments due in 3 days, today, and 1/3/7 days overdue.
-    Cascade: email → WhatsApp → SMS (fallback only if no email and no WhatsApp)."""
+    """Run daily — send reminders per each org's configured channels and trigger days."""
+    import json as _json
     from app import whatsapp as wa, sms as sm
 
-    today = date.today()
-    # days_until_due: positive = upcoming, 0 = today, negative = overdue
-    trigger_days = [3, 1, 0, -1, -3, -7]
+    DEFAULT_CHANNELS = ["email", "portal"]
+    DEFAULT_DAYS = [3, 1, 0, -1, -3, -7]
 
+    today = date.today()
     active_leases = db.query(Lease).filter(Lease.status == "active").all()
 
     for lease in active_leases:
@@ -391,6 +651,9 @@ def run_rent_reminders(db: Session):
         if not org:
             continue
 
+        channels = _json.loads(org.reminder_channels) if org.reminder_channels else DEFAULT_CHANNELS
+        trigger_days = _json.loads(org.reminder_days) if org.reminder_days else DEFAULT_DAYS
+
         for days in trigger_days:
             target_date = today + timedelta(days=days)
             payment = db.query(RentPayment).filter(
@@ -401,26 +664,22 @@ def run_rent_reminders(db: Session):
             if not payment:
                 continue
 
-            # 1. Email (primary)
-            if tenant.email:
+            if "email" in channels and tenant.email:
                 send_rent_reminder(tenant, payment, lease, unit, prop, org, days)
 
-            # 2. WhatsApp (if number stored)
-            if tenant.whatsapp_number:
+            if "whatsapp" in channels and tenant.whatsapp_number:
                 wa.send_whatsapp(
                     tenant.whatsapp_number,
                     _whatsapp_reminder_text(tenant, payment, prop, unit, days),
                 )
 
-            # 3. SMS — only if tenant has no email AND no WhatsApp (last resort)
-            if not tenant.email and not tenant.whatsapp_number and tenant.phone:
+            if "sms" in channels and tenant.phone:
                 sm.send_sms(
                     tenant.phone,
                     _whatsapp_reminder_text(tenant, payment, prop, unit, days),
                 )
 
-            # 4. In-portal notification (always, regardless of channel)
-            if tenant.portal_enabled:
+            if "portal" in channels and tenant.portal_enabled:
                 notif = TenantNotification(
                     tenant_id=tenant.id,
                     message=_whatsapp_reminder_text(tenant, payment, prop, unit, days),
@@ -428,4 +687,112 @@ def run_rent_reminders(db: Session):
                 )
                 db.add(notif)
 
+    # Every-2-days overdue chase: any overdue payment not covered by trigger_days above
+    overdue_payments = db.query(RentPayment).filter(
+        RentPayment.due_date < today,
+        RentPayment.status.in_(["overdue", "pending", "partial"]),
+    ).all()
+
+    for payment in overdue_payments:
+        days_overdue = (today - payment.due_date).days
+        # Skip if already handled by trigger_days today
+        if -days_overdue in trigger_days:
+            continue
+        # Only send if never sent, or last sent 2+ days ago
+        if payment.last_reminder_sent and (today - payment.last_reminder_sent).days < 2:
+            continue
+
+        lease = db.query(Lease).filter(Lease.id == payment.lease_id).first()
+        if not lease or not lease.tenant:
+            continue
+        tenant = lease.tenant
+        unit = lease.unit
+        if not unit:
+            continue
+        prop = db.query(Property).filter(Property.id == unit.property_id).first()
+        if not prop:
+            continue
+        org = db.query(Organisation).filter(Organisation.id == prop.organisation_id).first()
+        if not org:
+            continue
+
+        channels = _json.loads(org.reminder_channels) if org.reminder_channels else DEFAULT_CHANNELS
+        days_arg = -days_overdue  # negative = overdue
+
+        if "email" in channels and tenant.email:
+            send_rent_reminder(tenant, payment, lease, unit, prop, org, days_arg)
+        if "whatsapp" in channels and tenant.whatsapp_number:
+            wa.send_whatsapp(tenant.whatsapp_number, _whatsapp_reminder_text(tenant, payment, prop, unit, days_arg))
+        if "sms" in channels and tenant.phone:
+            sm.send_sms(tenant.phone, _whatsapp_reminder_text(tenant, payment, prop, unit, days_arg))
+        if "portal" in channels and tenant.portal_enabled:
+            notif = TenantNotification(
+                tenant_id=tenant.id,
+                message=_whatsapp_reminder_text(tenant, payment, prop, unit, days_arg),
+                type="urgent",
+            )
+            db.add(notif)
+
+        payment.last_reminder_sent = today
+
     db.commit()
+
+
+# ── Portal message notification dispatcher ────────────────────────────────────
+
+def send_portal_message_notification(entity, sender_name: str, body: str, org, portal_url: str):
+    """
+    Send a new-message notification to a tenant/landlord/contractor via their
+    chosen channels (email, WhatsApp, Telegram).
+
+    entity  — a Tenant, Landlord, or Contractor ORM object (must have the
+              notify_* and contact fields added in the migration)
+    """
+    first = (entity.full_name or "").split()[0] or "there"
+    org_name = org.name if org else "Your property management company"
+    subject = f"New message from {html.escape(sender_name)} — {org_name}"
+    preview = body[:120] + ("…" if len(body) > 120 else "")
+
+    # ── Email ──────────────────────────────────────────────────────────────────
+    if getattr(entity, "notify_email", False) and getattr(entity, "email", None):
+        email_body = f"""
+        <h2>You have a new message</h2>
+        <p>Hi {html.escape(first)},</p>
+        <p><strong>{html.escape(sender_name)}</strong> from {html.escape(org_name)} has sent you a message:</p>
+        <div class="amount-box" style="text-align:left;padding:16px 20px;">
+          <p style="margin:0;font-size:15px;color:#374151;">{html.escape(preview)}</p>
+        </div>
+        <p>Log in to your portal to read the full message and reply.</p>
+        <a href="{portal_url}" class="cta">Open my portal</a>
+        """
+        _send_email(entity.email, subject, _base_template(subject, email_body, org_name))
+
+    # ── WhatsApp ───────────────────────────────────────────────────────────────
+    wa_number = getattr(entity, "whatsapp_number", None) or getattr(entity, "phone", None)
+    if getattr(entity, "notify_whatsapp", False) and wa_number:
+        try:
+            from app import whatsapp as _wa
+            wa_text = (
+                f"Hi {first}, you have a new message from {sender_name} ({org_name}):\n\n"
+                f"\"{preview}\"\n\n"
+                f"Log in to your portal to reply: {portal_url}"
+            )
+            _wa.send_whatsapp(wa_number, wa_text)
+        except Exception as e:
+            print(f"[notify] WhatsApp failed: {e}")
+
+    # ── Telegram ───────────────────────────────────────────────────────────────
+    tg_chat_id = getattr(entity, "telegram_chat_id", None)
+    if getattr(entity, "notify_telegram", False) and tg_chat_id:
+        try:
+            from app import notifications as _notif
+            tg_text = (
+                f"💬 <b>New message</b>\n\n"
+                f"Hi {html.escape(first)}, <b>{html.escape(sender_name)}</b> from "
+                f"{html.escape(org_name)} has sent you a message:\n\n"
+                f"<i>{html.escape(preview)}</i>\n\n"
+                f"<a href='{portal_url}'>Log in to reply</a>"
+            )
+            _notif.send(tg_text, chat_id=tg_chat_id)
+        except Exception as e:
+            print(f"[notify] Telegram failed: {e}")

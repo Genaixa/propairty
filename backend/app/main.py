@@ -1,7 +1,9 @@
 import os
 import json
+import html
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
+from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -12,8 +14,8 @@ from slowapi.middleware import SlowAPIMiddleware
 
 from app.database import Base, engine, SessionLocal
 from app.routers import auth, properties, tenants, leases, maintenance, dashboard, payments, compliance, documents, onboarding
-from app.routers import ai, alerts, landlord, tenant_portal, news, stripe_payments, contractors, inspections, risk, renewals, uploads, analytics, dispatch, deposits, accounting, applicants, notices, inventory, valuation, contractor_portal, ppm
-from app import notifications, emails, escalation
+from app.routers import ai, alerts, landlord, tenant_portal, news, stripe_payments, contractors, inspections, risk, renewals, uploads, analytics, dispatch, deposits, accounting, applicants, notices, inventory, valuation, contractor_portal, ppm, billing, public_site, intelligence, phone, right_to_rent, surveys, email_inbound, system_settings, signing, workflows, checklists, audit_trail, feature_flags, cfo
+from app import notifications, emails, escalation, wendy
 
 # Load env from openclaw config if not already set
 _cfg_path = "/root/.openclaw/openclaw.json"
@@ -51,6 +53,7 @@ def daily_check():
         deposits.check_deposit_compliance(db)
         escalation.run_escalation(db)
         ppm.run_ppm_check(db)
+        workflows.run_workflows(db)
     finally:
         db.close()
 
@@ -62,6 +65,15 @@ def daily_news_refresh():
         pass
 
 
+def monthly_landlord_statements():
+    """Run on the 1st of each month to email last month's statement to all landlords."""
+    db = SessionLocal()
+    try:
+        emails.send_monthly_landlord_statements(db)
+    finally:
+        db.close()
+
+
 scheduler = BackgroundScheduler()
 
 
@@ -69,8 +81,16 @@ scheduler = BackgroundScheduler()
 async def lifespan(app: FastAPI):
     # Run once on startup, then daily at 8am
     scheduler.add_job(daily_check, "cron", hour=8, minute=0, id="daily_checks")
-    scheduler.add_job(daily_news_refresh, "cron", hour=7, minute=30, id="news_refresh")
+    scheduler.add_job(daily_news_refresh, "interval", hours=1, id="news_refresh")
+    # 1st of each month at 9am — email landlord statements for previous month
+    scheduler.add_job(monthly_landlord_statements, "cron", day=1, hour=9, minute=0, id="landlord_statements")
+    # Daily at noon — refresh Wendy's knowledge from git changes
+    scheduler.add_job(wendy.refresh, "cron", hour=12, minute=0, id="wendy_refresh")
     scheduler.start()
+    # Warm caches immediately in background on startup
+    import threading
+    threading.Thread(target=daily_news_refresh, daemon=True).start()
+    threading.Thread(target=wendy.load, daemon=True).start()
     yield
     scheduler.shutdown()
 
@@ -134,8 +154,65 @@ app.include_router(inventory.router)
 app.include_router(valuation.router)
 app.include_router(contractor_portal.router)
 app.include_router(ppm.router)
+app.include_router(billing.router)
+app.include_router(public_site.router)
+app.include_router(intelligence.router)
+app.include_router(phone.router)
+app.include_router(right_to_rent.router)
+app.include_router(surveys.router)
+app.include_router(email_inbound.router)
+app.include_router(system_settings.router)
+app.include_router(signing.router)
+app.include_router(workflows.router)
+app.include_router(checklists.router)
+app.include_router(audit_trail.router)
+app.include_router(feature_flags.router)
+app.include_router(cfo.router)
+
+# Serve uploaded files publicly (filenames are UUID-based, not guessable)
+app.mount("/uploads", StaticFiles(directory="/root/propairty/uploads"), name="uploads")
 
 
 @app.get("/")
 def root():
     return {"app": "PropAIrty", "version": "0.1.0", "status": "running"}
+
+
+from pydantic import BaseModel as _BM, field_validator
+
+class DemoRequest(_BM):
+    name: str
+    email: str
+    agency: str
+    units: str
+    message: str = ""
+
+    @field_validator('name', 'email', 'agency', 'units')
+    @classmethod
+    def not_empty(cls, v):
+        if not v or not v.strip():
+            raise ValueError('must not be empty')
+        return v.strip()
+
+@app.post("/api/demo-request")
+def demo_request(data: DemoRequest):
+    body = f"""
+<h2>New Demo Request — PropAIrty</h2>
+<table>
+<tr><td><strong>Name</strong></td><td>{html.escape(data.name)}</td></tr>
+<tr><td><strong>Email</strong></td><td>{html.escape(data.email)}</td></tr>
+<tr><td><strong>Agency</strong></td><td>{html.escape(data.agency)}</td></tr>
+<tr><td><strong>Properties</strong></td><td>{html.escape(data.units)}</td></tr>
+<tr><td><strong>Message</strong></td><td>{html.escape(data.message) if data.message else '—'}</td></tr>
+</table>
+"""
+    emails._send_email("info@genaixa.co.uk", f"Demo request from {data.agency}", body)
+    notifications.send(
+        f"🔔 <b>New demo request</b>\n"
+        f"<b>Name:</b> {data.name}\n"
+        f"<b>Agency:</b> {data.agency}\n"
+        f"<b>Email:</b> {data.email}\n"
+        f"<b>Properties:</b> {data.units}\n"
+        f"<b>Message:</b> {data.message or '—'}"
+    )
+    return {"ok": True}

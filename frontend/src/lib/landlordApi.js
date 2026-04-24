@@ -1,7 +1,7 @@
 import axios from 'axios'
 
 const landlordApi = axios.create({
-  baseURL: (import.meta.env.VITE_API_URL || 'http://localhost:8000/api') + '/landlord',
+  baseURL: (import.meta.env.VITE_API_URL || '/api') + '/landlord',
 })
 
 landlordApi.interceptors.request.use(config => {

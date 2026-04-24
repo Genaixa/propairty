@@ -18,6 +18,7 @@ from app.models.unit import Unit
 from app.models.property import Property
 from app.models.tenant import Tenant
 from app.models.organisation import Organisation
+from app.models.upload import UploadedFile
 
 router = APIRouter(prefix="/api/inventory", tags=["inventory"])
 TEMPLATES_DIR = os.path.join(os.path.dirname(__file__), "..", "templates")
@@ -83,7 +84,10 @@ def _inv_out(inv: Inventory, db: Session, include_rooms: bool = True) -> dict:
         "meter_water": inv.meter_water,
         "keys_handed": inv.keys_handed,
         "tenant_name": tenant.full_name if tenant else "—",
+        "tenant_id": tenant.id if tenant else None,
         "unit": f"{prop.name} · {unit.name}" if prop and unit else "—",
+        "unit_id": unit.id if unit else None,
+        "property_id": prop.id if prop else None,
         "property_address": f"{prop.address_line1}, {prop.city}" if prop else "—",
         "created_at": inv.created_at.isoformat() if inv.created_at else None,
     }
@@ -97,6 +101,13 @@ def _inv_out(inv: Inventory, db: Session, include_rooms: bool = True) -> dict:
                 "items": [
                     {"id": i.id, "item_name": i.item_name, "condition": i.condition, "notes": i.notes, "order": i.order}
                     for i in r.items
+                ],
+                "photos": [
+                    {"id": p.id, "url": f"/uploads/{p.filename}", "original_name": p.original_name}
+                    for p in db.query(UploadedFile).filter(
+                        UploadedFile.entity_type == "inventory_room",
+                        UploadedFile.entity_id == r.id,
+                    ).all()
                 ],
             }
             for r in inv.rooms
@@ -177,7 +188,10 @@ def list_inventories(
 ):
     invs = (
         db.query(Inventory)
-        .filter(Inventory.organisation_id == current_user.organisation_id)
+        .filter(
+            Inventory.organisation_id == current_user.organisation_id,
+            Inventory.status == "confirmed",
+        )
         .order_by(Inventory.inv_date.desc())
         .all()
     )
@@ -279,6 +293,83 @@ def create_inventory(
                 condition=item_data.condition,
                 notes=item_data.notes,
                 order=item_data.order,
+            ))
+
+    db.commit()
+    db.refresh(inv)
+    return _inv_out(inv, db)
+
+
+@router.get("/drafts")
+def list_drafts(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Return draft inventories created via the Telegram bot."""
+    drafts = (
+        db.query(Inventory)
+        .filter(
+            Inventory.organisation_id == current_user.organisation_id,
+            Inventory.status == "draft",
+        )
+        .order_by(Inventory.created_at.desc())
+        .all()
+    )
+    return [_inv_out(i, db) for i in drafts]
+
+
+@router.post("/{inv_id}/confirm")
+def confirm_draft(
+    inv_id: int,
+    data: InventoryCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Confirm a Telegram draft: replace its rooms with the reviewed data
+    and mark it as confirmed.
+    """
+    inv = db.query(Inventory).filter(
+        Inventory.id == inv_id,
+        Inventory.organisation_id == current_user.organisation_id,
+        Inventory.status == "draft",
+    ).first()
+    if not inv:
+        raise HTTPException(status_code=404, detail="Draft not found")
+
+    # Update header fields
+    inv.inv_type = data.inv_type
+    inv.inv_date = data.inv_date
+    inv.conducted_by = data.conducted_by
+    inv.tenant_present = data.tenant_present
+    inv.overall_notes = data.overall_notes
+    inv.meter_electric = data.meter_electric
+    inv.meter_gas = data.meter_gas
+    inv.meter_water = data.meter_water
+    inv.keys_handed = data.keys_handed
+    inv.status = "confirmed"
+
+    # Replace rooms
+    for room in inv.rooms:
+        db.delete(room)
+    db.flush()
+
+    for ri, room_data in enumerate(data.rooms):
+        room = InventoryRoom(
+            inventory_id=inv.id,
+            room_name=room_data.room_name,
+            order=ri,
+            notes=room_data.notes,
+        )
+        db.add(room)
+        db.flush()
+        for ii, item_data in enumerate(room_data.items):
+            db.add(InventoryItem(
+                room_id=room.id,
+                item_name=item_data.item_name,
+                condition=item_data.condition,
+                notes=item_data.notes,
+                order=ii,
             ))
 
     db.commit()

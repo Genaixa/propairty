@@ -218,9 +218,15 @@ def enqueue_job(job: MaintenanceRequest, db: Session):
 
     classification = _classify_issue(job.title, job.description or "")
     trade = classification.get("trade", "handyman")
-    urgency = classification.get("urgency", "standard")
+    ai_urgency = classification.get("urgency", "standard")
     summary = classification.get("summary", job.title)
     confidence = classification.get("confidence", "medium")
+
+    # User-set priority gates AI urgency — low/medium can never be upgraded to urgent by AI
+    if job.priority in ("low", "medium"):
+        urgency = "standard"
+    else:
+        urgency = ai_urgency
     area = _postcode_district(prop.postcode)
 
     queue_item = DispatchQueue(
@@ -265,15 +271,7 @@ def enqueue_job(job: MaintenanceRequest, db: Session):
         if org_settings.auto_mode:
             _check_and_auto_dispatch(prop.organisation_id, trade, area, db, org_settings)
         else:
-            # Just notify agent of new queued job
-            notifications.send(
-                f"📋 <b>Maintenance Queued — {TRADE_LABELS.get(trade, trade)}</b>\n\n"
-                f"{job.title}\n"
-                f"Property: {prop.name} · {unit.name}\n"
-                f"Area: {area} · Priority: Standard\n"
-                f"AI: {summary}\n\n"
-                f"Visit /dispatch to manage the queue."
-            )
+            pass  # Agent already notified by notify_new_maintenance in the create endpoint
 
     return queue_item
 
@@ -651,30 +649,127 @@ def dispatch_history(db: Session = Depends(get_db), current_user: User = Depends
         DispatchBatch.organisation_id == current_user.organisation_id,
     ).order_by(DispatchBatch.created_at.desc()).limit(50).all()
 
-    return [
-        {
+    result = []
+    for b in batches:
+        contractor = b.contractor
+        jobs = []
+        completed = 0
+        for item in b.items:
+            job = item.job
+            status = job.status if job else "unknown"
+            if status == "completed":
+                completed += 1
+            jobs.append({
+                "id": job.id if job else None,
+                "title": job.title if job else "?",
+                "ai_summary": item.ai_summary,
+                "property": job.unit.property.name if job and job.unit else None,
+                "unit": job.unit.name if job and job.unit else None,
+                "status": status,
+                "invoice_ref": job.invoice_ref if job else None,
+                "invoice_paid": bool(job.invoice_paid) if job else False,
+            })
+        dispatched_days_ago = (datetime.utcnow() - b.created_at.replace(tzinfo=None)).days if b.created_at else None
+        result.append({
             "id": b.id,
             "trade": b.trade,
             "trade_label": TRADE_LABELS.get(b.trade, b.trade),
             "area": b.area,
-            "contractor": b.contractor.full_name if b.contractor else "Unknown",
-            "contractor_company": b.contractor.company_name if b.contractor else None,
+            "contractor": contractor.full_name if contractor else "Unknown",
+            "contractor_id": contractor.id if contractor else None,
+            "contractor_company": contractor.company_name if contractor else None,
+            "contractor_email": contractor.email if contractor else None,
+            "contractor_last_login": contractor.last_login.isoformat() if contractor and contractor.last_login else None,
             "job_count": b.job_count,
+            "completed_count": completed,
             "dispatched_by": b.dispatched_by,
             "note": b.note,
             "created_at": b.created_at.isoformat() if b.created_at else None,
-            "jobs": [
-                {
-                    "title": item.job.title if item.job else "?",
-                    "ai_summary": item.ai_summary,
-                    "property": item.job.unit.property.name if item.job and item.job.unit else None,
-                    "unit": item.job.unit.name if item.job and item.job.unit else None,
-                }
-                for item in b.items
-            ],
-        }
-        for b in batches
-    ]
+            "dispatched_days_ago": dispatched_days_ago,
+            "jobs": jobs,
+        })
+    return result
+
+
+@router.post("/batch/{batch_id}/chase")
+def chase_batch(batch_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """Re-send dispatch email for outstanding jobs as a chase."""
+    batch = db.query(DispatchBatch).filter(
+        DispatchBatch.id == batch_id,
+        DispatchBatch.organisation_id == current_user.organisation_id,
+    ).first()
+    if not batch:
+        raise HTTPException(status_code=404, detail="Batch not found")
+    contractor = batch.contractor
+    if not contractor:
+        raise HTTPException(status_code=400, detail="No contractor on this batch")
+    items = [i for i in batch.items if i.job and i.job.status not in ("completed", "cancelled")]
+    if not items:
+        raise HTTPException(status_code=400, detail="All jobs already completed")
+    org = db.query(Organisation).filter(Organisation.id == current_user.organisation_id).first()
+    _email_contractor_chase(contractor, items, org, batch.area, db)
+    notifications.send(
+        f"📧 <b>Chase Sent</b>\n\nContractor: {contractor.full_name}\n"
+        f"Batch: {TRADE_LABELS.get(batch.trade, batch.trade)} · {batch.area}\n"
+        f"Outstanding: {len(items)} job{'s' if len(items) > 1 else ''}"
+    )
+    return {"ok": True, "chased": len(items)}
+
+
+def _email_contractor_chase(contractor: Contractor, items: list, org, area: str, db: Session):
+    """Send a chase email for outstanding jobs."""
+    if not contractor.email or not settings.smtp_host:
+        return
+    org_name = org.name if org else "Your Letting Agent"
+    trade_label = TRADE_LABELS.get(items[0].trade, items[0].trade)
+    jobs_html = ""
+    for i, item in enumerate(items, 1):
+        job = item.job
+        unit = job.unit if job else None
+        prop = unit.property if unit else None
+        lease = db.query(Lease).filter(
+            Lease.unit_id == unit.id if unit else 0,
+            Lease.status == "active"
+        ).first() if unit else None
+        tenant = lease.tenant if lease else None
+        jobs_html += f"""
+        <div style="background:#fffbeb; border:1px solid #fde68a; border-radius:8px; padding:16px; margin-bottom:12px;">
+          <strong style="color:#111827;">Job {i}: {job.title if job else '?'}</strong>
+          <p style="color:#6b7280; font-size:13px; margin:4px 0 8px;">{item.ai_summary or ''}</p>
+          <table style="font-size:12px; color:#374151; width:100%;">
+            <tr><td style="padding:3px 0; width:100px;"><strong>Property:</strong></td><td>{prop.name if prop else '?'} · {unit.name if unit else '?'}</td></tr>
+            {'<tr><td style="padding:3px 0;"><strong>Tenant:</strong></td><td>' + tenant.full_name + ' · ' + (tenant.phone or '') + '</td></tr>' if tenant else ''}
+          </table>
+        </div>"""
+    html = f"""<!DOCTYPE html><html><body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; background:#f9fafb; margin:0; padding:0;">
+<div style="max-width:600px; margin:40px auto; background:white; border-radius:12px; border:1px solid #e5e7eb; overflow:hidden;">
+  <div style="background:#d97706; padding:24px 32px;">
+    <h1 style="color:white; margin:0; font-size:20px; font-weight:700;">PropAIrty — Reminder</h1>
+    <p style="color:#fef3c7; margin:4px 0 0; font-size:13px;">{org_name}</p>
+  </div>
+  <div style="padding:32px;">
+    <h2 style="color:#111827; font-size:18px; margin:0 0 4px;">Outstanding {trade_label} Jobs — {area}</h2>
+    <p style="color:#6b7280; font-size:13px; margin:0 0 24px;">This is a friendly reminder about {len(items)} outstanding maintenance job{'s' if len(items) > 1 else ''} awaiting completion. Please update us on the status at your earliest convenience.</p>
+    {jobs_html}
+    <p style="color:#6b7280; font-size:13px; margin-top:24px;">Please reply to this email or log in to the contractor portal to update job statuses. Thank you.</p>
+  </div>
+  <div style="background:#f9fafb; border-top:1px solid #e5e7eb; padding:16px 32px;">
+    <p style="color:#9ca3af; font-size:12px; margin:0;">Sent by PropAIrty on behalf of {org_name}</p>
+  </div>
+</div></body></html>"""
+    try:
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = f"Reminder: {len(items)} outstanding {trade_label} job{'s' if len(items) > 1 else ''} — {area}"
+        msg["From"] = settings.smtp_from
+        msg["To"] = contractor.email
+        msg.attach(MIMEText(html, "html"))
+        ctx = ssl.create_default_context()
+        with smtplib.SMTP_SSL(settings.smtp_host, settings.smtp_port, context=ctx) as server:
+            server.login(settings.smtp_user, settings.smtp_password)
+            server.sendmail(settings.smtp_user, contractor.email, msg.as_string())
+        print(f"[dispatch] Chase sent to {contractor.email}")
+    except Exception as e:
+        print(f"[dispatch] Chase email failed: {e}")
 
 
 def _queue_item_out(q: DispatchQueue, db: Session) -> dict:

@@ -11,6 +11,11 @@ from app.models.lease import Lease
 from app.models.maintenance import MaintenanceRequest
 from app.models.payment import RentPayment
 from app.models.compliance import ComplianceCertificate
+from app.models.deposit import TenancyDeposit
+from app.models.inspection import Inspection
+from app.models.applicant import Applicant
+from app.models.ppm import PPMSchedule
+from sqlalchemy import desc
 
 router = APIRouter(prefix="/api/dashboard", tags=["dashboard"])
 
@@ -55,6 +60,55 @@ def get_dashboard(db: Session = Depends(get_db), current_user: User = Depends(ge
         Lease.end_date >= today
     ).count()
 
+    # Applicants pipeline
+    applicants_active = db.query(Applicant).filter(
+        Applicant.organisation_id == org_id,
+        Applicant.status.notin_(["rejected", "withdrawn", "tenancy_created"])
+    ).count()
+    applicants_referencing = db.query(Applicant).filter(
+        Applicant.organisation_id == org_id,
+        Applicant.referencing_status.in_(["in_progress", "not_started"]),
+        Applicant.status.notin_(["rejected", "withdrawn", "tenancy_created"])
+    ).count()
+
+    # Deposits compliance
+    deposits_unprotected = db.query(TenancyDeposit).filter(
+        TenancyDeposit.organisation_id == org_id,
+        TenancyDeposit.status == "unprotected"
+    ).count()
+    deposits_pi_outstanding = db.query(TenancyDeposit).filter(
+        TenancyDeposit.organisation_id == org_id,
+        TenancyDeposit.status == "protected"
+    ).count()
+
+    # Upcoming inspections (next 14 days)
+    from datetime import timedelta as td2
+    today_d = date.today()
+
+    # PPM overdue / due soon
+    ppm_overdue = db.query(PPMSchedule).join(Property).filter(
+        Property.organisation_id == org_id,
+        PPMSchedule.is_active == True,
+        PPMSchedule.next_due < today_d
+    ).count()
+    ppm_due_soon = db.query(PPMSchedule).join(Property).filter(
+        Property.organisation_id == org_id,
+        PPMSchedule.is_active == True,
+        PPMSchedule.next_due >= today_d,
+        PPMSchedule.next_due <= today_d + td2(days=30)
+    ).count()
+    inspections_upcoming = db.query(Inspection).join(Unit).join(Property).filter(
+        Property.organisation_id == org_id,
+        Inspection.status == "scheduled",
+        Inspection.scheduled_date >= today_d,
+        Inspection.scheduled_date <= today_d + td2(days=14)
+    ).count()
+    inspections_overdue = db.query(Inspection).join(Unit).join(Property).filter(
+        Property.organisation_id == org_id,
+        Inspection.status == "scheduled",
+        Inspection.scheduled_date < today_d
+    ).count()
+
     # Compliance alerts
     today = date.today()
     compliance_expired = db.query(ComplianceCertificate).join(Property).filter(
@@ -66,6 +120,33 @@ def get_dashboard(db: Session = Depends(get_db), current_user: User = Depends(ge
         ComplianceCertificate.expiry_date >= today,
         ComplianceCertificate.expiry_date <= today + timedelta(days=60)
     ).count()
+
+    # Recent open/in_progress maintenance requests (last 8)
+    recent_maintenance = (
+        db.query(MaintenanceRequest)
+        .join(Unit)
+        .join(Property)
+        .filter(
+            Property.organisation_id == org_id,
+            MaintenanceRequest.status.in_(["open", "in_progress"])
+        )
+        .order_by(desc(MaintenanceRequest.created_at))
+        .limit(8)
+        .all()
+    )
+    recent_maintenance_list = []
+    for m in recent_maintenance:
+        unit = m.unit
+        prop = unit.property if unit else None
+        recent_maintenance_list.append({
+            "id": m.id,
+            "title": m.title,
+            "status": m.status,
+            "priority": m.priority,
+            "property": prop.name if prop else "—",
+            "unit": unit.name if unit else "—",
+            "created_at": m.created_at.isoformat() if m.created_at else None,
+        })
 
     return {
         "properties": properties,
@@ -82,4 +163,13 @@ def get_dashboard(db: Session = Depends(get_db), current_user: User = Depends(ge
         "leases_expiring_soon": expiring_soon,
         "compliance_expired": compliance_expired,
         "compliance_expiring_soon": compliance_expiring,
+        "recent_maintenance": recent_maintenance_list,
+        "applicants_active": applicants_active,
+        "applicants_referencing": applicants_referencing,
+        "deposits_unprotected": deposits_unprotected,
+        "deposits_pi_outstanding": deposits_pi_outstanding,
+        "inspections_upcoming": inspections_upcoming,
+        "inspections_overdue": inspections_overdue,
+        "ppm_overdue": ppm_overdue,
+        "ppm_due_soon": ppm_due_soon,
     }

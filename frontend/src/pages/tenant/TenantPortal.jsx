@@ -5,6 +5,7 @@ import NotificationPrefs from '../../components/NotificationPrefs'
 import PortalAiChat from '../../components/PortalAiChat'
 import OtherPortals from '../../components/OtherPortals'
 import { PageHeader } from '../../components/Illustration'
+import ProfileDropdown from '../../components/ProfileDropdown'
 
 const BASE_TABS = ['My Property', 'Payments', 'Messages', 'Maintenance', 'My Lease', 'Documents', 'Deposit', 'Rent Statement', 'Meters', 'Inspections', 'Utilities', 'Emergency', 'Referencing', 'RTR', 'Move Out', 'Notices']
 
@@ -413,12 +414,6 @@ export default function TenantPortal() {
   const [inspections, setInspections] = useState([])
   const [propertyInfo, setPropertyInfo] = useState(null)
   const [myProperty, setMyProperty] = useState(null)
-  const [profileForm, setProfileForm] = useState(null)
-  const [profileSaving, setProfileSaving] = useState(false)
-  const [profileMsg, setProfileMsg] = useState('')
-  const [pwForm, setPwForm] = useState({ current: '', next: '', confirm: '' })
-  const [pwMsg, setPwMsg] = useState('')
-  const [pwSaving, setPwSaving] = useState(false)
   const [lightbox, setLightbox] = useState(null)
   const [rentStatement, setRentStatement] = useState(null)
   const [messages, setMessages] = useState([])
@@ -435,7 +430,6 @@ export default function TenantPortal() {
     try { return JSON.parse(localStorage.getItem('propairty_moveout') || '{}') } catch { return {} }
   })
   const [moveOutLoaded, setMoveOutLoaded] = useState(false)
-  const [showProfile, setShowProfile] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [portalFeatures, setPortalFeatures] = useState({})
   const msgScrollRef = useRef(null)
@@ -481,7 +475,6 @@ export default function TenantPortal() {
     tenantApi.get('/portal/inspections').then(r => setInspections(r.data)).catch(() => {})
     tenantApi.get('/portal/property-info').then(r => setPropertyInfo(r.data)).catch(() => {})
     tenantApi.get('/portal/my-property').then(r => setMyProperty(r.data)).catch(() => {})
-    tenantApi.get('/me').then(r => setProfileForm({ full_name: r.data.full_name, phone: r.data.phone || '' })).catch(() => {})
     tenantApi.get('/portal/rent-statement').then(r => setRentStatement(r.data)).catch(() => {})
     tenantApi.get('/portal/messages').then(r => setMessages(r.data)).catch(() => {})
     tenantApi.get('/portal/messages/unread-count').then(r => setMsgUnread(r.data.count)).catch(() => {})
@@ -686,102 +679,14 @@ export default function TenantPortal() {
         <div className="flex items-center gap-4">
           {/* Profile dropdown */}
           {me && (
-            <div className="relative">
-              <button onClick={() => setShowProfile(v => !v)}
-                className="flex items-center gap-2 text-sm text-gray-600 hover:text-violet-700 transition-colors group">
-                <span>Hello, <span className="font-medium">{me.full_name}</span></span>
-                <svg className={`w-3.5 h-3.5 text-gray-400 transition-transform ${showProfile ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
-              </button>
-
-              {showProfile && (
-                <div className="absolute right-0 top-10 w-80 bg-white border border-gray-200 rounded-xl shadow-xl z-50 overflow-hidden">
-                  <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-semibold text-gray-900">{me.full_name}</p>
-                      <p className="text-xs text-gray-400">{me.email}</p>
-                    </div>
-                    <button onClick={() => setShowProfile(false)} className="text-gray-400 hover:text-gray-600 text-lg leading-none">&times;</button>
-                  </div>
-
-                  {/* Edit name/phone */}
-                  <div className="px-5 py-4 border-b border-gray-100">
-                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">My Details</p>
-                    {profileForm && (
-                      <form onSubmit={async e => {
-                        e.preventDefault()
-                        setProfileSaving(true)
-                        setProfileMsg('')
-                        try {
-                          const r = await tenantApi.patch('/me', profileForm)
-                          setMe(r.data)
-                          setProfileMsg('Saved!')
-                          setTimeout(() => setProfileMsg(''), 3000)
-                        } catch {
-                          setProfileMsg('Failed to save.')
-                        } finally { setProfileSaving(false) }
-                      }} className="space-y-3">
-                        <div>
-                          <label className="block text-xs text-gray-500 mb-1">Full name</label>
-                          <input value={profileForm.full_name} onChange={e => setProfileForm(f => ({ ...f, full_name: e.target.value }))}
-                            className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500" />
-                        </div>
-                        <div>
-                          <label className="block text-xs text-gray-500 mb-1">Phone</label>
-                          <input value={profileForm.phone} onChange={e => setProfileForm(f => ({ ...f, phone: e.target.value }))}
-                            className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500"
-                            placeholder="+44…" />
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <button type="submit" disabled={profileSaving}
-                            className="bg-violet-600 text-white text-xs font-semibold px-4 py-1.5 rounded-lg hover:bg-violet-700 disabled:opacity-50">
-                            {profileSaving ? 'Saving…' : 'Save'}
-                          </button>
-                          {profileMsg && <span className={`text-xs ${profileMsg === 'Saved!' ? 'text-green-600' : 'text-red-500'}`}>{profileMsg}</span>}
-                        </div>
-                      </form>
-                    )}
-                  </div>
-
-                  {/* Change password */}
-                  <div className="px-5 py-4 border-b border-gray-100">
-                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Change Password</p>
-                    <form onSubmit={async e => {
-                      e.preventDefault()
-                      setPwMsg('')
-                      if (pwForm.next !== pwForm.confirm) { setPwMsg('Passwords do not match.'); return }
-                      setPwSaving(true)
-                      try {
-                        await tenantApi.post('/me/change-password', { current_password: pwForm.current, new_password: pwForm.next })
-                        setPwMsg('Updated!')
-                        setPwForm({ current: '', next: '', confirm: '' })
-                        setTimeout(() => setPwMsg(''), 3000)
-                      } catch (err) {
-                        setPwMsg(err.response?.data?.detail || 'Failed.')
-                      } finally { setPwSaving(false) }
-                    }} className="space-y-2">
-                      {[['current','Current password'],['next','New password'],['confirm','Confirm new']].map(([key, label]) => (
-                        <div key={key}>
-                          <label className="block text-xs text-gray-500 mb-1">{label}</label>
-                          <input type="password" value={pwForm[key]} onChange={e => setPwForm(f => ({ ...f, [key]: e.target.value }))}
-                            className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500" required />
-                        </div>
-                      ))}
-                      <div className="flex items-center gap-2 pt-1">
-                        <button type="submit" disabled={pwSaving}
-                          className="bg-gray-800 text-white text-xs font-semibold px-4 py-1.5 rounded-lg hover:bg-gray-900 disabled:opacity-50">
-                          {pwSaving ? 'Saving…' : 'Update'}
-                        </button>
-                        {pwMsg && <span className={`text-xs ${pwMsg.includes('Updated') ? 'text-green-600' : 'text-red-500'}`}>{pwMsg}</span>}
-                      </div>
-                    </form>
-                  </div>
-
-                  <div className="px-5 py-3">
-                    <button onClick={logout} className="w-full text-sm text-red-500 hover:text-red-700 font-medium text-left">Sign out</button>
-                  </div>
-                </div>
-              )}
-            </div>
+            <ProfileDropdown
+              me={me}
+              onUpdate={async patch => { const r = await tenantApi.patch('/me', patch); setMe(r.data) }}
+              onPassword={async ({ current, next }) => tenantApi.post('/me/change-password', { current_password: current, new_password: next })}
+              onLogout={logout}
+              accentRing="focus:ring-violet-500"
+              btnClass="bg-violet-600 hover:bg-violet-700"
+            />
           )}
 
           {/* Notification bell */}
@@ -858,35 +763,55 @@ export default function TenantPortal() {
             if (!flag) return true
             return portalFeatures[flag] !== false
           })
+          const TENANT_NAV_ICONS = {
+            'My Property':    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}><path strokeLinecap="round" strokeLinejoin="round" d="M2.25 12l8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25"/></svg>,
+            'Payments':       <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}><path strokeLinecap="round" strokeLinejoin="round" d="M2.25 8.25h19.5M2.25 9h19.5m-16.5 5.25h6m-6 2.25h3m-3.75 3h15a2.25 2.25 0 002.25-2.25V6.75A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25v10.5A2.25 2.25 0 004.5 19.5z"/></svg>,
+            'Messages':       <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}><path strokeLinecap="round" strokeLinejoin="round" d="M8.625 12a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H8.25m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H12m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0h-.375M21 12c0 4.556-4.03 8.25-9 8.25a9.764 9.764 0 01-2.555-.337A5.972 5.972 0 015.41 20.97a5.969 5.969 0 01-.474-.065 4.48 4.48 0 00.978-2.025c.09-.457-.133-.901-.467-1.226C3.93 16.178 3 14.189 3 12c0-4.556 4.03-8.25 9-8.25s9 3.694 9 8.25z"/></svg>,
+            'Maintenance':    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}><path strokeLinecap="round" strokeLinejoin="round" d="M11.42 15.17L17.25 21A2.652 2.652 0 0021 17.25l-5.877-5.877M11.42 15.17l2.496-3.03c.317-.384.74-.626 1.208-.766M11.42 15.17l-4.655 5.653a2.548 2.548 0 11-3.586-3.586l5.654-4.654m5.5-1.021l1.2-1.2a6 6 0 00-8.485-8.485l1.2 1.2m5.5 1.021a5.97 5.97 0 00-1.2-1.2m0 0l-1.786 1.786"/></svg>,
+            'My Lease':       <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z"/></svg>,
+            'Documents':      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}><path strokeLinecap="round" strokeLinejoin="round" d="M3.75 9.776c.112-.017.227-.026.344-.026h15.812c.117 0 .232.009.344.026m-16.5 0a2.25 2.25 0 00-1.883 2.542l.857 6a2.25 2.25 0 002.227 1.932H19.05a2.25 2.25 0 002.227-1.932l.857-6a2.25 2.25 0 00-1.883-2.542m-16.5 0V6A2.25 2.25 0 016 3.75h3.879a1.5 1.5 0 011.06.44l2.122 2.12a1.5 1.5 0 001.06.44H18A2.25 2.25 0 0120.25 9v.776"/></svg>,
+            'Deposit':        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}><path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z"/></svg>,
+            'Rent Statement': <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}><path strokeLinecap="round" strokeLinejoin="round" d="M9 14.25l6-6m4.5-3.493V21.75l-3.75-1.5-3.75 1.5-3.75-1.5-3.75 1.5V4.757c0-1.108.806-2.057 1.907-2.185a48.507 48.507 0 0111.186 0c1.1.128 1.907 1.077 1.907 2.185z"/></svg>,
+            'Meters':         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}><path strokeLinecap="round" strokeLinejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z"/></svg>,
+            'Inspections':    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z"/></svg>,
+            'Utilities':      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}><path strokeLinecap="round" strokeLinejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z"/></svg>,
+            'Emergency':      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}><path strokeLinecap="round" strokeLinejoin="round" d="M14.857 17.082a23.848 23.848 0 005.454-1.31A8.967 8.967 0 0118 9.75v-.7V9A6 6 0 006 9v.75a8.967 8.967 0 01-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 01-5.714 0m5.714 0a3 3 0 11-5.714 0"/></svg>,
+            'Referencing':    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z"/></svg>,
+            'RTR':            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}><path strokeLinecap="round" strokeLinejoin="round" d="M15 9h3.75M15 12h3.75M15 15h3.75M4.5 19.5h15a2.25 2.25 0 002.25-2.25V6.75A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25v10.5A2.25 2.25 0 004.5 19.5zm6-10.125a1.875 1.875 0 11-3.75 0 1.875 1.875 0 013.75 0zm1.294 6.336a6.721 6.721 0 01-3.17.789 6.721 6.721 0 01-3.168-.789 3.376 3.376 0 016.338 0z"/></svg>,
+            'Move Out':       <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}><path strokeLinecap="round" strokeLinejoin="round" d="M8.25 9V5.25A2.25 2.25 0 0110.5 3h6a2.25 2.25 0 012.25 2.25v13.5A2.25 2.25 0 0116.5 21h-6a2.25 2.25 0 01-2.25-2.25V15m-3 0l-3-3m0 0l3-3m-3 3H15"/></svg>,
+            'Renewal':        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}><path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"/></svg>,
+            'Notices':        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"/></svg>,
+          }
+
           const NAV = [
-            { key: 'My Property',    icon: '🏡', label: 'My Property' },
-            { key: 'Payments',       icon: '💳', label: 'Payments' },
-            { key: 'Messages',       icon: '💬', label: 'Messages', unread: msgUnread > 0 },
-            { key: 'Maintenance',    icon: '🔧', label: 'Maintenance' },
-            { key: 'My Lease',       icon: '🏠', label: 'My Lease' },
-            { key: 'Documents',      icon: '📄', label: 'Documents' },
-            { key: 'Deposit',        icon: '🔒', label: 'Deposit' },
-            { key: 'Rent Statement', icon: '📊', label: 'Rent Statement' },
-            { key: 'Meters',         icon: '📟', label: 'Meter Readings' },
-            { key: 'Inspections',    icon: '🔍', label: 'Inspections' },
-            { key: 'Utilities',      icon: '⚡', label: 'Utilities' },
-            { key: 'Emergency',      icon: '🚨', label: 'Emergency' },
-            { key: 'Referencing',    icon: '✅', label: 'Referencing' },
-            { key: 'RTR',            icon: '🪪', label: 'Right to Rent' },
-            { key: 'Move Out',       icon: '📦', label: 'Move-out' },
-            { key: 'Renewal',        icon: '📋', label: 'Renewal', badge: true },
-            { key: 'Notices',        icon: '📬', label: 'Notices' },
+            { key: 'My Property' },
+            { key: 'Payments' },
+            { key: 'Messages', label: 'Messages', unread: msgUnread > 0 },
+            { key: 'Maintenance' },
+            { key: 'My Lease' },
+            { key: 'Documents' },
+            { key: 'Deposit' },
+            { key: 'Rent Statement' },
+            { key: 'Meters', label: 'Meter Readings' },
+            { key: 'Inspections' },
+            { key: 'Utilities' },
+            { key: 'Emergency' },
+            { key: 'Referencing' },
+            { key: 'RTR', label: 'Right to Rent' },
+            { key: 'Move Out', label: 'Move-out' },
+            { key: 'Renewal', badge: true },
+            { key: 'Notices' },
           ].filter(n => tabs.includes(n.key))
 
           const sidebarContent = (
             <>
               <nav className="bg-violet-950 rounded-xl overflow-hidden">
-                {NAV.map((item, idx) => (
+                {NAV.map((item) => (
                   <button key={item.key} onClick={() => { setTab(item.key); setSidebarOpen(false) }}
-                    className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm font-medium text-left transition-colors
+                    className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm font-medium text-left transition-colors cursor-pointer
                       ${tab === item.key ? 'bg-violet-600 text-white' : 'text-slate-200 hover:bg-violet-900 hover:text-white'}`}>
-                    <span className="text-base leading-none">{item.icon}</span>
-                    <span className="flex-1">{item.label}</span>
+                    <span className="shrink-0 opacity-80">{TENANT_NAV_ICONS[item.key]}</span>
+                    <span className="flex-1">{item.label || item.key}</span>
                     {item.badge && <span className="w-2 h-2 rounded-full bg-violet-400 shrink-0" />}
                     {item.unread && <span className="bg-red-500 text-white text-xs font-bold rounded-full h-4 w-4 flex items-center justify-center">{msgUnread > 9 ? '9+' : msgUnread}</span>}
                   </button>
@@ -1122,7 +1047,9 @@ export default function TenantPortal() {
               <div className="space-y-2">
                 {documents.map(d => {
                   const isEsigned = d.source === 'esign'
-                  const icon = isEsigned ? '✅' : d.mime_type?.includes('pdf') ? '📄' : d.mime_type?.includes('image') ? '🖼️' : '📎'
+                  const icon = isEsigned
+                    ? <svg className="w-4 h-4 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z"/></svg>
+                    : <svg className="w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z"/></svg>
                   const catLabel = isEsigned ? 'Signed Document' : {
                     agreement: 'Tenancy Agreement', certificate: 'Certificate', invoice: 'Invoice',
                     correspondence: 'Correspondence', other: 'Document',
@@ -1959,12 +1886,12 @@ export default function TenantPortal() {
                 {(() => {
                   const statusMap = {
                     pending:   { color: 'bg-yellow-50 border-yellow-200 text-yellow-700', icon: '⏳', label: 'Pending — your application is being reviewed' },
-                    in_progress: { color: 'bg-blue-50 border-blue-200 text-blue-700', icon: '🔍', label: 'In progress — checks are underway' },
+                    in_progress: { color: 'bg-blue-50 border-blue-200 text-blue-700', icon: '→', label: 'In progress — checks are underway' },
                     passed:    { color: 'bg-green-50 border-green-200 text-green-700', icon: '✅', label: 'Passed — referencing complete' },
                     failed:    { color: 'bg-red-50 border-red-200 text-red-700', icon: '❌', label: 'Failed — please contact your agent' },
                     withdrawn: { color: 'bg-gray-50 border-gray-200 text-gray-600', icon: '↩️', label: 'Withdrawn' },
                   }
-                  const s = statusMap[referencing.status] || { color: 'bg-gray-50 border-gray-200 text-gray-700', icon: '📋', label: referencing.status }
+                  const s = statusMap[referencing.status] || { color: 'bg-gray-50 border-gray-200 text-gray-700', icon: '·', label: referencing.status }
                   return (
                     <>
                       <div className={`rounded-xl p-4 border flex items-center gap-3 ${s.color}`}>
@@ -2035,7 +1962,7 @@ const NOTICE_INFO = {
     title: 'Section 13 — Notice of Rent Increase',
     color: 'border-indigo-200 bg-indigo-50',
     headerColor: 'text-indigo-700',
-    icon: '📋',
+    icon: null,
     description: 'Your landlord has proposed an increase to your rent. The new amount takes effect from the date shown below. If you believe the increase is above market rate, you have the right to challenge it at the First-tier Tribunal (Property Chamber) before the effective date.',
     advice: null,
   },
@@ -2062,7 +1989,7 @@ function NoticesTab({ notices, onView }) {
     <div className="space-y-3">
       <p className="text-xs text-gray-500 mb-4">The following formal notices have been issued in connection with your tenancy. Tap any notice to read full details.</p>
       {notices.map(n => {
-        const info = NOTICE_INFO[n.notice_type] || { title: n.notice_type, color: 'border-gray-200 bg-gray-50', headerColor: 'text-gray-700', icon: '📋', description: '', advice: null }
+        const info = NOTICE_INFO[n.notice_type] || { title: n.notice_type, color: 'border-gray-200 bg-gray-50', headerColor: 'text-gray-700', icon: null, description: '', advice: null }
         const isOpen = expanded === n.id
         return (
           <div key={n.id} className={`rounded-xl border ${info.color} overflow-hidden transition-all`}>

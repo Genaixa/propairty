@@ -28,27 +28,25 @@
 <p>This notice is given pursuant to <strong>Section 21(1)(b)</strong> of the Housing Act 1988 (as amended). The tenancy in question is an Assured Shorthold Tenancy which commenced on <strong>{{ start_date }}</strong>.</p>
 
 <h2>What This Means For You</h2>
-<ul>
-  <li>You are required to vacate the property and return all keys by <strong>{{ possession_date }}</strong>.</li>
-  <li>If you do not vacate by this date, the Landlord may apply to the court for a possession order.</li>
-  <li>You may be entitled to assistance from your local council — please contact them promptly.</li>
-  <li>You should seek independent legal advice, e.g. from Citizens Advice.</li>
-</ul>
+<table style="width:100%; border-collapse:collapse; margin: 8px 0 12px 0;">
+  <tr><td style="width:18px; vertical-align:top; padding:2px 6px 4px 0; font-size:11pt;">&#8226;</td><td style="padding:2px 0 4px;">You are required to vacate the property and return all keys by <strong>{{ possession_date }}</strong>.</td></tr>
+  <tr><td style="width:18px; vertical-align:top; padding:2px 6px 4px 0; font-size:11pt;">&#8226;</td><td style="padding:2px 0 4px;">If you do not vacate by this date, the Landlord may apply to the court for a possession order.</td></tr>
+  <tr><td style="width:18px; vertical-align:top; padding:2px 6px 4px 0; font-size:11pt;">&#8226;</td><td style="padding:2px 0 4px;">You may be entitled to assistance from your local council — please contact them promptly.</td></tr>
+  <tr><td style="width:18px; vertical-align:top; padding:2px 6px 4px 0; font-size:11pt;">&#8226;</td><td style="padding:2px 0 4px;">You should seek independent legal advice, e.g. from Citizens Advice.</td></tr>
+</table>
 
 <h2>Legal Requirements Confirmed</h2>
-<div class="clause">
+{% if any_check_confirmed %}
 <p>The Landlord confirms that prior to serving this notice:</p>
-<ul>
-  <li>A valid Gas Safety Certificate has been provided to the Tenant;</li>
-  <li>A valid Energy Performance Certificate (EPC) has been provided;</li>
-  <li>The Government's "How to Rent" guide has been provided;</li>
-  <li>The deposit (if applicable) has been protected in a Government-approved scheme and prescribed information provided.</li>
-</ul>
-</div>
-
-<div class="notice-box" style="margin-top:20px;">
-  <strong>Note:</strong> This notice is valid for 6 months from the date of service. After this period a new notice will need to be served.
-</div>
+<table style="width:100%; border-collapse:collapse; margin: 8px 0 12px 0;">
+  {% if check_gas %}<tr><td style="width:18px; vertical-align:top; padding:2px 6px 4px 0; font-size:11pt;">&#8226;</td><td style="padding:2px 0 4px;">A valid Gas Safety Certificate has been provided to the Tenant;</td></tr>{% endif %}
+  {% if check_epc %}<tr><td style="width:18px; vertical-align:top; padding:2px 6px 4px 0; font-size:11pt;">&#8226;</td><td style="padding:2px 0 4px;">A valid Energy Performance Certificate (EPC) has been provided;</td></tr>{% endif %}
+  {% if check_how_to_rent %}<tr><td style="width:18px; vertical-align:top; padding:2px 6px 4px 0; font-size:11pt;">&#8226;</td><td style="padding:2px 0 4px;">The Government's "How to Rent" guide has been provided;</td></tr>{% endif %}
+  {% if check_deposit %}<tr><td style="width:18px; vertical-align:top; padding:2px 6px 4px 0; font-size:11pt;">&#8226;</td><td style="padding:2px 0 4px;">The deposit (if applicable) has been protected in a Government-approved scheme and prescribed information provided.</td></tr>{% endif %}
+</table>
+{% else %}
+<p style="color:#c0392b; font-style:italic;">Note: No compliance requirements were confirmed at the time of issue. The Landlord should ensure all required documents have been provided to the tenant before serving this notice.</p>
+{% endif %}
 
 <div class="signature-block">
   <div class="signature-line">

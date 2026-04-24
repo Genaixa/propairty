@@ -46,6 +46,9 @@ class InspectionCreate(BaseModel):
 
 class InspectionUpdate(BaseModel):
     status: Optional[str] = None
+    unit_id: Optional[int] = None
+    type: Optional[str] = None
+    scheduled_date: Optional[date] = None
     completed_date: Optional[date] = None
     overall_condition: Optional[str] = None
     inspector_name: Optional[str] = None
@@ -160,6 +163,12 @@ def update_inspection(
 
     if data.status is not None:
         inspection.status = data.status
+    if data.unit_id is not None:
+        inspection.unit_id = data.unit_id
+    if data.type is not None:
+        inspection.type = data.type
+    if data.scheduled_date is not None:
+        inspection.scheduled_date = data.scheduled_date
     if data.completed_date is not None:
         inspection.completed_date = data.completed_date
     if data.overall_condition is not None:
@@ -238,6 +247,56 @@ def download_report(
     )
 
 
+@router.get("/compare")
+def compare_inspections(
+    unit_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Return the most recent check_in and check_out inspections for a unit, side-by-side."""
+    _check_unit_access(unit_id, current_user, db)
+
+    def _get_latest(type_: str):
+        return (
+            db.query(Inspection)
+            .filter(
+                Inspection.unit_id == unit_id,
+                Inspection.organisation_id == current_user.organisation_id,
+                Inspection.type == type_,
+                Inspection.status == "completed",
+            )
+            .order_by(Inspection.completed_date.desc(), Inspection.id.desc())
+            .first()
+        )
+
+    checkin = _get_latest("check_in")
+    checkout = _get_latest("check_out")
+
+    def _rooms_map(inspection):
+        if not inspection:
+            return {}
+        return {r.room_name: {"condition": r.condition, "cleanliness": r.cleanliness, "notes": r.notes, "id": r.id} for r in inspection.rooms}
+
+    checkin_rooms = _rooms_map(checkin)
+    checkout_rooms = _rooms_map(checkout)
+
+    all_rooms = sorted(set(list(checkin_rooms.keys()) + list(checkout_rooms.keys())))
+
+    return {
+        "unit_id": unit_id,
+        "checkin": _inspection_out(checkin) if checkin else None,
+        "checkout": _inspection_out(checkout) if checkout else None,
+        "rooms": [
+            {
+                "room_name": room,
+                "checkin": checkin_rooms.get(room),
+                "checkout": checkout_rooms.get(room),
+            }
+            for room in all_rooms
+        ],
+    }
+
+
 def _notify_tenant_inspection_scheduled(inspection: Inspection, unit: Unit, db: Session):
     lease = db.query(Lease).filter(
         Lease.unit_id == unit.id,
@@ -271,5 +330,5 @@ def _notify_tenant_inspection_scheduled(inspection: Inspection, unit: Unit, db: 
     <p>Please ensure the property is accessible on the day. If you have any questions or need to rearrange, please contact us.</p>
     <a href="https://propairty.co.uk/tenant/portal" class="cta">View your tenant portal</a>
     """
-    html = emails._base_template(subject, body, org_name)
-    emails._send_email(tenant.email, subject, html)
+    html_body = emails._base_template(subject, body, org_name)
+    emails._send_email(tenant.email, subject, html_body)

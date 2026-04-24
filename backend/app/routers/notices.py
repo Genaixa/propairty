@@ -17,6 +17,7 @@ from app.models.organisation import Organisation
 from app.models.payment import RentPayment
 from app.models.compliance import ComplianceCertificate
 from app.models.deposit import TenancyDeposit
+from app.models.renewal import LeaseRenewal
 from app import docgen, notifications
 
 router = APIRouter(prefix="/api/notices", tags=["notices"])
@@ -117,7 +118,9 @@ def _notice_out(n: LegalNotice, db: Session) -> dict:
         "served_date": n.served_date.isoformat(),
         "possession_date": n.possession_date.isoformat() if n.possession_date else None,
         "court_date": n.court_date.isoformat() if n.court_date else None,
-        "arrears_amount": n.arrears_amount,
+        "arrears_amount": n.arrears_amount,   # S8: arrears; S13: proposed rent
+        "proposed_rent": n.arrears_amount if n.notice_type == "section_13" else None,
+        "effective_date": n.possession_date.isoformat() if n.notice_type == "section_13" and n.possession_date else None,
         "custom_notes": n.custom_notes,
         "checks": {
             "gas_cert": n.check_gas_cert,
@@ -127,9 +130,12 @@ def _notice_out(n: LegalNotice, db: Session) -> dict:
         },
         "lease_id": n.lease_id,
         "tenant_name": tenant.full_name if tenant else "—",
+        "tenant_id": tenant.id if tenant else None,
         "unit": f"{prop.name} · {unit.name}" if prop and unit else "—",
+        "property_id": prop.id if prop else None,
         "property_address": f"{prop.address_line1}, {prop.city}" if prop else "—",
         "created_at": n.created_at.isoformat() if n.created_at else None,
+        "viewed_at": n.viewed_at.isoformat() if n.viewed_at else None,
     }
 
 
@@ -211,8 +217,10 @@ def list_notices(
 
 class IssueNoticeRequest(BaseModel):
     lease_id: int
-    notice_type: str          # section_21 | section_8
+    notice_type: str          # section_21 | section_8 | section_13
     arrears_amount: Optional[float] = None
+    proposed_rent: Optional[float] = None   # S13
+    effective_date: Optional[date] = None   # S13
     custom_notes: Optional[str] = None
     check_how_to_rent: bool = False   # agent confirms How to Rent guide was served
 
@@ -223,8 +231,60 @@ def issue_notice(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    if req.notice_type not in ("section_21", "section_8"):
-        raise HTTPException(status_code=400, detail="notice_type must be section_21 or section_8")
+    if req.notice_type not in ("section_21", "section_8", "section_13"):
+        raise HTTPException(status_code=400, detail="notice_type must be section_21, section_8 or section_13")
+
+    # --- Section 13 branch ---
+    if req.notice_type == "section_13":
+        if not req.proposed_rent or not req.effective_date:
+            raise HTTPException(status_code=400, detail="proposed_rent and effective_date required for Section 13")
+        lease, tenant, unit, org = _get_lease(req.lease_id, current_user.organisation_id, db)
+        old_rent = lease.monthly_rent   # capture before update
+        today = date.today()
+        notice = LegalNotice(
+            organisation_id=current_user.organisation_id,
+            lease_id=req.lease_id,
+            notice_type="section_13",
+            served_date=today,
+            possession_date=req.effective_date,   # repurpose: effective date of rent increase
+            arrears_amount=req.proposed_rent,      # repurpose: store proposed rent
+            custom_notes=req.custom_notes,
+        )
+        db.add(notice)
+
+        # Record as an accepted renewal so section13-due won't show this lease again
+        renewal = LeaseRenewal(
+            lease_id=req.lease_id,
+            proposed_rent=req.proposed_rent,
+            proposed_start=req.effective_date,
+            proposed_end=None,
+            is_periodic="periodic",
+            status="accepted",
+        )
+        db.add(renewal)
+
+        # Update the lease rent to the new amount
+        lease.monthly_rent = req.proposed_rent
+
+        db.commit(); db.refresh(notice)
+        prop = unit.property if unit else None
+        label = f"{prop.name} · {unit.name}" if prop and unit else "—"
+        notifications.send(
+            f"📬 <b>Section 13 Rent Increase Notice</b>\n\n"
+            f"Tenant: {tenant.full_name if tenant else '—'}\n"
+            f"Property: {label}\n"
+            f"New Rent: £{req.proposed_rent:,.2f}/mo from {req.effective_date.strftime('%-d %B %Y')}"
+        )
+        pdf = docgen.generate_rent_increase(lease, tenant, unit, org, req.proposed_rent, req.effective_date, req.custom_notes or "", old_rent=old_rent)
+        filename = f"Section13_{tenant.full_name.replace(' ', '_')}_{today}.pdf"
+        return Response(
+            content=pdf,
+            media_type="application/pdf",
+            headers={
+                "Content-Disposition": f'attachment; filename="{filename}"',
+                "X-Notice-Id": str(notice.id),
+            },
+        )
 
     lease, tenant, unit, org = _get_lease(req.lease_id, current_user.organisation_id, db)
     checks = _preflight_checks(lease, db)
@@ -273,7 +333,12 @@ def issue_notice(
 
     # Generate PDF
     if req.notice_type == "section_21":
-        pdf = docgen.generate_section21(lease, tenant, unit, org)
+        pdf = docgen.generate_section21(lease, tenant, unit, org, checks={
+            "gas_cert": notice.check_gas_cert,
+            "epc": notice.check_epc,
+            "how_to_rent": notice.check_how_to_rent,
+            "deposit": notice.check_deposit,
+        })
         filename = f"Section21_{tenant.full_name.replace(' ', '_')}_{today}.pdf"
     else:
         pdf = docgen.generate_section8(lease, tenant, unit, org, arrears, req.custom_notes or "")
@@ -307,8 +372,17 @@ def redownload_notice(
     lease, tenant, unit, org = _get_lease(notice.lease_id, current_user.organisation_id, db)
 
     if notice.notice_type == "section_21":
-        pdf = docgen.generate_section21(lease, tenant, unit, org)
+        pdf = docgen.generate_section21(lease, tenant, unit, org, checks={
+            "gas_cert": notice.check_gas_cert,
+            "epc": notice.check_epc,
+            "how_to_rent": notice.check_how_to_rent,
+            "deposit": notice.check_deposit,
+        })
         filename = f"Section21_{tenant.full_name.replace(' ', '_')}_{notice.served_date}.pdf"
+    elif notice.notice_type == "section_13":
+        effective = notice.possession_date or date.today()
+        pdf = docgen.generate_rent_increase(lease, tenant, unit, org, notice.arrears_amount or 0, effective, notice.custom_notes or "")
+        filename = f"Section13_{tenant.full_name.replace(' ', '_')}_{notice.served_date}.pdf"
     else:
         pdf = docgen.generate_section8(lease, tenant, unit, org, notice.arrears_amount or 0, notice.custom_notes or "")
         filename = f"Section8_{tenant.full_name.replace(' ', '_')}_{notice.served_date}.pdf"
@@ -318,3 +392,22 @@ def redownload_notice(
         media_type="application/pdf",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+# --- Withdraw / delete a notice ---
+
+@router.delete("/{notice_id}")
+def delete_notice(
+    notice_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    notice = db.query(LegalNotice).filter(
+        LegalNotice.id == notice_id,
+        LegalNotice.organisation_id == current_user.organisation_id,
+    ).first()
+    if not notice:
+        raise HTTPException(status_code=404, detail="Notice not found")
+    db.delete(notice)
+    db.commit()
+    return {"ok": True}

@@ -16,6 +16,7 @@ class LeaseRenewal(Base):
     status = Column(String, default="sent")  # sent, accepted, declined, expired
     agent_notes = Column(Text, nullable=True)
     tenant_notes = Column(Text, nullable=True)
+    landlord_viewed_at = Column(DateTime(timezone=True), nullable=True)
     sent_at = Column(DateTime(timezone=True), server_default=func.now())
     responded_at = Column(DateTime(timezone=True), nullable=True)
 

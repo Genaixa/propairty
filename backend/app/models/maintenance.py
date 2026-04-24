@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, Text, Float
+from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, Date, Text, Float, Boolean
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.database import Base
@@ -21,6 +21,16 @@ class MaintenanceRequest(Base):
     estimated_cost = Column(Float, nullable=True)
     actual_cost = Column(Float, nullable=True)
     invoice_ref = Column(String, nullable=True)
+    invoice_paid = Column(Boolean, default=False, nullable=True)
+    tenant_satisfied = Column(Boolean, nullable=True, default=None)
+    tenant_feedback = Column(Text, nullable=True)
+    contractor_viewed_at = Column(DateTime(timezone=True), nullable=True)
+    contractor_accepted = Column(Boolean, nullable=True)   # None=pending, True=accepted, False=declined
+    contractor_quote = Column(Float, nullable=True)        # quote submitted by contractor
+    quote_status = Column(String, nullable=True)           # pending | approved | rejected
+    scheduled_date = Column(Date, nullable=True)           # target date set by agent
+    proposed_date = Column(Date, nullable=True)            # alternative date proposed by contractor
+    proposed_date_status = Column(String, nullable=True)   # pending | accepted | rejected
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
