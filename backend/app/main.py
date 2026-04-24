@@ -14,7 +14,7 @@ from slowapi.middleware import SlowAPIMiddleware
 
 from app.database import Base, engine, SessionLocal
 from app.routers import auth, properties, tenants, leases, maintenance, dashboard, payments, compliance, documents, onboarding
-from app.routers import ai, alerts, landlord, tenant_portal, news, stripe_payments, contractors, inspections, risk, renewals, uploads, analytics, dispatch, deposits, accounting, applicants, notices, inventory, valuation, contractor_portal, ppm, billing, public_site, intelligence, phone, right_to_rent, surveys, email_inbound, system_settings, signing, workflows, checklists, audit_trail, feature_flags, cfo
+from app.routers import ai, alerts, landlord, tenant_portal, news, stripe_payments, contractors, inspections, risk, renewals, uploads, analytics, dispatch, deposits, accounting, applicants, notices, inventory, valuation, contractor_portal, ppm, billing, public_site, intelligence, phone, right_to_rent, surveys, email_inbound, system_settings, signing, workflows, checklists, audit_trail, feature_flags, cfo, autopilot
 from app import notifications, emails, escalation, wendy
 
 # Load env from openclaw config if not already set
@@ -168,6 +168,7 @@ app.include_router(checklists.router)
 app.include_router(audit_trail.router)
 app.include_router(feature_flags.router)
 app.include_router(cfo.router)
+app.include_router(autopilot.router)
 
 # Serve uploaded files publicly (filenames are UUID-based, not guessable)
 app.mount("/uploads", StaticFiles(directory="/root/propairty/uploads"), name="uploads")

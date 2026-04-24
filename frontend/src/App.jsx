@@ -87,6 +87,7 @@ import TaxSummary from './pages/TaxSummary'
 import LeaseAnalyser from './pages/LeaseAnalyser'
 import EmailTriage from './pages/EmailTriage'
 import Workflows from './pages/Workflows'
+import Autopilot from './pages/Autopilot'
 import Checklists from './pages/Checklists'
 import AuditLog from './pages/AuditLog'
 import Demos from './pages/Demos'
@@ -238,6 +239,7 @@ export default function App() {
                 <Route path="/tax-summary" element={<TaxSummary />} />
                 <Route path="/lease-analyser" element={<LeaseAnalyser />} />
                 <Route path="/email-triage" element={<EmailTriage />} />
+                <Route path="/autopilot" element={<Autopilot />} />
                 <Route path="/workflows" element={<Workflows />} />
                 <Route path="/checklists" element={<Checklists />} />
                 <Route path="/audit-log" element={<AuditLog />} />

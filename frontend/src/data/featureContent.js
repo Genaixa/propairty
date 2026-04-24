@@ -683,6 +683,30 @@ export const FEATURES = [
     ],
     mockup: 'audit-trail',
   },
+  {
+    slug: 'ai-autopilot',
+    icon: '🤖',
+    title: 'AI Autopilot',
+    tagline: 'Nothing falls through the cracks — automatically.',
+    description: 'PropAIrty\'s AI Autopilot monitors every active workflow across all four portals — maintenance jobs, tenant messages, renewals, compliance, arrears — and steps in automatically when something stalls. Contractors get chased, tenants get reminded, agents get alerted. All without lifting a finger.',
+    portal: 'Agent dashboard · Tenant portal · Contractor portal',
+    bullets: [
+      'Detects stalled maintenance jobs and sends the contractor a contextual chaser message',
+      'Alerts agents when tenant or contractor messages go unanswered',
+      'Nudges tenants who haven\'t responded to a renewal offer',
+      'Flags lease expirations with no offer sent and compliance certs approaching expiry',
+      'Chases tenants automatically when rent is overdue',
+      'All messages are AI-generated and contextual — not templated form letters',
+      'Full activity log showing every action taken, what was sent and to whom',
+      'Each check is individually configurable — turn off, adjust thresholds',
+    ],
+    howItWorks: [
+      { step: 1, title: 'Enable and configure', desc: 'Turn on AI Autopilot and set the thresholds — how many days before a stalled job triggers a chase, how long before an unanswered message gets escalated.' },
+      { step: 2, title: 'Autopilot monitors in the background', desc: 'Every 4 hours, Autopilot scans all active workflows. When something stalls, it generates a contextual message using your portfolio\'s real data.' },
+      { step: 3, title: 'The right person gets nudged', desc: 'Contractors receive job chasers in their portal. Tenants receive renewal reminders. Agents receive alerts for anything that needs a human decision.' },
+    ],
+    mockup: 'ai-autopilot',
+  },
 ]
 
 export function getFeature(slug) {

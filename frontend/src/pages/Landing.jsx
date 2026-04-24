@@ -331,6 +331,250 @@ const FEATURE_ICON_MAP = {
   'accounting':          IcoCurrency,
   'right-to-rent':       IcoShield,
   'audit-trail':         IcoDocument,
+  'ai-autopilot':        IcoSparkle,
+}
+
+// ── Portal feature groups ─────────────────────────────────────────────────────
+const PORTAL_TABS = [
+  {
+    id: 'agent',
+    label: 'Agent Portal',
+    who: 'Your letting agency team',
+    color: 'indigo',
+    tagline: 'The command centre for your entire portfolio — every tool an agent needs, in one place.',
+    videoLabel: 'Agent portal walkthrough',
+    features: [
+      { slug: 'ai-assistant',        title: 'AI Assistant',              desc: 'Ask your entire portfolio anything in plain English.' },
+      { slug: 'ai-news-briefing',    title: 'Daily AI News Briefing',    desc: 'UK property news filtered for letting agents, daily.' },
+      { slug: 'rent-arrears',        title: 'Rent & Arrears Tracking',   desc: 'Know who owes what before they even call you.' },
+      { slug: 'compliance',          title: 'Compliance Dashboard',      desc: 'Every certificate, every property, one screen.' },
+      { slug: 'maintenance',         title: 'Maintenance Management',    desc: 'From tenant report to contractor completion — tracked.' },
+      { slug: 'document-generation', title: 'Document Generation',       desc: 'Legal documents drafted and ready in seconds.' },
+      { slug: 'analytics',           title: 'Portfolio Analytics',       desc: 'Occupancy, yield and revenue trends at a glance.' },
+      { slug: 'legal-notices',       title: 'Legal Notices',             desc: 'Section 21 & Section 8 — issued, tracked, stored.' },
+      { slug: 'renewals',            title: 'Renewals & Rent Reviews',   desc: 'Never miss a lease end date again.' },
+      { slug: 'inspections',         title: 'Inspections & Inventory',   desc: 'Condition records that hold up in disputes.' },
+      { slug: 'deposit-management',  title: 'Deposit Management',        desc: 'Protected, tracked and dispute-ready.' },
+      { slug: 'ppm',                 title: 'Planned Maintenance (PPM)', desc: 'Preventative tasks on schedule, not on memory.' },
+      { slug: 'ai-dispatch',         title: 'AI Maintenance Dispatch',   desc: 'Right contractor suggested before you read the job.' },
+      { slug: 'alerts',              title: 'Telegram Alerts',           desc: 'Critical events in your pocket, not your inbox.' },
+      { slug: 'applicants',          title: 'Applicant Management',      desc: 'First enquiry to signed lease in one pipeline.' },
+      { slug: 'valuation-risk',      title: 'Valuation & Risk Tools',    desc: 'Know which properties are underperforming — and why.' },
+      { slug: 'workflows',           title: 'Automated Workflows',       desc: 'Set the rules once. Let the system run them.' },
+      { slug: 'ai-autopilot',        title: 'AI Autopilot',              desc: 'Nothing falls through the cracks — automatically.' },
+      { slug: 'files',               title: 'Files & Document Store',    desc: 'Every document against the right record.' },
+      { slug: 'multi-org',           title: 'Multi-Org & Role Access',   desc: 'Separate agencies, separate data, one platform.' },
+      { slug: 'e-signing',           title: 'Electronic Signing',        desc: 'Send, sign and store — without a printer.' },
+      { slug: 'ai-insights',         title: 'AI Portfolio Intelligence', desc: 'Seven AI tools that turn data into decisions.' },
+      { slug: 'ai-drafting',         title: 'AI Drafting Suite',         desc: 'Documents, letters and analyses in seconds.' },
+      { slug: 'ai-phone',            title: 'AI Phone Agent',            desc: 'Answers maintenance calls 24/7.' },
+      { slug: 'accounting',          title: 'Accounting & Reporting',    desc: 'Income and expenditure — ready for your accountant.' },
+      { slug: 'right-to-rent',       title: 'Right to Rent & Referencing', desc: 'Legal checks tracked, documented and never missed.' },
+      { slug: 'audit-trail',         title: 'Audit Trail',               desc: 'Every action, timestamped and immutable.' },
+    ],
+  },
+  {
+    id: 'tenant',
+    label: 'Tenant Portal',
+    who: 'Your tenants',
+    color: 'sky',
+    tagline: 'Tenants handle the routine themselves — payments, maintenance, documents and messages — without calling your office.',
+    videoLabel: 'Tenant portal walkthrough',
+    features: [
+      { slug: 'tenant-portal',       title: 'My Property & Lease',       desc: 'Address, EPC, lease dates and key contacts — all in one place.' },
+      { slug: 'rent-arrears',        title: 'Rent Payments',             desc: 'Full payment history, upcoming due dates, outstanding balance.' },
+      { slug: 'maintenance',         title: 'Maintenance Reporting',     desc: 'Report an issue in under a minute with category, priority and photo.' },
+      { slug: 'e-signing',           title: 'Documents & E-Signing',     desc: 'View and sign tenancy documents directly in the portal.' },
+      { slug: 'deposit-management',  title: 'Deposit Information',       desc: 'Scheme, reference number and protection status, visible at any time.' },
+      { slug: 'renewals',            title: 'Renewal Acceptance',        desc: 'View and accept or decline a renewal offer without calling the agency.' },
+      { slug: 'inspections',         title: 'Inspection Calendar',       desc: 'Upcoming and past inspections with condition notes.' },
+      { slug: 'right-to-rent',       title: 'Right to Rent',             desc: 'Check status and document expiry dates.' },
+      { slug: 'surveys',             title: 'Satisfaction Surveys',      desc: 'Rate your service — agencies see feedback in real time.' },
+      { slug: 'legal-notices',       title: 'Notices',                   desc: 'Any legal notices served on the tenancy, visible in-portal.' },
+    ],
+  },
+  {
+    id: 'landlord',
+    label: 'Landlord Portal',
+    who: 'Your landlords',
+    color: 'emerald',
+    tagline: 'Landlords see exactly what they want — income, compliance, maintenance — without a phone call to your office.',
+    videoLabel: 'Landlord portal walkthrough',
+    features: [
+      { slug: 'landlord-portal',     title: 'Portfolio Overview',        desc: 'Total rent, arrears, occupancy — live summary across all properties.' },
+      { slug: 'accounting',          title: 'Financial Dashboard (CFO)', desc: 'Net income, yield scores and 12-month rent forecast.' },
+      { slug: 'rent-arrears',        title: 'Rent & Arrears',            desc: 'Every payment, due date and outstanding balance by property.' },
+      { slug: 'maintenance',         title: 'Maintenance Visibility',    desc: 'All jobs on their properties — open, in progress and completed.' },
+      { slug: 'compliance',          title: 'Compliance Status',         desc: 'Certificates across all their properties with expiry dates.' },
+      { slug: 'renewals',            title: 'Upcoming Renewals',         desc: 'Leases expiring in the next 90 days.' },
+      { slug: 'inspections',         title: 'Inspection Reports',        desc: 'Scheduled and completed inspections with condition ratings.' },
+      { slug: 'document-generation', title: 'Rent Statements',           desc: 'Monthly statements emailed automatically, downloadable any time.' },
+      { slug: 'legal-notices',       title: 'Legal Notices',             desc: 'Section 21 and Section 8 notices on their properties.' },
+    ],
+  },
+  {
+    id: 'contractor',
+    label: 'Contractor Portal',
+    who: 'Your maintenance contractors',
+    color: 'orange',
+    tagline: 'Contractors receive jobs, update status and communicate with your team — no phone tag, no confusion.',
+    videoLabel: 'Contractor portal walkthrough',
+    features: [
+      { slug: 'contractor-portal',   title: 'My Jobs Queue',             desc: 'Active, completed and cancelled jobs with filters and status badges.' },
+      { slug: 'maintenance',         title: 'Job Details & Updates',     desc: 'Full job context — property, description, priority, notes and photos.' },
+      { slug: 'ai-autopilot',        title: 'AI Chaser Messages',        desc: 'Automatic job chasers when updates go quiet — from the AI Autopilot.' },
+      { slug: 'alerts',              title: 'Job Notifications',         desc: 'New job alerts via email, SMS or Telegram — contractor\'s choice.' },
+      { slug: 'files',               title: 'Messages with Agency',      desc: 'Direct portal messaging — no back-and-forth over email.' },
+      { slug: 'inspections',         title: 'Job Calendar',              desc: 'Monthly calendar view of all scheduled job dates.' },
+    ],
+  },
+]
+
+const PORTAL_COLORS = {
+  indigo: { tab: 'bg-indigo-600 text-white', tabInactive: 'text-indigo-600 border-indigo-200 hover:bg-indigo-50', icon: 'text-indigo-500', iconBg: 'bg-indigo-50', badge: 'bg-indigo-100 text-indigo-700', dot: 'bg-indigo-500', ring: 'ring-indigo-200' },
+  sky:    { tab: 'bg-sky-500 text-white',    tabInactive: 'text-sky-600 border-sky-200 hover:bg-sky-50',           icon: 'text-sky-500',    iconBg: 'bg-sky-50',    badge: 'bg-sky-100 text-sky-700',    dot: 'bg-sky-500',    ring: 'ring-sky-200' },
+  emerald:{ tab: 'bg-emerald-600 text-white',tabInactive: 'text-emerald-600 border-emerald-200 hover:bg-emerald-50',icon: 'text-emerald-500',iconBg: 'bg-emerald-50',badge: 'bg-emerald-100 text-emerald-700',dot: 'bg-emerald-500',ring: 'ring-emerald-200' },
+  orange: { tab: 'bg-orange-500 text-white', tabInactive: 'text-orange-600 border-orange-200 hover:bg-orange-50',  icon: 'text-orange-500', iconBg: 'bg-orange-50', badge: 'bg-orange-100 text-orange-700', dot: 'bg-orange-500', ring: 'ring-orange-200' },
+}
+
+function PortalFeatureSection() {
+  const [activeTab, setActiveTab] = useState('agent')
+  const portal = PORTAL_TABS.find(p => p.id === activeTab)
+  const colors = PORTAL_COLORS[portal.color]
+
+  return (
+    <section id="features" className="bg-white py-24">
+      <div className="max-w-7xl mx-auto px-6">
+
+        {/* Header */}
+        <div className="text-center mb-12">
+          <p className="text-xs font-semibold text-indigo-600 uppercase tracking-[0.2em] mb-3">Everything included</p>
+          <h2 className="text-4xl font-extrabold text-gray-900 mb-3 tracking-tight" style={{fontFamily:"'Playfair Display', Georgia, serif"}}>
+            32 features. One platform.
+          </h2>
+          <p className="text-gray-400 max-w-md mx-auto leading-relaxed">
+            Four connected portals — agent, landlord, tenant, contractor — sharing the same live data from day one.
+            No bolt-ons. No integrations to manage.
+          </p>
+        </div>
+
+        {/* Tab bar */}
+        <div className="flex flex-wrap justify-center gap-2 mb-10">
+          {PORTAL_TABS.map(p => {
+            const c = PORTAL_COLORS[p.color]
+            const isActive = activeTab === p.id
+            return (
+              <button
+                key={p.id}
+                onClick={() => setActiveTab(p.id)}
+                className={`flex items-center gap-2 px-5 py-2.5 rounded-full text-sm font-semibold border transition-all duration-200 cursor-pointer ${
+                  isActive ? c.tab + ' border-transparent shadow-md' : 'bg-white border-gray-200 text-gray-600 hover:border-gray-300 hover:bg-gray-50'
+                }`}
+              >
+                <span className={`w-2 h-2 rounded-full ${isActive ? 'bg-white' : c.dot}`} />
+                {p.label}
+                <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${isActive ? 'bg-white/20 text-white' : 'bg-gray-100 text-gray-500'}`}>
+                  {p.features.length}
+                </span>
+              </button>
+            )
+          })}
+        </div>
+
+        {/* Content: features + video side by side */}
+        <div className={`rounded-2xl border ${colors.ring} ring-1 overflow-hidden`}>
+
+          {/* Portal header strip */}
+          <div className={`px-6 py-4 flex items-center gap-4 ${colors.iconBg} border-b border-gray-100`}>
+            <div>
+              <p className={`text-xs font-bold uppercase tracking-widest ${colors.icon}`}>{portal.label}</p>
+              <p className="text-sm text-gray-500 mt-0.5">{portal.tagline}</p>
+            </div>
+            <span className={`ml-auto text-xs font-medium px-3 py-1 rounded-full ${colors.badge}`}>
+              For {portal.who}
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-5 divide-y lg:divide-y-0 lg:divide-x divide-gray-100">
+
+            {/* Features list — 3 columns */}
+            <div className="lg:col-span-3 p-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {portal.features.map((f) => {
+                  const Icon = FEATURE_ICON_MAP[f.slug] || IcoSparkle
+                  return (
+                    <Link
+                      key={f.slug}
+                      to={`/features/${f.slug}`}
+                      className="group flex items-start gap-3 p-3 rounded-xl hover:bg-gray-50 transition-colors cursor-pointer"
+                    >
+                      <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5 ${colors.iconBg} group-hover:scale-110 transition-transform`}>
+                        <Icon className={`w-4 h-4 ${colors.icon}`} />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold text-gray-900 group-hover:text-gray-700 leading-snug">{f.title}</p>
+                        <p className="text-xs text-gray-400 leading-relaxed mt-0.5">{f.desc}</p>
+                      </div>
+                    </Link>
+                  )
+                })}
+              </div>
+            </div>
+
+            {/* Video panel — 2 columns */}
+            <div className="lg:col-span-2 p-6 flex flex-col">
+              <p className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-4">{portal.videoLabel}</p>
+
+              {/* Video embed — replace src with real Loom/YouTube embed URL */}
+              <div className="relative flex-1 min-h-56 bg-gray-900 rounded-xl overflow-hidden group cursor-pointer">
+                {portal.videoSrc ? (
+                  <iframe
+                    src={portal.videoSrc}
+                    className="absolute inset-0 w-full h-full"
+                    frameBorder="0"
+                    allow="autoplay; fullscreen"
+                    allowFullScreen
+                  />
+                ) : (
+                  <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 p-6">
+                    {/* Placeholder thumbnail */}
+                    <div className={`w-16 h-16 rounded-2xl ${colors.iconBg} flex items-center justify-center`}>
+                      <svg className={`w-8 h-8 ${colors.icon}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                    </div>
+                    <div className="text-center">
+                      <p className="text-white font-semibold text-sm">{portal.videoLabel}</p>
+                      <p className="text-gray-500 text-xs mt-1">Demo video coming soon</p>
+                    </div>
+                    <a href="#book-demo" className={`text-xs font-semibold px-4 py-2 rounded-lg transition-colors ${colors.tab} hover:opacity-90`}>
+                      Book a live demo instead
+                    </a>
+                  </div>
+                )}
+              </div>
+
+              {/* CTA below video */}
+              <div className="mt-4 p-4 bg-gray-50 rounded-xl">
+                <p className="text-xs font-semibold text-gray-700 mb-1">Try it now</p>
+                <p className="text-xs text-gray-400 mb-3">Log in with demo credentials and explore the {portal.label} yourself.</p>
+                <a
+                  href="/portal-picker"
+                  className={`inline-flex items-center gap-1.5 text-xs font-semibold ${colors.icon} hover:underline cursor-pointer`}
+                >
+                  Open demo portal
+                  <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+                </a>
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+      </div>
+    </section>
+  )
 }
 
 // ── Demo booking form ─────────────────────────────────────────────────────────
@@ -644,7 +888,7 @@ export default function Landing() {
       <div className="bg-slate-900 border-y border-slate-700/50">
         <div className="max-w-5xl mx-auto px-6 py-8 grid grid-cols-2 sm:grid-cols-4 gap-6 sm:gap-0 sm:divide-x sm:divide-slate-700/50">
           {[
-            ['31', 'features built in', 'not bolted on'],
+            ['32', 'features built in', 'not bolted on'],
             ['4', 'connected portals', 'one live dataset'],
             ['100%', 'UK-built', 'GDPR-compliant'],
             ['1', 'subscription', 'no integrations'],
@@ -1255,33 +1499,105 @@ export default function Landing() {
         </div>
       </section>
 
-      {/* ── Features ── */}
-      <section className="bg-white py-24">
+      <PortalFeatureSection />
+
+      {/* ── Autopilot callout ── */}
+      <section className="bg-slate-900 py-24 overflow-hidden">
         <div className="max-w-6xl mx-auto px-6">
-          <div className="mb-14">
-            <p className="text-xs font-semibold text-indigo-600 uppercase tracking-[0.2em] mb-3">Everything included</p>
-            <h2 className="text-4xl font-extrabold text-gray-900 mb-3 tracking-tight" style={{fontFamily:"'Playfair Display', Georgia, serif"}}>31 features. Built in.</h2>
-            <p className="text-gray-400 max-w-md leading-relaxed">No bolt-ons, no integrations to manage. Every feature shares the same live data from day one.</p>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
-            {FEATURES.map((f, i) => {
-              const Icon = FEATURE_ICON_MAP[f.slug] || IcoSparkle
-              return (
-                <Link key={i} to={`/features/${f.slug}`}
-                  className="flex items-start gap-4 py-4 border-b border-gray-100 group hover:bg-slate-50 px-3 -mx-3 rounded-xl transition-all duration-200 hover:-translate-y-px cursor-pointer">
-                  <div className="w-9 h-9 rounded-xl bg-slate-100 flex items-center justify-center flex-shrink-0 mt-0.5 group-hover:bg-indigo-600 transition-all duration-200 shadow-sm">
-                    <Icon className="w-4 h-4 text-slate-500 group-hover:text-white transition-colors duration-200" />
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-16 items-center">
+
+            {/* Left — copy */}
+            <div>
+              <p className="text-xs font-semibold text-indigo-400 uppercase tracking-[0.2em] mb-4">AI Autopilot</p>
+              <h2 className="text-4xl font-extrabold text-white mb-6 leading-tight tracking-tight" style={{fontFamily:"'Playfair Display', Georgia, serif"}}>
+                Things get logged.<br />
+                Then silently forgotten.<br />
+                <span className="bg-gradient-to-r from-indigo-400 to-violet-400 bg-clip-text text-transparent">Not any more.</span>
+              </h2>
+              <p className="text-slate-400 text-lg leading-relaxed mb-6">
+                Every letting agency has the same problem: jobs get assigned, messages get sent, renewals get flagged — and then life moves on and nothing gets followed up.
+              </p>
+              <p className="text-slate-300 text-lg leading-relaxed mb-8">
+                PropAIrty's AI Autopilot has memory and persistence so your team doesn't have to. It watches every open workflow across all four portals and steps in the moment something stalls — chasing contractors, nudging tenants, alerting agents.
+              </p>
+              <div className="space-y-4 mb-10">
+                {[
+                  { icon: 'M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z', text: 'Jobs actually get finished' },
+                  { icon: 'M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z', text: 'Tenants actually get replies' },
+                  { icon: 'M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z', text: "Renewals don't sneak up on anyone" },
+                  { icon: 'M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z', text: 'Arrears get chased before they compound' },
+                ].map((item, i) => (
+                  <div key={i} className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-full bg-indigo-500/20 flex items-center justify-center flex-shrink-0">
+                      <svg className="w-4 h-4 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={item.icon} />
+                      </svg>
+                    </div>
+                    <span className="text-slate-200 font-medium">{item.text}</span>
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <h3 className="font-semibold text-gray-900 text-sm mb-0.5 group-hover:text-indigo-700 transition-colors duration-200">{f.title}</h3>
-                    <p className="text-xs text-gray-400 leading-relaxed">{f.tagline}</p>
+                ))}
+              </div>
+              <p className="text-slate-500 text-sm italic border-l-2 border-indigo-500/40 pl-4">
+                "That's worth a lot more than another reporting chart."
+              </p>
+            </div>
+
+            {/* Right — visual */}
+            <div className="relative">
+              {/* Glow */}
+              <div className="absolute inset-0 bg-indigo-600/10 rounded-3xl blur-3xl" />
+              <div className="relative bg-slate-800 rounded-2xl border border-slate-700 overflow-hidden shadow-2xl">
+                {/* Header */}
+                <div className="flex items-center justify-between px-5 py-4 border-b border-slate-700 bg-slate-800/80">
+                  <div className="flex items-center gap-2.5">
+                    <span className="flex h-2.5 w-2.5 relative">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75" />
+                      <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-green-500" />
+                    </span>
+                    <span className="text-sm font-semibold text-white">AI Autopilot</span>
+                    <span className="text-xs bg-green-500/20 text-green-400 px-2 py-0.5 rounded-full font-medium">Active</span>
                   </div>
-                  <svg className="w-4 h-4 text-gray-300 self-center flex-shrink-0 group-hover:text-indigo-400 transition-colors duration-200 -translate-x-1 group-hover:translate-x-0 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-                  </svg>
-                </Link>
-              )
-            })}
+                  <span className="text-xs text-slate-500">Runs every 4 hours</span>
+                </div>
+
+                {/* Activity feed */}
+                <div className="p-5 space-y-3">
+                  {[
+                    { time: '09:02', color: 'amber',  icon: 'M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z', label: 'Chased contractor', detail: 'Job #47 — no update for 5 days', sub: 'Swift Plumbing Ltd messaged via portal' },
+                    { time: '09:02', color: 'blue',   icon: 'M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z', label: 'Alerted agent', detail: 'Sarah Mitchell — message unanswered 26h', sub: 'Notification sent to agent dashboard' },
+                    { time: '09:02', color: 'purple', icon: 'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z', label: 'Reminded tenant', detail: 'Renewal offer — no response after 7 days', sub: 'Oliver Bennett messaged via tenant portal' },
+                    { time: '09:02', color: 'rose',   icon: 'M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z', label: 'Chased arrears', detail: '£850 overdue — 6 days', sub: 'James Okafor messaged via tenant portal' },
+                    { time: '09:02', color: 'green',  icon: 'M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z', label: 'All other workflows up to date', detail: '24 checks passed', sub: 'Next run at 13:00' },
+                  ].map((item, i) => {
+                    const colorMap = {
+                      amber:  { bg: 'bg-amber-500/20',  icon: 'text-amber-400',  dot: 'bg-amber-500' },
+                      blue:   { bg: 'bg-blue-500/20',   icon: 'text-blue-400',   dot: 'bg-blue-500' },
+                      purple: { bg: 'bg-purple-500/20', icon: 'text-purple-400', dot: 'bg-purple-500' },
+                      rose:   { bg: 'bg-rose-500/20',   icon: 'text-rose-400',   dot: 'bg-rose-500' },
+                      green:  { bg: 'bg-green-500/20',  icon: 'text-green-400',  dot: 'bg-green-500' },
+                    }[item.color]
+                    return (
+                      <div key={i} className="flex items-start gap-3 p-3 rounded-xl bg-slate-700/40 hover:bg-slate-700/70 transition-colors">
+                        <div className={`w-8 h-8 rounded-lg ${colorMap.bg} flex items-center justify-center flex-shrink-0 mt-0.5`}>
+                          <svg className={`w-4 h-4 ${colorMap.icon}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={item.icon} />
+                          </svg>
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-semibold text-white">{item.label}</span>
+                            <span className="text-xs text-slate-500">{item.time}</span>
+                          </div>
+                          <p className="text-xs text-slate-400 mt-0.5">{item.detail}</p>
+                          <p className="text-xs text-slate-500 mt-0.5 italic">{item.sub}</p>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            </div>
+
           </div>
         </div>
       </section>

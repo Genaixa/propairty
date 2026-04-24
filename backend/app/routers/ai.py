@@ -29,6 +29,8 @@ Always address letters formally. Sign off as "PropAIrty Management".
 Be concise and helpful. Answer directly — do not narrate your reasoning or mention tools, data retrieval, or internal steps. Just give the answer.
 If a name, number, or detail is in the data above, state it exactly. Never say information is unavailable if it is present in the data. Never invent or guess contact details.
 
+CRITICAL — listing items from tool results: When a tool returns a list, reproduce EVERY item exactly as returned. Do not skip, merge, duplicate, or reorder items. Do not substitute one item's title, location, or details for another's. Copy each field (id, title, property/unit, priority, status) verbatim from the tool response.
+
 IMPORTANT — sending emails: You can only send emails using the send_arrears_reminder tool. Do not claim to have sent anything unless that tool returned success=true. If asked to send a reminder, call the tool and report the result exactly.
 """
 
@@ -199,7 +201,11 @@ def get_openai_client():
 
 def _build_context_prompt(db: Session, org_id: int) -> str:
     """Build a compact plain-text context from live portfolio data."""
+    from datetime import date
     from app.models.landlord import Landlord
+    from app.models.lease import Lease
+    from app.models.unit import Unit
+    from app.models.property import Property
     s = ai_tools.get_dashboard_stats(db=db, org_id=org_id)
     lines = [
         "=== LIVE PORTFOLIO DATA ===",
@@ -232,15 +238,33 @@ def _build_context_prompt(db: Session, org_id: int) -> str:
     maint = ai_tools.list_maintenance(db=db, org_id=org_id)
     open_m = [m for m in maint if m['status'] in ('open', 'in_progress')]
     if open_m:
-        lines.append("\nOPEN MAINTENANCE:")
-        for m in open_m:
-            lines.append(f"  [{m['priority']}] {m['title']} — {m['unit']} ({m['status']})")
+        lines.append(f"\nOPEN MAINTENANCE ({len(open_m)} jobs — reproduce ALL of them exactly):")
+        for i, m in enumerate(open_m, 1):
+            lines.append(f"  {i}. id={m['id']} [{m['priority']}] {m['title']} — {m['unit']} ({m['status']})")
 
     arrears = ai_tools.list_arrears(db=db, org_id=org_id)
     if arrears['count']:
         lines.append(f"\nARREARS: {arrears['count']} tenants owe {arrears['total_owed']} total.")
         for a in arrears['arrears']:
             lines.append(f"  {a['tenant']} — {a['unit']} — owes {a['amount_owed']} ({a['days_overdue']}d overdue)")
+    else:
+        lines.append("\nARREARS: None. All rent payments are up to date. Do NOT invent arrears from pending future payments.")
+
+    # Payment snapshot — pending = future scheduled, not overdue
+    from app.models.payment import RentPayment as _RP
+    from sqlalchemy import func as _func
+    today_date = date.today()
+    paid_this_month = db.query(_RP).join(Lease).join(Unit).join(Property).filter(
+        Property.organisation_id == org_id,
+        _RP.status == 'paid',
+        _RP.due_date >= today_date.replace(day=1)
+    ).count()
+    future_pending = db.query(_RP).join(Lease).join(Unit).join(Property).filter(
+        Property.organisation_id == org_id,
+        _RP.status == 'pending',
+        _RP.due_date > today_date
+    ).count()
+    lines.append(f"PAYMENT SNAPSHOT: {paid_this_month} payments collected this month. {future_pending} future scheduled payments (not arrears).")
 
     comp = ai_tools.list_compliance(db=db, org_id=org_id)
     if comp['expired'] or comp['expiring_soon']:
@@ -293,7 +317,7 @@ def _build_context_prompt(db: Session, org_id: int) -> str:
                 extra = f", possession by {n.possession_date}"
             lines.append(f"  {type_label} — {tenant.full_name if tenant else '—'} — {label} — served {n.served_date}{extra}")
 
-    # Recent payments (last 3 months)
+    # Recent payments (last 3 months, past due only — excludes future scheduled)
     from datetime import date, timedelta
     cutoff = date.today() - timedelta(days=90)
     payments = (
@@ -302,14 +326,18 @@ def _build_context_prompt(db: Session, org_id: int) -> str:
         .join(Tenant, Tenant.id == Lease.tenant_id)
         .join(Unit, Unit.id == Lease.unit_id)
         .join(Property, Property.id == Unit.property_id)
-        .filter(Property.organisation_id == org_id, RentPayment.due_date >= cutoff)
+        .filter(
+            Property.organisation_id == org_id,
+            RentPayment.due_date >= cutoff,
+            RentPayment.due_date <= date.today()
+        )
         .order_by(RentPayment.due_date.desc())
         .all()
     )
     if payments:
-        lines.append("\nRECENT PAYMENTS (last 90 days):")
+        lines.append("\nRECENT PAYMENTS (past 90 days, due dates up to today only):")
         for p, tenant, prop, unit in payments:
-            paid = f"£{p.amount_paid:.2f} paid" if p.amount_paid else "unpaid"
+            paid = f"£{p.amount_paid:.2f} paid on {p.paid_date}" if p.amount_paid else "UNPAID"
             lines.append(f"  {tenant.full_name} — {prop.name} · {unit.name} — due £{p.amount_due:.2f} on {p.due_date} — {paid} ({p.status})")
 
     # Right to Rent (fields stored on Tenant model)
