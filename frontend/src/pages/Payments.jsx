@@ -26,6 +26,66 @@ export default function Payments() {
   const [onlinePayments, setOnlinePayments] = useState([])
   const [showOnline, setShowOnline] = useState(false)
 
+  // Record Payment modal
+  const [recordModal, setRecordModal] = useState(null)
+  const [recordForm, setRecordForm] = useState({ amount_paid: '', paid_date: '', method: 'Bank Transfer', notes: '' })
+  const [recordSaving, setRecordSaving] = useState(false)
+  const [recordError, setRecordError] = useState('')
+  const [coveredMonths, setCoveredMonths] = useState([]) // months auto-paid from surplus
+  const [surplusConfirmed, setSurplusConfirmed] = useState(false)
+
+  // Compute how much of a payment cannot be allocated to any remaining lease month
+  function calcUnallocated(modal, form) {
+    if (!modal || !form.amount_paid) return 0
+    const entered = Number(form.amount_paid)
+    if (entered <= modal.amount_due) return 0
+    if (!modal.lease_end_date || !modal.monthly_rent) return 0
+    const surplus = entered - modal.amount_due
+    let allocatable = 0
+    const dueDate = new Date(modal.due_date)
+    const endDate = new Date(modal.lease_end_date)
+    let d = new Date(dueDate.getFullYear(), dueDate.getMonth() + 1, 1)
+    while (d <= endDate) { allocatable += modal.monthly_rent; d.setMonth(d.getMonth() + 1) }
+    return Math.max(0, surplus - allocatable)
+  }
+
+  function openRecord(p) {
+    setRecordModal(p)
+    setRecordForm({
+      amount_paid: p.amount_due,
+      paid_date: new Date().toISOString().slice(0, 10),
+      method: 'Bank Transfer',
+      notes: ''
+    })
+    setRecordError('')
+    setSurplusConfirmed(false)
+  }
+
+  async function submitRecord() {
+    if (!recordForm.amount_paid || Number(recordForm.amount_paid) <= 0) {
+      setRecordError('Please enter a valid amount.')
+      return
+    }
+    if (!recordForm.paid_date) {
+      setRecordError('Please enter the payment date.')
+      return
+    }
+    setRecordSaving(true)
+    setRecordError('')
+    const notesStr = [recordForm.method, recordForm.notes].filter(Boolean).join(' — ')
+    const res = await api.post(`/payments/${recordModal.id}/mark-paid`, {
+      amount_paid: Number(recordForm.amount_paid),
+      paid_date: recordForm.paid_date,
+      notes: notesStr || null
+    })
+    setRecordModal(null)
+    setRecordSaving(false)
+    const extra = res.data?.covered_months || []
+    setCoveredMonths(extra)
+    if (extra.length) setTimeout(() => setCoveredMonths([]), 6000)
+    load(month)
+  }
+
   const load = async (m) => {
     setLoading(true)
     const [p, a] = await Promise.all([
@@ -43,15 +103,7 @@ export default function Payments() {
     api.get('/stripe/payments').then(r => setOnlinePayments(r.data)).catch(() => {})
   }, [])
 
-  const markPaid = async (id, amount_due) => {
-    setMarkingId(id)
-    await api.post(`/payments/${id}/mark-paid`, {
-      amount_paid: amount_due,
-      paid_date: new Date().toISOString().slice(0, 10)
-    })
-    load(month)
-    setMarkingId(null)
-  }
+  const markPaid = (p) => openRecord(p)
 
   const sendReminder = async (id) => {
     setRemindingId(id)
@@ -117,6 +169,15 @@ export default function Payments() {
         </div>
       </PageHeader>
 
+      {/* Advance payment toast */}
+      {coveredMonths.length > 0 && (
+        <div className="mb-4 flex items-center gap-3 bg-green-50 border border-green-200 rounded-xl px-5 py-3 text-sm text-green-800">
+          <svg className="w-4 h-4 text-green-600 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+          <span>Payment recorded — surplus automatically applied to {coveredMonths.join(', ')}.</span>
+          <button onClick={() => setCoveredMonths([])} className="ml-auto text-green-600 hover:text-green-800 cursor-pointer">✕</button>
+        </div>
+      )}
+
       {/* Summary cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
         <div className="bg-white rounded-xl border border-gray-200 p-5">
@@ -168,10 +229,9 @@ export default function Payments() {
                     className="text-xs bg-amber-50 text-amber-700 border border-amber-200 px-3 py-1.5 rounded-lg hover:bg-amber-100 disabled:opacity-50">
                     {reminderSent[p.id] ? 'Sent ✓' : remindingId === p.id ? 'Sending…' : 'Send Reminder'}
                   </button>
-                  <button onClick={() => markPaid(p.id, p.amount_due)}
-                    disabled={markingId === p.id}
-                    className="text-xs bg-green-100 text-green-700 border border-green-200 px-3 py-1.5 rounded-lg hover:bg-green-200 disabled:opacity-50">
-                    Mark Paid
+                  <button onClick={() => openRecord(p)}
+                    className="text-xs bg-green-100 text-green-700 border border-green-200 px-3 py-1.5 rounded-lg hover:bg-green-200">
+                    Record Payment
                   </button>
                 </div>
               </div>
@@ -224,6 +284,88 @@ export default function Payments() {
         </div>
       )}
 
+      {/* Record Payment modal */}
+      {recordModal && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md">
+            <div className="px-6 py-5 border-b border-gray-100">
+              <h2 className="font-semibold text-gray-900">Record Payment</h2>
+              <p className="text-sm text-gray-500 mt-0.5">{recordModal.tenant_name} · Due £{recordModal.amount_due?.toLocaleString()}</p>
+            </div>
+            <div className="px-6 py-5 space-y-4">
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Amount Received (£)</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0.01"
+                  value={recordForm.amount_paid}
+                  onChange={e => { setRecordForm(f => ({ ...f, amount_paid: e.target.value })); setSurplusConfirmed(false) }}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                  placeholder="0.00"
+                />
+                {recordForm.amount_paid && Number(recordForm.amount_paid) > 0 && Number(recordForm.amount_paid) < recordModal.amount_due && (
+                  <p className="text-xs text-amber-600 mt-1">Partial payment — balance of £{(recordModal.amount_due - Number(recordForm.amount_paid)).toFixed(2)} will remain outstanding.</p>
+                )}
+                {(() => {
+                  const entered = Number(recordForm.amount_paid)
+                  if (!recordForm.amount_paid || entered <= 0) return null
+                  const unallocated = calcUnallocated(recordModal, recordForm)
+                  if (unallocated > 0) {
+                    const max = (entered - unallocated).toFixed(2)
+                    const endFmt = new Date(recordModal.lease_end_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+                    return <p className="text-xs text-red-600 mt-1 font-medium">Amount exceeds total remaining rent on this lease (ends {endFmt}). Maximum you can record: £{max}.</p>
+                  }
+                  if (entered > recordModal.amount_due)
+                    return <p className="text-xs text-blue-600 mt-1">Surplus of £{(entered - recordModal.amount_due).toFixed(2)} will automatically be applied to future months.</p>
+                  return null
+                })()}
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Payment Date</label>
+                <input
+                  type="date"
+                  value={recordForm.paid_date}
+                  onChange={e => setRecordForm(f => ({ ...f, paid_date: e.target.value }))}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Payment Method</label>
+                <select
+                  value={recordForm.method}
+                  onChange={e => setRecordForm(f => ({ ...f, method: e.target.value }))}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 bg-white">
+                  {['Bank Transfer', 'Standing Order', 'Cash', 'Cheque', 'Card', 'Other'].map(m => (
+                    <option key={m}>{m}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Reference / Notes <span className="text-gray-400">(optional)</span></label>
+                <input
+                  type="text"
+                  value={recordForm.notes}
+                  onChange={e => setRecordForm(f => ({ ...f, notes: e.target.value }))}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                  placeholder="e.g. ref: 20240501"
+                />
+              </div>
+              {recordError && <p className="text-xs text-red-600">{recordError}</p>}
+            </div>
+            <div className="px-6 py-4 border-t border-gray-100 flex justify-end gap-3">
+              <button onClick={() => setRecordModal(null)} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800">Cancel</button>
+              <button
+                onClick={submitRecord}
+                disabled={recordSaving || calcUnallocated(recordModal, recordForm) > 0}
+                className="px-5 py-2 bg-green-600 text-white text-sm rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium">
+                {recordSaving ? 'Saving…' : 'Record Payment'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* This month's payments */}
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
         <div className="px-5 py-4 border-b border-gray-100 bg-gray-50">
@@ -261,20 +403,24 @@ export default function Payments() {
                   </td>
                   <td className="px-5 py-3.5 text-gray-500">{fmt(p.due_date)}</td>
                   <td className="px-5 py-3.5 font-semibold text-gray-700">£{p.amount_due}</td>
-                  <td className="px-5 py-3.5 text-green-600">{p.amount_paid ? `£${p.amount_paid}` : '—'}</td>
+                  <td className="px-5 py-3.5">
+                    {p.amount_paid
+                      ? <><span className="font-medium text-green-600">£{p.amount_paid.toLocaleString()}</span>
+                          {p.paid_date && <div className="text-xs text-gray-400 mt-0.5">{fmt(p.paid_date)}</div>}</>
+                      : <span className="text-gray-400">—</span>}
+                  </td>
                   <td className="px-5 py-3.5"><Badge value={p.status} /></td>
                   <td className="px-5 py-3.5">
-                    {(p.status === 'pending' || p.status === 'overdue') && (
+                    {(p.status === 'pending' || p.status === 'overdue' || p.status === 'partial') && (
                       <div className="flex gap-2">
                         <button onClick={() => sendReminder(p.id)}
                           disabled={remindingId === p.id || reminderSent[p.id]}
                           className="text-xs bg-amber-50 text-amber-700 border border-amber-200 px-3 py-1.5 rounded-lg hover:bg-amber-100 disabled:opacity-50">
                           {reminderSent[p.id] ? 'Sent ✓' : remindingId === p.id ? 'Sending…' : 'Remind'}
                         </button>
-                        <button onClick={() => markPaid(p.id, p.amount_due)}
-                          disabled={markingId === p.id}
-                          className="text-xs bg-green-50 text-green-700 border border-green-200 px-3 py-1.5 rounded-lg hover:bg-green-100 disabled:opacity-50">
-                          Mark Paid
+                        <button onClick={() => openRecord(p)}
+                          className="text-xs bg-green-50 text-green-700 border border-green-200 px-3 py-1.5 rounded-lg hover:bg-green-100">
+                          Record Payment
                         </button>
                       </div>
                     )}

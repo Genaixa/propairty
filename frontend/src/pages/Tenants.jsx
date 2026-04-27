@@ -28,8 +28,32 @@ function Th({ col, label, sortCol, sortDir, onSort, className = '' }) {
   )
 }
 
+const TODAY = new Date()
+const IN_90  = new Date(TODAY.getTime() + 90 * 24 * 60 * 60 * 1000)
+
+function leaseSignal(lease) {
+  if (!lease) return { label: 'No lease', color: 'gray', dot: 'bg-gray-300' }
+  if (lease.is_periodic) return { label: 'Periodic', color: 'blue', dot: 'bg-blue-400' }
+  if (lease.end_date) {
+    const end = new Date(lease.end_date)
+    if (end >= TODAY && end <= IN_90) {
+      const days = Math.ceil((end - TODAY) / (1000 * 60 * 60 * 24))
+      return { label: `Expires ${days}d`, color: 'amber', dot: 'bg-amber-400' }
+    }
+  }
+  return { label: 'Active', color: 'emerald', dot: 'bg-emerald-400' }
+}
+
+const SIGNAL_COLORS = {
+  gray:    'bg-gray-100 text-gray-500',
+  blue:    'bg-blue-100 text-blue-700',
+  amber:   'bg-amber-100 text-amber-700',
+  emerald: 'bg-emerald-100 text-emerald-700',
+}
+
 export default function Tenants() {
   const [tenants, setTenants] = useState([])
+  const [leases, setLeases] = useState([])
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState(EMPTY_FORM)
   const [saving, setSaving] = useState(false)
@@ -43,16 +67,37 @@ export default function Tenants() {
   const [sortDir, setSortDir] = useState('asc')
   const [search, setSearch] = useState('')
   const [portalFilter, setPortalFilter] = useState('')
+  const [expiryFilter, setExpiryFilter] = useState(false)
 
   const load = () => api.get('/tenants').then(r => setTenants(r.data))
-  useEffect(() => { load() }, [])
+  useEffect(() => {
+    load()
+    api.get('/leases').then(r => setLeases(r.data)).catch(() => {})
+  }, [])
+
+  // Build a map: tenant_id → their active lease (prefer active, fall back to most recent)
+  const leaseByTenant = useMemo(() => {
+    const map = {}
+    leases.forEach(l => {
+      if (!map[l.tenant_id] || l.status === 'active') {
+        map[l.tenant_id] = l
+      }
+    })
+    return map
+  }, [leases])
 
   const handleSort = col => {
     if (sortCol === col) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
     else { setSortCol(col); setSortDir('asc') }
   }
 
-  const totalPortal = tenants.filter(t => t.portal_enabled).length
+  const totalPortal  = tenants.filter(t => t.portal_enabled).length
+  const totalExpiring = tenants.filter(t => {
+    const l = leaseByTenant[t.id]
+    if (!l || l.status !== 'active' || l.is_periodic || !l.end_date) return false
+    const end = new Date(l.end_date)
+    return end >= TODAY && end <= IN_90
+  }).length
 
   const displayed = useMemo(() => {
     let list = [...tenants]
@@ -64,8 +109,16 @@ export default function Tenants() {
         (t.phone || '').toLowerCase().includes(q)
       )
     }
-    if (portalFilter === 'enabled') list = list.filter(t => t.portal_enabled)
+    if (portalFilter === 'enabled')  list = list.filter(t => t.portal_enabled)
     if (portalFilter === 'disabled') list = list.filter(t => !t.portal_enabled)
+    if (expiryFilter) {
+      list = list.filter(t => {
+        const l = leaseByTenant[t.id]
+        if (!l || l.status !== 'active' || l.is_periodic || !l.end_date) return false
+        const end = new Date(l.end_date)
+        return end >= TODAY && end <= IN_90
+      })
+    }
 
     if (sortCol) {
       list.sort((a, b) => {
@@ -73,15 +126,20 @@ export default function Tenants() {
         if (sortCol === 'name') {
           const surname = n => { const p = n.trim().split(/\s+/); return (p.length > 1 ? p[p.length - 1] : p[0]).toLowerCase() }
           va = surname(a.full_name); vb = surname(b.full_name)
-        } else if (sortCol === 'email') { va = (a.email || '').toLowerCase(); vb = (b.email || '').toLowerCase() }
-        else if (sortCol === 'phone') { va = (a.phone || '').toLowerCase(); vb = (b.phone || '').toLowerCase() }
-        else if (sortCol === 'portal') { va = a.portal_enabled ? 0 : 1; vb = b.portal_enabled ? 0 : 1 }
+        } else if (sortCol === 'email')  { va = (a.email || '').toLowerCase(); vb = (b.email || '').toLowerCase() }
+        else if (sortCol === 'phone')    { va = (a.phone || '').toLowerCase(); vb = (b.phone || '').toLowerCase() }
+        else if (sortCol === 'portal')   { va = a.portal_enabled ? 0 : 1; vb = b.portal_enabled ? 0 : 1 }
+        else if (sortCol === 'rent')     { va = leaseByTenant[a.id]?.monthly_rent || 0; vb = leaseByTenant[b.id]?.monthly_rent || 0 }
+        else if (sortCol === 'expires')  {
+          va = leaseByTenant[a.id]?.end_date || '9999'
+          vb = leaseByTenant[b.id]?.end_date || '9999'
+        }
         const cmp = typeof va === 'string' ? va.localeCompare(vb) : va - vb
         return sortDir === 'asc' ? cmp : -cmp
       })
     }
     return list
-  }, [tenants, search, portalFilter, sortCol, sortDir])
+  }, [tenants, leaseByTenant, search, portalFilter, expiryFilter, sortCol, sortDir])
 
   const save = async e => {
     e.preventDefault()
@@ -106,9 +164,10 @@ export default function Tenants() {
   }
 
   const tiles = [
-    { key: null,      label: 'Tenants',       value: tenants.length,  color: 'text-indigo-600', ring: 'ring-indigo-400', bg: 'bg-indigo-50' },
-    { key: 'enabled', label: 'Portal Active',  value: totalPortal,     color: 'text-violet-600', ring: 'ring-violet-400', bg: 'bg-violet-50' },
-    { key: 'disabled',label: 'No Portal',      value: tenants.length - totalPortal, color: 'text-gray-500', ring: 'ring-gray-300', bg: 'bg-gray-50' },
+    { type: 'portal', key: null,       label: 'Tenants',         value: tenants.length,              color: 'text-indigo-600', ring: 'ring-indigo-400', bg: 'bg-indigo-50' },
+    { type: 'portal', key: 'enabled',  label: 'Portal Active',   value: totalPortal,                 color: 'text-violet-600', ring: 'ring-violet-400', bg: 'bg-violet-50' },
+    { type: 'portal', key: 'disabled', label: 'No Portal',       value: tenants.length - totalPortal,color: 'text-gray-500',   ring: 'ring-gray-300',   bg: 'bg-gray-50'   },
+    { type: 'expiry', key: 'expiring', label: 'Expiring ≤ 90d',  value: totalExpiring,               color: totalExpiring > 0 ? 'text-amber-600' : 'text-gray-400', ring: 'ring-amber-400', bg: 'bg-amber-50' },
   ]
 
   return (
@@ -122,15 +181,19 @@ export default function Tenants() {
 
       {/* ── Stat tiles ──────────────────────────────────────────────────── */}
       <div className="flex flex-wrap gap-3 mb-5">
-        {tiles.map(t => {
-          const active = t.key !== null && portalFilter === t.key
+        {tiles.map(tile => {
+          const isExpiry  = tile.type === 'expiry'
+          const active    = isExpiry ? expiryFilter : (tile.key !== null && portalFilter === tile.key)
           return (
-            <button key={t.label}
-              onClick={() => t.key === null ? setPortalFilter('') : setPortalFilter(f => f === t.key ? '' : t.key)}
+            <button key={tile.label}
+              onClick={() => {
+                if (isExpiry) { setExpiryFilter(f => !f) }
+                else { tile.key === null ? setPortalFilter('') : setPortalFilter(f => f === tile.key ? '' : tile.key) }
+              }}
               className={`flex-1 min-w-32 bg-white rounded-xl border px-5 py-3 text-left cursor-pointer transition-all
-                ${active ? `ring-2 ${t.ring} border-transparent ${t.bg}` : 'border-gray-200 hover:border-gray-300 hover:shadow-sm'}`}>
-              <p className="text-xs text-gray-500 uppercase tracking-wide">{t.label}</p>
-              <p className={`text-2xl font-bold mt-0.5 ${t.color}`}>{t.value}</p>
+                ${active ? `ring-2 ${tile.ring} border-transparent ${tile.bg}` : 'border-gray-200 hover:border-gray-300 hover:shadow-sm'}`}>
+              <p className="text-xs text-gray-500 uppercase tracking-wide">{tile.label}</p>
+              <p className={`text-2xl font-bold mt-0.5 ${tile.color}`}>{tile.value}</p>
               {active && <p className="text-xs text-gray-400 mt-0.5">Filtered · click to clear</p>}
             </button>
           )
@@ -147,8 +210,8 @@ export default function Tenants() {
             placeholder="Search name, email, phone…"
             className="w-full pl-9 pr-4 py-2 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500" />
         </div>
-        {(search || portalFilter) && (
-          <button onClick={() => { setSearch(''); setPortalFilter('') }}
+        {(search || portalFilter || expiryFilter) && (
+          <button onClick={() => { setSearch(''); setPortalFilter(''); setExpiryFilter(false) }}
             className="text-sm text-gray-500 hover:text-gray-800 px-3 py-2 rounded-lg hover:bg-gray-100 transition-colors cursor-pointer flex items-center gap-1.5">
             <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
@@ -164,67 +227,87 @@ export default function Tenants() {
         <table className="w-full text-sm">
           <thead className="bg-gray-50 border-b border-gray-100 text-xs text-gray-500 uppercase tracking-wide">
             <tr>
-              <Th col="name"   label={t('tenants.fullName')} sortCol={sortCol} sortDir={sortDir} onSort={handleSort} className="px-5" />
-              <Th col="email"  label={t('tenants.email')}    sortCol={sortCol} sortDir={sortDir} onSort={handleSort} className="px-5" />
-              <Th col="phone"  label={t('tenants.phone')}    sortCol={sortCol} sortDir={sortDir} onSort={handleSort} className="px-5" />
-              <Th col="portal" label="Portal"                sortCol={sortCol} sortDir={sortDir} onSort={handleSort} className="px-5" />
+              <Th col="name"    label={t('tenants.fullName')} sortCol={sortCol} sortDir={sortDir} onSort={handleSort} className="px-5" />
+              <Th col="email"   label={t('tenants.email')}    sortCol={sortCol} sortDir={sortDir} onSort={handleSort} className="px-5" />
+              <Th col="phone"   label={t('tenants.phone')}    sortCol={sortCol} sortDir={sortDir} onSort={handleSort} className="px-5" />
+              <Th col="rent"    label="Rent"                  sortCol={sortCol} sortDir={sortDir} onSort={handleSort} className="px-5" />
+              <Th col="expires" label="Tenancy"               sortCol={sortCol} sortDir={sortDir} onSort={handleSort} className="px-5" />
+              <Th col="portal"  label="Portal"                sortCol={sortCol} sortDir={sortDir} onSort={handleSort} className="px-5" />
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
             {displayed.length === 0 && (
-              <tr><td colSpan="4" className="px-5 py-12 text-center text-gray-400">
+              <tr><td colSpan="6" className="px-5 py-12 text-center text-gray-400">
                 {tenants.length === 0 ? 'No tenants yet.' : <>No tenants match your filters.{' '}
-                  <button onClick={() => { setSearch(''); setPortalFilter('') }} className="text-indigo-600 hover:underline cursor-pointer">Clear filters</button></>}
+                  <button onClick={() => { setSearch(''); setPortalFilter(''); setExpiryFilter(false) }} className="text-indigo-600 hover:underline cursor-pointer">Clear filters</button></>}
               </td></tr>
             )}
-            {displayed.map(tenant => (
-              <tr key={tenant.id} className="hover:bg-gray-50">
-                <td className="px-5 py-3.5">
-                  <Link to={`/tenants/${tenant.id}`} className="flex items-center gap-3 group">
-                    {tenant.avatar_url
-                      ? <img src={tenant.avatar_url} alt={tenant.full_name} className="w-8 h-8 rounded-full object-cover shrink-0" />
-                      : <div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600 font-bold text-sm shrink-0">{tenant.full_name[0]}</div>
-                    }
-                    <span className="font-medium text-indigo-600 group-hover:underline">{tenant.full_name}</span>
-                  </Link>
-                </td>
-                <td className="px-5 py-3.5">
-                  {tenant.email
-                    ? <a href={`mailto:${tenant.email}`} className="text-gray-600 hover:text-indigo-600 hover:underline">{tenant.email}</a>
-                    : <span className="text-gray-300">—</span>}
-                </td>
-                <td className="px-5 py-3.5">
-                  {tenant.phone
-                    ? <a href={`tel:${tenant.phone}`} className="text-gray-600 hover:text-indigo-600 hover:underline">{tenant.phone}</a>
-                    : <span className="text-gray-300">—</span>}
-                </td>
-                <td className="px-5 py-3.5">
-                  {tenant.portal_enabled ? (
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-violet-100 text-violet-700">Enabled</span>
-                      {confirmDisable === tenant.id ? (
-                        <>
-                          <span className="text-xs text-red-600 font-medium">Disable?</span>
-                          <button onClick={async () => {
-                            await api.post(`/tenant/disable/${tenant.id}`)
-                            setConfirmDisable(null)
-                            await load()
-                          }} className="text-xs bg-red-600 text-white px-2 py-0.5 rounded hover:bg-red-700 cursor-pointer">Yes</button>
-                          <button onClick={() => setConfirmDisable(null)} className="text-xs border border-gray-300 text-gray-500 px-2 py-0.5 rounded cursor-pointer">No</button>
-                        </>
-                      ) : (
-                        <button onClick={() => setConfirmDisable(tenant.id)} className="text-xs text-red-400 hover:text-red-600 hover:underline cursor-pointer">Disable</button>
-                      )}
-                    </div>
-                  ) : (
-                    <button onClick={() => { setPortalModal(tenant); setPortalPw(''); setPortalMsg('') }}
-                      className="text-xs text-violet-600 hover:underline font-medium cursor-pointer">
-                      Enable portal
-                    </button>
-                  )}
-                </td>
-              </tr>
-            ))}
+            {displayed.map(tenant => {
+              const lease  = leaseByTenant[tenant.id]
+              const signal = leaseSignal(lease?.status === 'active' ? lease : null)
+              return (
+                <tr key={tenant.id} className="hover:bg-gray-50">
+                  <td className="px-5 py-3.5">
+                    <Link to={`/tenants/${tenant.id}`} className="flex items-center gap-3 group">
+                      {tenant.avatar_url
+                        ? <img src={tenant.avatar_url} alt={tenant.full_name} className="w-8 h-8 rounded-full object-cover shrink-0" />
+                        : <div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600 font-bold text-sm shrink-0">{tenant.full_name[0]}</div>
+                      }
+                      <span className="font-medium text-indigo-600 group-hover:underline">{tenant.full_name}</span>
+                    </Link>
+                  </td>
+                  <td className="px-5 py-3.5">
+                    {tenant.email
+                      ? <a href={`mailto:${tenant.email}`} className="text-gray-600 hover:text-indigo-600 hover:underline">{tenant.email}</a>
+                      : <span className="text-gray-300">—</span>}
+                  </td>
+                  <td className="px-5 py-3.5">
+                    {tenant.phone
+                      ? <a href={`tel:${tenant.phone}`} className="text-gray-600 hover:text-indigo-600 hover:underline">{tenant.phone}</a>
+                      : <span className="text-gray-300">—</span>}
+                  </td>
+                  {/* Rent */}
+                  <td className="px-5 py-3.5 whitespace-nowrap">
+                    {lease?.status === 'active' && lease.monthly_rent
+                      ? <span className="font-semibold text-gray-800">£{lease.monthly_rent.toLocaleString()}<span className="font-normal text-gray-400 text-xs">/mo</span></span>
+                      : <span className="text-gray-300">—</span>}
+                  </td>
+                  {/* Tenancy status */}
+                  <td className="px-5 py-3.5">
+                    <span className={`inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full ${SIGNAL_COLORS[signal.color]}`}>
+                      <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${signal.dot}`} />
+                      {signal.label}
+                    </span>
+                  </td>
+                  {/* Portal */}
+                  <td className="px-5 py-3.5">
+                    {tenant.portal_enabled ? (
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-violet-100 text-violet-700">Enabled</span>
+                        {confirmDisable === tenant.id ? (
+                          <>
+                            <span className="text-xs text-red-600 font-medium">Disable?</span>
+                            <button onClick={async () => {
+                              await api.post(`/tenant/disable/${tenant.id}`)
+                              setConfirmDisable(null)
+                              await load()
+                            }} className="text-xs bg-red-600 text-white px-2 py-0.5 rounded hover:bg-red-700 cursor-pointer">Yes</button>
+                            <button onClick={() => setConfirmDisable(null)} className="text-xs border border-gray-300 text-gray-500 px-2 py-0.5 rounded cursor-pointer">No</button>
+                          </>
+                        ) : (
+                          <button onClick={() => setConfirmDisable(tenant.id)} className="text-xs text-red-400 hover:text-red-600 hover:underline cursor-pointer">Disable</button>
+                        )}
+                      </div>
+                    ) : (
+                      <button onClick={() => { setPortalModal(tenant); setPortalPw(''); setPortalMsg('') }}
+                        className="text-xs text-violet-600 hover:underline font-medium cursor-pointer">
+                        Enable portal
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              )
+            })}
           </tbody>
         </table>
       </div>

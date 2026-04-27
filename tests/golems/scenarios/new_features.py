@@ -100,12 +100,14 @@ def run(verbose: bool = True) -> list[dict]:
 
     import datetime
     today = datetime.date.today().isoformat()
-    end = (datetime.date.today() + datetime.timedelta(days=365)).isoformat()
+    # Use a far-future window to avoid overlap with any existing live leases
+    conv_start = (datetime.date.today() + datetime.timedelta(days=730)).isoformat()
+    conv_end   = (datetime.date.today() + datetime.timedelta(days=1095)).isoformat()
 
     r = agent.post(f"/api/applicants/{conv_id}/convert", {
         "monthly_rent": 1200.0,
-        "start_date": today,
-        "end_date": end,
+        "start_date": conv_start,
+        "end_date": conv_end,
         "deposit": 2400.0,
         "rent_day": 1,
         "is_periodic": False,
@@ -135,7 +137,12 @@ def run(verbose: bool = True) -> list[dict]:
                     "[GOLEM] Convert Test" in tenant.get("full_name", ""),
                     f"name={tenant.get('full_name')}")
 
-    # Cleanup applicants
+    # Cleanup: delete tenant + lease created by conversion, then applicants
+    lease_id = result.get("lease_id") if isinstance(result, dict) else None
+    if lease_id:
+        agent.delete(f"/api/leases/{lease_id}")
+    if tenant_id:
+        agent.delete(f"/api/tenants/{tenant_id}")
     agent.delete(f"/api/applicants/{app_id}")
     agent.delete(f"/api/applicants/{conv_id}")
 

@@ -153,8 +153,8 @@ export default function Contractors() {
       if (assignForm.actual_cost) payload.actual_cost = parseFloat(assignForm.actual_cost)
       if (assignForm.invoice_ref) payload.invoice_ref = assignForm.invoice_ref
       await api.put(`/contractors/assign/${assignModal.id}`, payload)
-      setAssignMsg('Updated successfully.')
       load()
+      setAssignModal(null)
     } catch (err) {
       setAssignMsg(err.response?.data?.detail || 'Failed to update')
     }

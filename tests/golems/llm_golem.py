@@ -20,14 +20,28 @@ from tenant import TenantGolem
 from landlord import LandlordGolem
 from contractor import ContractorGolem
 
-try:
-    from groq import Groq
-    GROQ_KEY = os.environ.get("GROQ_API_KEY", "")
-    groq_client = Groq(api_key=GROQ_KEY)
-    LLM_AVAILABLE = True
-except ImportError:
-    LLM_AVAILABLE = False
-    print("[llm_golem] groq package not installed — run: pip install groq")
+from openai import OpenAI
+
+GROQ_KEY = os.environ.get("GROQ_API_KEY", "")
+OPENROUTER_KEY = os.environ.get("OPENROUTER_API_KEY", "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")
+
+# Prefer Groq; fall back to OpenRouter
+if GROQ_KEY:
+    llm_client = OpenAI(api_key=GROQ_KEY, base_url="https://api.groq.com/openai/v1")
+    LLM_MODEL = "llama-3.3-70b-versatile"
+    LLM_PROVIDER = "groq"
+elif OPENROUTER_KEY:
+    llm_client = OpenAI(api_key=OPENROUTER_KEY, base_url="https://openrouter.ai/api/v1")
+    LLM_MODEL = "anthropic/claude-haiku-4-5"
+    LLM_PROVIDER = "openrouter"
+else:
+    llm_client = None
+    LLM_MODEL = None
+    LLM_PROVIDER = None
+
+LLM_AVAILABLE = llm_client is not None
+if not LLM_AVAILABLE:
+    print("[llm_golem] no LLM provider — set GROQ_API_KEY or OPENROUTER_API_KEY")
 
 
 # ── Action registry per role ──────────────────────────────────────────────────
@@ -125,8 +139,8 @@ Respond with ONLY a JSON object:
 Use realistic UK values (dates as YYYY-MM-DD, amounts in GBP, names that sound British).
 If a required param like job_id isn't in state, pick any plausible value or use null to skip.
 """
-    response = groq_client.chat.completions.create(
-        model="llama-3.3-70b-versatile",
+    response = llm_client.chat.completions.create(
+        model=LLM_MODEL,
         messages=[{"role": "user", "content": prompt}],
         temperature=0.8,
         max_tokens=300,
@@ -411,6 +425,7 @@ def run_chaos(role: str, turns: int = 8, verbose: bool = True) -> dict:
 
 
 if __name__ == "__main__":
+    print(f"[llm_golem] provider={LLM_PROVIDER} model={LLM_MODEL}")
     parser = argparse.ArgumentParser(description="LLM Chaos Golem")
     parser.add_argument("--role", choices=["agent", "tenant", "contractor", "landlord"], default="agent")
     parser.add_argument("--all", action="store_true", help="Run all 4 roles")

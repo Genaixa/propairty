@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts'
 import contractorApi from '../../lib/contractorApi'
 import NotificationPrefs from '../../components/NotificationPrefs'
 import PortalAiChat from '../../components/PortalAiChat'
@@ -110,22 +111,63 @@ function NotesThread({ job, onStatusChange }) {
 }
 
 function UpdateModal({ job, onClose, onUpdated }) {
+  const [quoteAmount, setQuoteAmount] = useState('')
+  const [quoteDate, setQuoteDate] = useState('')
+  const [quoteNotes, setQuoteNotes] = useState('')
+  const [quoteFile, setQuoteFile] = useState(null)
+  const [submittingQuote, setSubmittingQuote] = useState(false)
   const [status, setStatus] = useState(job.status)
   const [actualCost, setActualCost] = useState(job.actual_cost ?? '')
   const [invoiceRef, setInvoiceRef] = useState(job.invoice_ref ?? '')
-  const [quoteAmount, setQuoteAmount] = useState(job.contractor_quote ?? '')
-  const [quoteNotes, setQuoteNotes] = useState('')
+  const [invoiceFile, setInvoiceFile] = useState(null)
+  const [uploadingInvoice, setUploadingInvoice] = useState(false)
   const [saving, setSaving] = useState(false)
-  const [submittingQuote, setSubmittingQuote] = useState(false)
-  const [error, setError] = useState('')
   const [showProposeDate, setShowProposeDate] = useState(false)
   const [proposedDate, setProposedDate] = useState('')
   const [proposingDate, setProposingDate] = useState(false)
+  const [confirmComplete, setConfirmComplete] = useState(false)
+  const [error, setError] = useState('')
 
-  const canSubmitQuote = !job.contractor_quote && job.status !== 'completed' && job.status !== 'cancelled'
-  const quoteLabel = job.quote_status === 'approved' ? '✓ Quote approved' : job.quote_status === 'rejected' ? '✗ Quote rejected' : job.contractor_quote ? `Quote £${job.contractor_quote} — awaiting approval` : null
+  const canSubmitQuote = !job.contractor_quote && (job.status === 'open' || job.status === 'in_progress') && job.actual_cost == null
+  const quoteRejected = job.quote_status === 'rejected'
+  const quotePending = job.quote_status === 'pending'
+  const quoteApproved = job.quote_status === 'approved'
+  // Work phase: quote approved, OR legacy completed job with no quote system
+  const showWorkPhase = (quoteApproved || (!job.contractor_quote && job.status === 'completed')) && job.status !== 'cancelled'
+  const fmtDate = d => d ? new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'
+
+  async function submitQuote(e) {
+    e.preventDefault()
+    setSubmittingQuote(true); setError('')
+    try {
+      const fd = new FormData()
+      fd.append('amount', parseFloat(quoteAmount))
+      fd.append('proposed_date', quoteDate)
+      if (quoteNotes.trim()) fd.append('notes', quoteNotes.trim())
+      if (quoteFile) fd.append('file', quoteFile)
+      const token = localStorage.getItem('contractor_token')
+      const res = await fetch(`/api/contractor/jobs/${job.id}/quote`, {
+        method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: fd,
+      })
+      if (!res.ok) throw new Error()
+      onUpdated(); onClose()
+    } catch { setError('Failed to submit quote. Please try again.') }
+    finally { setSubmittingQuote(false) }
+  }
 
   async function save() {
+    if (status === 'completed' && status !== job.status) {
+      // Hard block: date negotiation open — must wait for agent
+      if (job.proposed_date_status === 'pending') {
+        setError('Your reschedule request is still awaiting agent approval. Please wait for a confirmed date before completing.')
+        return
+      }
+      // Soft warn: no date was ever agreed — ask contractor to confirm
+      if (!job.scheduled_date && !confirmComplete) {
+        setConfirmComplete(true)
+        return
+      }
+    }
     setSaving(true); setError('')
     try {
       await contractorApi.put(`/jobs/${job.id}`, {
@@ -133,9 +175,28 @@ function UpdateModal({ job, onClose, onUpdated }) {
         actual_cost: actualCost !== '' ? parseFloat(actualCost) : null,
         invoice_ref: invoiceRef || null,
       })
+      if (invoiceFile) {
+        const fd = new FormData()
+        fd.append('file', invoiceFile)
+        if (actualCost !== '') fd.append('actual_cost', parseFloat(actualCost))
+        if (invoiceRef) fd.append('invoice_ref', invoiceRef)
+        const token = localStorage.getItem('contractor_token')
+        setUploadingInvoice(true)
+        const res = await fetch(`/api/contractor/jobs/${job.id}/invoice`, {
+          method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: fd,
+        })
+        if (!res.ok) throw new Error('Invoice upload failed')
+      }
       onUpdated(); onClose()
-    } catch (e) { setError('Failed to save. Please try again.') }
-    finally { setSaving(false) }
+    } catch (e) { setError(e.message || 'Failed to save.') }
+    finally { setSaving(false); setUploadingInvoice(false) }
+  }
+
+  async function acceptAgentDate() {
+    try {
+      await contractorApi.post(`/jobs/${job.id}/accept-agent-date`)
+      onUpdated()
+    } catch { setError('Failed to accept date.') }
   }
 
   async function proposeDate() {
@@ -144,31 +205,30 @@ function UpdateModal({ job, onClose, onUpdated }) {
     try {
       await contractorApi.post(`/jobs/${job.id}/propose-date`, { proposed_date: proposedDate })
       onUpdated(); onClose()
-    } catch (e) { setError('Failed to propose date.') }
+    } catch { setError('Failed to propose date.') }
     finally { setProposingDate(false) }
-  }
-
-  async function submitQuote() {
-    if (!quoteAmount) return
-    setSubmittingQuote(true); setError('')
-    try {
-      await contractorApi.post(`/jobs/${job.id}/quote`, { amount: parseFloat(quoteAmount), notes: quoteNotes || null })
-      onUpdated(); onClose()
-    } catch (e) { setError('Failed to submit quote.') }
-    finally { setSubmittingQuote(false) }
   }
 
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6 max-h-[90vh] overflow-y-auto">
-        <h2 className="text-lg font-semibold text-gray-900 mb-1">Update Job</h2>
-        <p className="text-sm text-gray-500 mb-1">{job.title}</p>
-        <p className="text-xs text-gray-400 mb-4">{job.property} · {job.unit} · {job.address}</p>
+        {/* Header */}
+        <div className="flex items-start justify-between mb-4">
+          <div>
+            <h2 className="text-lg font-semibold text-gray-900">{job.title}</h2>
+            <p className="text-xs text-gray-400 mt-0.5">{job.property} · {job.unit}{job.address ? ` · ${job.address}` : ''}</p>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 ml-3 flex-shrink-0 cursor-pointer">
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
 
         {/* Tenant contact */}
         {(job.tenant_name || job.tenant_phone) && (
           <div className="bg-orange-50 border border-orange-200 rounded-xl px-4 py-3 mb-4 flex items-center gap-3">
-            <span className="text-xl">🔑</span>
+            <span className="text-lg flex-shrink-0">🔑</span>
             <div>
               <p className="text-xs font-semibold text-orange-700 mb-0.5">Tenant contact for access</p>
               {job.tenant_name && <p className="text-sm text-gray-800">{job.tenant_name}</p>}
@@ -177,127 +237,290 @@ function UpdateModal({ job, onClose, onUpdated }) {
           </div>
         )}
 
-        {/* Scheduled date + reschedule */}
-        {job.scheduled_date && (
-          <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 mb-4 space-y-2">
-            <p className="text-sm text-blue-700">📅 Scheduled: <span className="font-semibold">{job.scheduled_date}</span></p>
+        {/* CANCELLED */}
+        {job.status === 'cancelled' && (
+          <div className="bg-gray-50 border border-gray-200 rounded-xl px-4 py-4 text-center mb-4">
+            <p className="text-sm font-semibold text-gray-600">This job has been cancelled</p>
+            <p className="text-xs text-gray-400 mt-1">Contact the letting agent if you believe this is incorrect.</p>
+          </div>
+        )}
 
-            {/* Pending proposal */}
-            {job.proposed_date_status === 'pending' && (
-              <p className="text-xs text-amber-600 font-medium">⏳ Reschedule request sent — awaiting agent response</p>
+        {/* STEP 1: Submit quote (open + no quote, or rejected) */}
+        {(canSubmitQuote || quoteRejected) && (
+          <form onSubmit={submitQuote} className="space-y-3">
+            {quoteRejected ? (
+              <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3">
+                <p className="text-sm font-semibold text-red-700">Quote rejected — please resubmit</p>
+                <p className="text-xs text-red-500 mt-0.5">Previous quote: £{job.contractor_quote?.toLocaleString()}</p>
+              </div>
+            ) : (
+              <p className="text-sm font-semibold text-gray-800">Submit your quote</p>
             )}
-
-            {/* Rejected proposal */}
-            {job.proposed_date_status === 'rejected' && (
-              <p className="text-xs text-red-500 font-medium">✗ Your proposed date was declined</p>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Amount (£) *</label>
+                <input type="number" step="0.01" min="0" value={quoteAmount}
+                  onChange={e => setQuoteAmount(e.target.value)} placeholder="0.00" required
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Proposed date *</label>
+                <input type="date" value={quoteDate} onChange={e => setQuoteDate(e.target.value)}
+                  min={new Date().toISOString().slice(0, 10)} required
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500" />
+              </div>
+            </div>
+            <input type="text" value={quoteNotes} onChange={e => setQuoteNotes(e.target.value)}
+              placeholder="Notes (scope, materials, access requirements…)"
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500" />
+            <label className={`flex items-center gap-2 cursor-pointer border border-dashed rounded-lg px-4 py-2.5 text-sm transition-colors ${quoteFile ? 'border-orange-300 text-orange-600 bg-orange-50' : 'border-gray-300 text-gray-400 hover:border-orange-400 hover:text-orange-500'}`}>
+              📎 {quoteFile ? quoteFile.name : 'Attach quote (PDF, JPG, PNG, CSV)'}
+              <input type="file" accept=".pdf,.csv,.jpg,.jpeg,.png,.gif" className="hidden"
+                onChange={e => setQuoteFile(e.target.files[0] || null)} />
+            </label>
+            {quoteFile && (
+              <button type="button" onClick={() => setQuoteFile(null)} className="text-xs text-gray-400 hover:text-red-400 cursor-pointer">✕ Remove</button>
             )}
+            {error && <p className="text-sm text-red-500">{error}</p>}
+            <div className="flex gap-3 pt-1">
+              <button type="submit" disabled={submittingQuote || !quoteAmount || !quoteDate}
+                className="flex-1 bg-amber-500 hover:bg-amber-600 text-white py-2.5 rounded-lg text-sm font-semibold disabled:opacity-40 cursor-pointer">
+                {submittingQuote ? 'Submitting…' : 'Submit quote & proposed date'}
+              </button>
+              <button type="button" onClick={onClose}
+                className="border border-gray-300 text-gray-700 px-4 py-2.5 rounded-lg text-sm font-medium hover:bg-gray-50 cursor-pointer">
+                Close
+              </button>
+            </div>
+          </form>
+        )}
 
-            {/* Propose button / form */}
-            {job.proposed_date_status !== 'pending' && (
-              !showProposeDate
-                ? <button onClick={() => setShowProposeDate(true)}
-                    className="text-xs text-blue-500 underline hover:text-blue-700">
-                    This date doesn't suit — propose alternative
-                  </button>
-                : <div className="flex items-center gap-2 flex-wrap">
-                    <input
-                      type="date"
-                      value={proposedDate}
-                      onChange={e => setProposedDate(e.target.value)}
-                      min={new Date().toISOString().slice(0, 10)}
-                      className="border border-gray-300 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
-                    />
-                    <button onClick={proposeDate} disabled={proposingDate || !proposedDate}
-                      className="bg-orange-600 text-white px-3 py-1 rounded-lg text-sm font-medium hover:bg-orange-700 disabled:opacity-40">
-                      {proposingDate ? '…' : 'Send'}
-                    </button>
-                    <button onClick={() => setShowProposeDate(false)}
-                      className="text-xs text-gray-400 hover:text-gray-600">Cancel</button>
+        {/* STEP 2: Quote pending approval */}
+        {quotePending && (
+          <div className="space-y-3">
+            <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-4 space-y-2">
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-semibold text-amber-800">Quote awaiting approval</p>
+                <p className="text-2xl font-bold text-amber-900">£{job.contractor_quote?.toLocaleString()}</p>
+              </div>
+              {job.proposed_date && (
+                <p className="text-xs text-amber-700">Proposed date: <strong>{fmtDate(job.proposed_date)}</strong></p>
+              )}
+              {job.quote_file_url && (
+                <a href={job.quote_file_url} target="_blank" rel="noreferrer"
+                  className="flex items-center gap-1.5 text-xs text-amber-600 hover:underline font-medium">
+                  📎 {job.quote_file_name || 'View attached quote'}
+                </a>
+              )}
+              <p className="text-xs text-gray-400">The agent will review and approve. Work will be scheduled on approval.</p>
+            </div>
+            {error && <p className="text-sm text-red-500">{error}</p>}
+            <button onClick={onClose}
+              className="w-full border border-gray-300 text-gray-700 py-2 rounded-lg text-sm font-medium hover:bg-gray-50 cursor-pointer">
+              Close
+            </button>
+          </div>
+        )}
+
+        {/* WORK PHASE: quote approved or legacy in-progress/completed */}
+        {showWorkPhase && job.invoice_paid && (
+          <div className="space-y-4">
+            <div className="bg-green-50 border border-green-200 rounded-xl px-4 py-4 space-y-2">
+              <p className="text-sm font-semibold text-green-800">Job complete — paid in full</p>
+              {job.contractor_quote != null && <p className="text-xs text-green-700">Quoted: <strong>£{job.contractor_quote.toLocaleString()}</strong></p>}
+              {job.actual_cost != null && <p className="text-xs text-green-700">Invoiced: <strong>£{job.actual_cost.toFixed(2)}</strong></p>}
+              {job.invoice_ref && <p className="text-xs text-green-700">Ref: {job.invoice_ref}</p>}
+              {job.scheduled_date && <p className="text-xs text-green-700">Completed: <strong>{fmtDate(job.scheduled_date)}</strong></p>}
+              {job.invoice_file_url && (
+                <a href={job.invoice_file_url} target="_blank" rel="noreferrer"
+                  className="flex items-center gap-1.5 text-xs text-green-600 hover:underline font-medium">
+                  📎 {job.invoice_file_name || 'View invoice'}
+                </a>
+              )}
+            </div>
+            <button onClick={onClose}
+              className="w-full border border-gray-300 text-gray-700 py-2 rounded-lg text-sm font-medium hover:bg-gray-50 cursor-pointer">
+              Close
+            </button>
+          </div>
+        )}
+
+        {showWorkPhase && !job.invoice_paid && (
+          <div className="space-y-4">
+            {quoteApproved && (
+              <div className="bg-green-50 border border-green-200 rounded-xl px-4 py-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <p className="text-sm font-semibold text-green-800">✓ Quote approved</p>
+                  <p className="text-xl font-bold text-green-900">£{job.contractor_quote?.toLocaleString()}</p>
+                </div>
+                {job.scheduled_date && (
+                  <p className="text-xs text-green-700">Scheduled: <strong>{fmtDate(job.scheduled_date)}</strong></p>
+                )}
+                {job.quote_file_url && (
+                  <a href={job.quote_file_url} target="_blank" rel="noreferrer"
+                    className="flex items-center gap-1.5 text-xs text-green-600 hover:underline font-medium">
+                    📎 {job.quote_file_name || 'View attached quote'}
+                  </a>
+                )}
+                {job.proposed_date_status === 'agent_proposed' ? (
+                  <div className="space-y-2">
+                    <p className="text-xs text-indigo-800 font-medium">
+                      Agent proposes: <strong>{fmtDate(job.proposed_date)}</strong>
+                    </p>
+                    {!showProposeDate ? (
+                      <div className="flex gap-2">
+                        <button onClick={acceptAgentDate}
+                          className="flex-1 text-xs bg-green-600 text-white py-1.5 rounded-lg hover:bg-green-700 font-semibold cursor-pointer">
+                          Accept
+                        </button>
+                        <button onClick={() => setShowProposeDate(true)}
+                          className="flex-1 text-xs bg-white border border-orange-300 text-orange-600 py-1.5 rounded-lg hover:bg-orange-50 font-semibold cursor-pointer">
+                          Propose different
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <input type="date" value={proposedDate} onChange={e => setProposedDate(e.target.value)}
+                          min={new Date().toISOString().slice(0, 10)}
+                          className="border border-gray-300 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500" />
+                        <button onClick={proposeDate} disabled={proposingDate || !proposedDate}
+                          className="bg-orange-600 text-white px-3 py-1 rounded-lg text-sm font-medium hover:bg-orange-700 disabled:opacity-40 cursor-pointer">
+                          {proposingDate ? '…' : 'Send'}
+                        </button>
+                        <button onClick={() => setShowProposeDate(false)} className="text-xs text-gray-400 hover:text-gray-600 cursor-pointer">Cancel</button>
+                      </div>
+                    )}
                   </div>
+                ) : job.proposed_date_status === 'pending' ? (
+                  <p className="text-xs text-amber-600 font-medium">⏳ Reschedule request sent — awaiting agent response</p>
+                ) : job.proposed_date_status === 'rejected' ? (
+                  <p className="text-xs text-red-500 font-medium">✗ Your proposed date was declined</p>
+                ) : job.scheduled_date && (
+                  !showProposeDate
+                    ? <button onClick={() => setShowProposeDate(true)} className="text-xs text-green-600 underline hover:text-green-800 cursor-pointer">
+                        Propose a different date
+                      </button>
+                    : <div className="flex items-center gap-2 flex-wrap pt-1">
+                        <input type="date" value={proposedDate} onChange={e => setProposedDate(e.target.value)}
+                          min={new Date().toISOString().slice(0, 10)}
+                          className="border border-gray-300 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500" />
+                        <button onClick={proposeDate} disabled={proposingDate || !proposedDate}
+                          className="bg-orange-600 text-white px-3 py-1 rounded-lg text-sm font-medium hover:bg-orange-700 disabled:opacity-40 cursor-pointer">
+                          {proposingDate ? '…' : 'Send'}
+                        </button>
+                        <button onClick={() => setShowProposeDate(false)} className="text-xs text-gray-400 hover:text-gray-600 cursor-pointer">Cancel</button>
+                      </div>
+                )}
+              </div>
+            )}
+
+            {/* Status */}
+            {job.status !== 'completed' && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Update status</label>
+                <div className="flex gap-2 flex-wrap">
+                  {[['in_progress', 'In Progress', 'bg-blue-600'], ['completed', 'Completed', 'bg-green-600'], ['cancelled', 'Cancelled', 'bg-gray-500']].map(([s, label, ac]) => (
+                    <button key={s} onClick={() => setStatus(s)}
+                      className={`flex-1 py-2 rounded-lg text-sm font-medium border transition-colors cursor-pointer ${status === s ? `${ac} text-white border-transparent` : 'border-gray-300 text-gray-600 hover:bg-gray-50'}`}>
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Invoice — editable until first submitted, then read-only */}
+            {job.actual_cost == null ? (
+              <>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Invoice amount (£)</label>
+                    <input type="number" value={actualCost} onChange={e => setActualCost(e.target.value)}
+                      placeholder="0.00"
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Invoice ref</label>
+                    <input type="text" value={invoiceRef} onChange={e => setInvoiceRef(e.target.value)}
+                      placeholder="INV-001"
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500" />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Invoice file</label>
+                  <label className={`flex items-center gap-2 cursor-pointer border border-dashed rounded-lg px-4 py-2.5 text-sm transition-colors ${invoiceFile ? 'border-blue-300 text-blue-600 bg-blue-50' : 'border-gray-300 text-gray-400 hover:border-blue-400 hover:text-blue-500'}`}>
+                    📎 {invoiceFile ? invoiceFile.name : 'Attach invoice (PDF, JPG, PNG)'}
+                    <input type="file" className="hidden" accept=".pdf,.jpg,.jpeg,.png"
+                      onChange={e => setInvoiceFile(e.target.files?.[0] || null)} />
+                  </label>
+                </div>
+              </>
+            ) : (
+              <div className="bg-gray-50 rounded-xl px-4 py-3 space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-gray-500 font-medium">Invoice submitted</span>
+                  <span className="text-base font-bold text-gray-800">£{parseFloat(job.actual_cost).toFixed(2)}</span>
+                </div>
+                {job.invoice_ref && <p className="text-xs text-gray-500">Ref: {job.invoice_ref}</p>}
+                {job.invoice_file_url && (
+                  <a href={job.invoice_file_url} target="_blank" rel="noreferrer"
+                    className="flex items-center gap-1.5 text-xs text-blue-600 hover:underline font-medium">
+                    📎 {job.invoice_file_name || 'View invoice'}
+                  </a>
+                )}
+              </div>
+            )}
+
+            {job.invoice_paid
+              ? <p className="text-xs font-medium px-3 py-1.5 rounded-lg bg-green-50 text-green-700">✓ Paid in full by agent</p>
+              : job.actual_cost != null
+                ? <p className="text-xs font-medium px-3 py-1.5 rounded-lg bg-yellow-50 text-yellow-700">⏳ Awaiting payment from agent</p>
+                : null
+            }
+
+            {error && <p className="text-sm text-red-500">{error}</p>}
+
+            {confirmComplete && (
+              <div className="bg-amber-50 border border-amber-300 rounded-xl px-4 py-3 space-y-3">
+                <p className="text-sm font-semibold text-amber-800">No date was agreed with the agent</p>
+                <p className="text-xs text-amber-700">Today's date will be recorded as the completion date and a note will be added for the agent. Are you sure you want to complete this job?</p>
+                <div className="flex gap-2">
+                  <button onClick={save}
+                    className="flex-1 bg-orange-600 text-white py-2 rounded-lg text-sm font-semibold hover:bg-orange-700 cursor-pointer">
+                    Yes, complete job
+                  </button>
+                  <button onClick={() => setConfirmComplete(false)}
+                    className="flex-1 border border-gray-300 text-gray-700 py-2 rounded-lg text-sm font-medium hover:bg-gray-50 cursor-pointer">
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {!confirmComplete && (
+              <div className="flex gap-3">
+                {job.actual_cost == null && (
+                  <button onClick={save} disabled={saving}
+                    className="flex-1 bg-orange-600 text-white py-2 rounded-lg text-sm font-medium hover:bg-orange-700 disabled:opacity-50 cursor-pointer">
+                    {saving ? 'Saving…' : 'Save'}
+                  </button>
+                )}
+                <button onClick={onClose}
+                  className="flex-1 border border-gray-300 text-gray-700 py-2 rounded-lg text-sm font-medium hover:bg-gray-50 cursor-pointer">
+                  Close
+                </button>
+              </div>
             )}
           </div>
         )}
 
-        <div className="space-y-4">
-          {/* Status */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
-            <div className="flex gap-2 flex-wrap">
-              {(job.status === 'completed'
-                ? [['open', 'Reopen', 'bg-yellow-500'], ['completed', 'Completed', 'bg-green-600']]
-                : job.status === 'cancelled'
-                ? [['open', 'Reinstate', 'bg-yellow-500'], ['cancelled', 'Cancelled', 'bg-gray-500']]
-                : [['in_progress', 'In Progress', 'bg-blue-600'], ['completed', 'Completed', 'bg-green-600'], ['cancelled', 'Cancelled', 'bg-gray-500']]
-              ).map(([s, label, activeClass]) => (
-                <button key={s} onClick={() => setStatus(s)}
-                  className={`flex-1 py-2 rounded-lg text-sm font-medium border transition-colors ${status === s ? `${activeClass} text-white border-transparent` : 'border-gray-300 text-gray-600 hover:bg-gray-50'}`}>
-                  {label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Cost + Invoice */}
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Actual Cost (£)</label>
-              <input type="number" value={actualCost} onChange={e => setActualCost(e.target.value)}
-                placeholder="0.00"
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500" />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Invoice Ref</label>
-              <input type="text" value={invoiceRef} onChange={e => setInvoiceRef(e.target.value)}
-                placeholder="INV-001"
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500" />
-            </div>
-          </div>
-
-          {/* Invoice payment status */}
-          {job.invoice_ref && (
-            <p className={`text-xs font-medium px-3 py-1.5 rounded-lg ${job.invoice_paid ? 'bg-green-50 text-green-700' : 'bg-yellow-50 text-yellow-700'}`}>
-              {job.invoice_paid ? '✓ Invoice marked as paid by agent' : '⏳ Invoice payment pending'}
-            </p>
-          )}
-
-          {/* Quote */}
-          {quoteLabel && (
-            <p className={`text-xs font-medium px-3 py-1.5 rounded-lg ${job.quote_status === 'approved' ? 'bg-green-50 text-green-700' : job.quote_status === 'rejected' ? 'bg-red-50 text-red-600' : 'bg-amber-50 text-amber-700'}`}>
-              💰 {quoteLabel}
-            </p>
-          )}
-
-          {canSubmitQuote && (
-            <div className="border border-gray-200 rounded-xl p-4 space-y-3">
-              <p className="text-sm font-medium text-gray-700">Submit a Quote</p>
-              <div className="flex gap-2">
-                <input type="number" value={quoteAmount} onChange={e => setQuoteAmount(e.target.value)}
-                  placeholder="£ amount"
-                  className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500" />
-                <button onClick={submitQuote} disabled={submittingQuote || !quoteAmount}
-                  className="bg-amber-500 hover:bg-amber-600 text-white px-4 py-2 rounded-lg text-sm font-medium disabled:opacity-40">
-                  {submittingQuote ? '…' : 'Submit'}
-                </button>
-              </div>
-              <input type="text" value={quoteNotes} onChange={e => setQuoteNotes(e.target.value)}
-                placeholder="Optional notes (materials, scope…)"
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500" />
-            </div>
-          )}
-        </div>
-
-        {error && <p className="text-sm text-red-500 mt-3">{error}</p>}
-
-        <div className="flex gap-3 mt-6">
-          <button onClick={save} disabled={saving}
-            className="flex-1 bg-orange-600 text-white py-2 rounded-lg text-sm font-medium hover:bg-orange-700 disabled:opacity-50">
-            {saving ? 'Saving…' : 'Save'}
-          </button>
+        {/* Cancelled close */}
+        {job.status === 'cancelled' && (
           <button onClick={onClose}
-            className="flex-1 border border-gray-300 text-gray-700 py-2 rounded-lg text-sm font-medium hover:bg-gray-50">
+            className="w-full mt-4 border border-gray-300 text-gray-700 py-2 rounded-lg text-sm font-medium hover:bg-gray-50 cursor-pointer">
             Close
           </button>
-        </div>
+        )}
       </div>
     </div>
   )
@@ -510,6 +733,83 @@ function ContractorMessages({ me }) {
   )
 }
 
+// ── Next-action logic ─────────────────────────────────────────────────────────
+function nextAction(job) {
+  if (job.status === 'cancelled') return { label: 'Cancelled', color: 'text-gray-400' }
+  if (job.status === 'completed') return { label: 'Completed', color: 'text-green-600' }
+  if (job.contractor_accepted === null) return { label: 'Open to accept or decline', color: 'text-amber-700', decline: true }
+  if (job.quote_status === 'rejected') return { label: 'Resubmit quote', color: 'text-red-600' }
+  if (!job.contractor_quote && job.actual_cost == null) return { label: 'Submit quote', color: 'text-orange-700' }
+  if (job.quote_status === 'pending') return { label: 'Quote awaiting agent approval', color: 'text-amber-600' }
+  if (job.proposed_date_status === 'agent_proposed') return { label: 'Confirm proposed date', color: 'text-orange-700' }
+  if (job.proposed_date_status === 'pending') return { label: 'Date proposal sent to agent', color: 'text-amber-600' }
+  if (job.quote_status === 'approved' && !job.scheduled_date) return { label: 'Awaiting date from agent', color: 'text-amber-600' }
+  if (job.actual_cost != null && !job.invoice_paid) return { label: 'Awaiting payment', color: 'text-amber-600' }
+  if (job.status === 'in_progress' && !job.actual_cost) return { label: 'Submit invoice when done', color: 'text-blue-600' }
+  return { label: 'In progress', color: 'text-blue-600' }
+}
+
+// ── Contractor CFO + Pie ───────────────────────────────────────────────────────
+const PIE_COLORS = {
+  'Open':        '#f59e0b',
+  'In progress': '#3b82f6',
+  'Completed':   '#22c55e',
+  'Cancelled':   '#9ca3af',
+}
+function ContractorSummary({ jobs }) {
+  const needsResponse = jobs.filter(j => j.contractor_accepted === null && j.status !== 'cancelled' && j.status !== 'completed').length
+  const open          = jobs.filter(j => j.status === 'open').length
+  const inProgress    = jobs.filter(j => j.status === 'in_progress').length
+  const completed     = jobs.filter(j => j.status === 'completed').length
+  const cancelled     = jobs.filter(j => j.status === 'cancelled').length
+  const totalQuoted   = jobs.reduce((s, j) => s + (j.contractor_quote || 0), 0)
+  const totalEarned   = jobs.filter(j => j.invoice_paid).reduce((s, j) => s + (j.actual_cost || 0), 0)
+  const awaitingPay   = jobs.filter(j => j.actual_cost != null && !j.invoice_paid).reduce((s, j) => s + (j.actual_cost || 0), 0)
+  const pieData = [
+    { name: 'Open',        value: open },
+    { name: 'In progress', value: inProgress },
+    { name: 'Completed',   value: completed },
+    { name: 'Cancelled',   value: cancelled },
+  ].filter(d => d.value > 0)
+  const fmt = n => n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 mb-4 flex flex-col sm:flex-row overflow-hidden">
+      <div className="flex-1 grid grid-cols-2 sm:grid-cols-4 divide-x divide-y sm:divide-y-0 divide-gray-100">
+        {[
+          { label: 'Needs response',    value: needsResponse,           warn: needsResponse > 0, mono: false },
+          { label: 'Total quoted',      value: `£${fmt(totalQuoted)}`,                           mono: true  },
+          { label: 'Total earned',      value: `£${fmt(totalEarned)}`,                           mono: true  },
+          { label: 'Awaiting payment',  value: `£${fmt(awaitingPay)}`,  warn: awaitingPay > 0,   mono: true  },
+        ].map(({ label, value, mono, warn }) => (
+          <div key={label} className="px-5 py-4">
+            <p className="text-xs text-gray-400 uppercase tracking-wide font-medium mb-0.5">{label}</p>
+            <p className={`text-lg font-bold ${warn ? 'text-amber-600' : 'text-gray-800'} ${mono ? 'font-mono' : ''}`}>{value}</p>
+          </div>
+        ))}
+      </div>
+      <div className="flex items-center gap-4 px-6 py-4 border-t sm:border-t-0 sm:border-l border-gray-100">
+        <ResponsiveContainer width={90} height={90}>
+          <PieChart>
+            <Pie data={pieData} cx="50%" cy="50%" innerRadius={28} outerRadius={42} dataKey="value" strokeWidth={0}>
+              {pieData.map((d, i) => <Cell key={i} fill={PIE_COLORS[d.name]} />)}
+            </Pie>
+            <Tooltip formatter={(v, n) => [v, n]} />
+          </PieChart>
+        </ResponsiveContainer>
+        <div className="space-y-1.5 min-w-[130px]">
+          {pieData.map(d => (
+            <div key={d.name} className="flex items-center gap-2 text-xs text-gray-600">
+              <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: PIE_COLORS[d.name] }} />
+              <span>{d.name}</span>
+              <span className="ml-auto font-semibold text-gray-800">{d.value}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 const CONTRACTOR_NAV_ICONS = {
   jobs:          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}><path strokeLinecap="round" strokeLinejoin="round" d="M11.42 15.17L17.25 21A2.652 2.652 0 0021 17.25l-5.877-5.877M11.42 15.17l2.496-3.03c.317-.384.74-.626 1.208-.766M11.42 15.17l-4.655 5.653a2.548 2.548 0 11-3.586-3.586l5.654-4.654m5.5-1.021l1.2-1.2a6 6 0 00-8.485-8.485l1.2 1.2m5.5 1.021a5.97 5.97 0 00-1.2-1.2m0 0l-1.786 1.786"/></svg>,
   messages:      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}><path strokeLinecap="round" strokeLinejoin="round" d="M8.625 12a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H8.25m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H12m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0h-.375M21 12c0 4.556-4.03 8.25-9 8.25a9.764 9.764 0 01-2.555-.337A5.972 5.972 0 015.41 20.97a5.969 5.969 0 01-.474-.065 4.48 4.48 0 00.978-2.025c.09-.457-.133-.901-.467-1.226C3.93 16.178 3 14.189 3 12c0-4.556 4.03-8.25 9-8.25s9 3.694 9 8.25z"/></svg>,
@@ -530,9 +830,8 @@ export default function ContractorPortal() {
   const [me, setMe] = useState(null)
   const [jobs, setJobs] = useState([])
   const [loading, setLoading] = useState(true)
-  const [filter, setFilter] = useState('active')
+  const [filter, setFilter] = useState('all')
   const [updateJob, setUpdateJob] = useState(null)
-  const [expandedNotes, setExpandedNotes] = useState({})
   const [mainTab, setMainTab] = useState('jobs')
   const [msgUnread, setMsgUnread] = useState(0)
   const [sidebarOpen, setSidebarOpen] = useState(false)
@@ -567,29 +866,14 @@ export default function ContractorPortal() {
     setJobs(prev => prev.map(j => j.id === jobId ? { ...j, status: newStatus } : j))
   }
 
-  function toggleNotes(id) {
-    const isOpening = !expandedNotes[id]
-    setExpandedNotes(prev => ({ ...prev, [id]: !prev[id] }))
-    if (isOpening) {
-      const job = jobs.find(j => j.id === id)
-      if (job && !job.contractor_viewed_at) {
-        contractorApi.post(`/jobs/${id}/viewed`).catch(() => {})
-        setJobs(prev => prev.map(j => j.id === id ? { ...j, contractor_viewed_at: new Date().toISOString() } : j))
-      }
-    }
-  }
-
-  const filtered = jobs.filter(j => {
-    if (filter === 'active') return j.status === 'open' || j.status === 'in_progress'
-    if (filter === 'completed') return j.status === 'completed'
-    if (filter === 'cancelled') return j.status === 'cancelled'
-    if (filter === 'all') return true
-    return true
-  })
-
-  const activeCount = jobs.filter(j => j.status === 'open' || j.status === 'in_progress').length
-  const completedCount = jobs.filter(j => j.status === 'completed').length
-  const cancelledCount = jobs.filter(j => j.status === 'cancelled').length
+  const filtered = jobs
+    .filter(j => {
+      if (filter === 'active') return j.status === 'open' || j.status === 'in_progress'
+      if (filter === 'completed') return j.status === 'completed'
+      if (filter === 'cancelled') return j.status === 'cancelled'
+      return true
+    })
+    .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
 
   const CONTRACTOR_FLAGS = {
     'messages': 'contractor_messages',
@@ -717,37 +1001,22 @@ export default function ContractorPortal() {
 
         {mainTab === 'jobs' && (<>
           <PageHeader title="My Jobs" subtitle="Active, completed, and cancelled maintenance jobs" />
-          {/* Stats summary */}
-          <div className="grid grid-cols-3 gap-2">
-            {[
-              { count: activeCount, label: 'Active', bar: 'bg-orange-500', val: 'text-orange-600', onClick: () => setFilter('active') },
-              { count: completedCount, label: 'Done', bar: 'bg-emerald-500', val: 'text-emerald-600', onClick: () => setFilter('completed') },
-              { count: jobs.length, label: 'Total', bar: 'bg-gray-400', val: 'text-gray-700', onClick: () => setFilter('all') },
-            ].map(c => (
-              <button key={c.label} onClick={c.onClick} className="relative overflow-hidden bg-white border border-gray-200 rounded-xl p-3 text-center hover:border-orange-300 hover:shadow-sm transition-all">
-                <div className={`absolute top-0 left-0 w-0.5 h-full rounded-l-xl ${c.bar}`} />
-                <p className={`text-lg font-extrabold ${c.val}`}>{c.count}</p>
-                <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mt-0.5">{c.label}</p>
-              </button>
-            ))}
-          </div>
+
+          <ContractorSummary jobs={jobs} />
 
           {/* Filter tabs */}
           <div className="flex gap-1 bg-gray-100 rounded-lg p-1 w-fit">
             {[['active', 'Active'], ['completed', 'Completed'], ['cancelled', 'Cancelled'], ['all', 'All']].map(([val, label]) => (
-              <button
-                key={val}
-                onClick={() => setFilter(val)}
-                className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${
+              <button key={val} onClick={() => setFilter(val)}
+                className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors cursor-pointer ${
                   filter === val ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
-                }`}
-              >
+                }`}>
                 {label}
               </button>
             ))}
           </div>
 
-          {/* Job list */}
+          {/* Job table */}
           {loading ? (
             <div className="flex items-center justify-center h-40 gap-3">
               <div className="w-7 h-7 border-2 border-orange-600 border-t-transparent rounded-full animate-spin" />
@@ -755,137 +1024,102 @@ export default function ContractorPortal() {
             </div>
           ) : filtered.length === 0 ? (
             <div className="bg-white border border-gray-200 rounded-xl p-8 text-center">
-              <p className="text-gray-400 text-sm">
-                {filter === 'active' ? 'No active jobs — check back later.' : 'No jobs to show.'}
-              </p>
+              <p className="text-gray-400 text-sm">{filter === 'active' ? 'No active jobs — check back later.' : 'No jobs to show.'}</p>
             </div>
           ) : (
             <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="bg-gray-50 border-b border-gray-200 text-xs text-gray-500 uppercase tracking-wide">
-                    <th className="text-left px-4 py-2.5 font-medium">Date</th>
                     <th className="text-left px-4 py-2.5 font-medium">Job</th>
                     <th className="text-left px-4 py-2.5 font-medium">Priority</th>
-                    <th className="text-left px-4 py-2.5 font-medium">Status</th>
-                    <th className="text-left px-4 py-2.5 font-medium">Cost</th>
-                    <th className="text-left px-4 py-2.5 font-medium">Notes</th>
+                    <th className="text-left px-4 py-2.5 font-medium">Reported</th>
+                    <th className="text-left px-4 py-2.5 font-medium">Scheduled</th>
+                    <th className="text-left px-4 py-2.5 font-medium">Quote</th>
+                    <th className="text-left px-4 py-2.5 font-medium">Payment</th>
+                    <th className="text-left px-4 py-2.5 font-medium">Next action</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {filtered.map(job => (
-                    <>
-                      <tr
-                        key={job.id}
-                        onClick={() => setUpdateJob(job)}
-                        className={`border-b border-gray-100 hover:bg-orange-50/40 cursor-pointer ${job.contractor_accepted === null && job.status !== 'cancelled' ? 'bg-amber-50/60' : ''}`}
-                      >
-                        <td className="px-4 py-2.5 text-xs text-gray-400 whitespace-nowrap">
-                          {new Date(job.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
-                          {job.scheduled_date && <p className="text-blue-500 font-medium mt-0.5">📅 {job.scheduled_date}</p>}
+                  {filtered.map(job => {
+                    const na = nextAction(job)
+                    const isNew = job.contractor_accepted === null && job.status !== 'cancelled' && job.status !== 'completed'
+                    return (
+                      <tr key={job.id}
+                        onClick={() => {
+                          setUpdateJob(job)
+                          if (!job.contractor_viewed_at) {
+                            contractorApi.post(`/jobs/${job.id}/viewed`).catch(() => {})
+                            setJobs(prev => prev.map(j => j.id === job.id ? { ...j, contractor_viewed_at: new Date().toISOString() } : j))
+                          }
+                        }}
+                        className={`border-b border-gray-100 hover:bg-orange-50/40 cursor-pointer transition-colors ${isNew ? 'bg-amber-50/60' : ''}`}>
+                        {/* Job */}
+                        <td className="px-4 py-3">
+                          <div className="flex items-start gap-2">
+                            {isNew && <span className="mt-0.5 flex-shrink-0 text-[10px] font-bold bg-amber-500 text-white px-1.5 py-0.5 rounded">NEW</span>}
+                            <div>
+                              <p className="font-medium text-gray-900 leading-snug">{job.title}</p>
+                              <p className="text-xs text-gray-400 mt-0.5">{job.property} · {job.unit}</p>
+                              {job.address && <p className="text-xs text-gray-400">{job.address}</p>}
+                            </div>
+                          </div>
                         </td>
-                        <td className="px-4 py-2.5">
-                          <p className="font-medium text-gray-900">{job.title}</p>
-                          <p className="text-xs text-gray-400">{job.property} · {job.unit}</p>
-                          {job.address && <p className="text-xs text-gray-400">{job.address}</p>}
+                        {/* Priority */}
+                        <td className="px-4 py-3">
+                          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${PRIORITY_BADGE[job.priority] || 'bg-gray-100 text-gray-600'}`}>
+                            {job.priority}
+                          </span>
                         </td>
-                        <td className="px-4 py-2.5">
-                          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${PRIORITY_BADGE[job.priority] || 'bg-gray-100 text-gray-600'}`}>{job.priority}</span>
+                        {/* Reported */}
+                        <td className="px-4 py-3 text-xs text-gray-400 whitespace-nowrap">
+                          {new Date(job.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
                         </td>
-                        <td className="px-4 py-2.5 space-y-1">
-                          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_BADGE[job.status] || 'bg-gray-100 text-gray-600'}`}>{job.status.replace('_', ' ')}</span>
-                          {job.contractor_accepted === null && job.status !== 'cancelled' && (
-                            <span className="block text-xs px-2 py-0.5 rounded-full font-medium bg-amber-100 text-amber-700">⏳ awaiting acceptance</span>
+                        {/* Scheduled */}
+                        <td className="px-4 py-3 text-xs whitespace-nowrap">
+                          {job.scheduled_date
+                            ? <span className="text-blue-600 font-medium">{new Date(job.scheduled_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+                            : <span className="text-gray-300">—</span>}
+                        </td>
+                        {/* Quote */}
+                        <td className="px-4 py-3 text-xs">
+                          {job.contractor_quote != null ? (
+                            <div>
+                              <span className="font-semibold text-gray-800">£{job.contractor_quote.toLocaleString()}</span>
+                              {job.quote_status === 'approved' && <p className="text-green-600 font-medium">approved</p>}
+                              {job.quote_status === 'pending'  && <p className="text-amber-600">awaiting approval</p>}
+                              {job.quote_status === 'rejected' && <p className="text-red-500">rejected</p>}
+                            </div>
+                          ) : <span className="text-gray-300">—</span>}
+                        </td>
+                        {/* Payment */}
+                        <td className="px-4 py-3 text-xs">
+                          {job.actual_cost != null ? (
+                            <div>
+                              <span className="font-semibold text-gray-800">£{job.actual_cost.toFixed(2)}</span>
+                              {job.invoice_paid
+                                ? <p className="text-green-600 font-medium">paid</p>
+                                : <p className="text-amber-600">unpaid</p>}
+                            </div>
+                          ) : <span className="text-gray-300">—</span>}
+                        </td>
+                        {/* Next action */}
+                        <td className="px-4 py-3" onClick={e => na.decline && e.stopPropagation()}>
+                          {na.decline ? (
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-medium text-amber-700">Open to accept</span>
+                              <button onClick={async () => { await contractorApi.post(`/jobs/${job.id}/decline`); load() }}
+                                className="text-xs border border-red-300 text-red-500 px-2 py-0.5 rounded hover:bg-red-50 cursor-pointer font-medium">
+                                Decline
+                              </button>
+                            </div>
+                          ) : (
+                            <span className={`text-xs font-medium ${na.color}`}>{na.label}</span>
                           )}
-                          {job.contractor_accepted === true && (
-                            <span className="block text-xs px-2 py-0.5 rounded-full font-medium bg-green-100 text-green-700">✓ accepted</span>
-                          )}
-                          {job.quote_status === 'pending' && (
-                            <span className="block text-xs px-2 py-0.5 rounded-full font-medium bg-amber-100 text-amber-700">💰 quote pending</span>
-                          )}
-                          {job.quote_status === 'approved' && (
-                            <span className="block text-xs px-2 py-0.5 rounded-full font-medium bg-green-100 text-green-700">💰 quote approved</span>
-                          )}
-                        </td>
-                        <td className="px-4 py-2.5 text-xs text-gray-500">
-                          {job.actual_cost != null ? <span className="font-medium text-gray-800">£{job.actual_cost.toFixed(2)}</span> : job.estimated_cost != null ? <span>est £{job.estimated_cost.toFixed(2)}</span> : '—'}
-                          {job.invoice_ref && <p className="text-gray-400">Inv: {job.invoice_ref}</p>}
-                          {job.invoice_paid && <p className="text-green-600 font-medium">✓ paid</p>}
-                        </td>
-                        <td className="px-4 py-2.5" onClick={e => { e.stopPropagation(); toggleNotes(job.id) }}>
-                          <button className="text-xs border border-gray-300 text-gray-500 px-2 py-0.5 rounded hover:bg-gray-50">
-                            💬 {expandedNotes[job.id] ? 'hide' : 'show'}
-                          </button>
                         </td>
                       </tr>
-                      {expandedNotes[job.id] && (
-                        <tr key={`notes-${job.id}`} onClick={e => e.stopPropagation()} className="bg-orange-50/40 border-b border-orange-100">
-                          <td colSpan="6" className="px-5 py-4 space-y-4">
-                            {/* Accept / Decline for new unresponded jobs */}
-                            {job.contractor_accepted === null && job.status !== 'cancelled' && (
-                              <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
-                                <p className="text-sm font-semibold text-amber-800 mb-3">⚠️ New job assigned — please accept or decline</p>
-                                <div className="flex gap-2">
-                                  <button
-                                    onClick={async () => {
-                                      await contractorApi.post(`/jobs/${job.id}/accept`)
-                                      load()
-                                    }}
-                                    className="flex-1 bg-green-600 hover:bg-green-700 text-white py-2 rounded-lg text-sm font-semibold"
-                                  >✓ Accept Job</button>
-                                  <button
-                                    onClick={async () => {
-                                      await contractorApi.post(`/jobs/${job.id}/decline`)
-                                      load()
-                                    }}
-                                    className="flex-1 bg-gray-200 hover:bg-red-100 text-gray-700 hover:text-red-700 py-2 rounded-lg text-sm font-semibold"
-                                  >✗ Decline</button>
-                                </div>
-                              </div>
-                            )}
-
-                            {/* Job description */}
-                            {job.description && <p className="text-sm text-gray-500 bg-white rounded p-2">{job.description}</p>}
-
-                            {/* Photos */}
-                            <div>
-                              {job.photos?.length > 0 && (
-                                <div className="flex gap-2 flex-wrap mb-2">
-                                  {job.photos.map(p => (
-                                    <div key={p.id} className="relative">
-                                      <a href={p.url} target="_blank" rel="noreferrer">
-                                        <img src={p.url} alt="job photo" className="h-20 w-20 object-cover rounded-lg border border-gray-200 hover:opacity-80 transition-opacity" />
-                                      </a>
-                                      {p.source === 'maintenance_contractor' && (
-                                        <span className="absolute -top-1 -right-1 bg-orange-500 text-white text-[9px] font-bold rounded-full px-1">YOU</span>
-                                      )}
-                                    </div>
-                                  ))}
-                                </div>
-                              )}
-                              <label className="cursor-pointer inline-flex items-center gap-1.5 text-xs text-orange-600 hover:text-orange-700 font-medium border border-orange-300 rounded-lg px-3 py-1.5 hover:bg-orange-50">
-                                📷 Upload photos
-                                <input type="file" accept="image/*" multiple className="hidden"
-                                  onChange={async e => {
-                                    const form = new FormData()
-                                    Array.from(e.target.files).forEach(f => form.append('files', f))
-                                    const token = localStorage.getItem('contractor_token')
-                                    await fetch(`/api/contractor/jobs/${job.id}/photos`, { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: form })
-                                    load()
-                                  }} />
-                              </label>
-                            </div>
-
-                            {/* Notes thread */}
-                            <div>
-                              <p className="text-xs font-semibold text-orange-600 mb-2">💬 Notes &amp; updates</p>
-                              <NotesThread job={job} onStatusChange={handleStatusChange} />
-                            </div>
-                          </td>
-                        </tr>
-                      )}
-                    </>
-                  ))}
+                    )
+                  })}
                 </tbody>
               </table>
             </div>

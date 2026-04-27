@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Request, status, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, Request, status, UploadFile, File, Form
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, field_validator
@@ -161,6 +161,18 @@ def _job_out(j: MaintenanceRequest, db=None) -> dict:
             ).order_by(UploadedFile.id).all()
         ]
 
+    # Quote + invoice file attachments
+    quote_file_url = None; quote_file_name = None
+    invoice_file_url = None; invoice_file_name = None
+    if db is not None:
+        from app.models.upload import UploadedFile as UF
+        qf = db.query(UF).filter(UF.entity_type == "maintenance_quote", UF.entity_id == j.id).order_by(UF.id.desc()).first()
+        if qf:
+            quote_file_url = f"/uploads/{qf.filename}"; quote_file_name = qf.original_name
+        inv_f = db.query(UF).filter(UF.entity_type == "maintenance_invoice", UF.entity_id == j.id).order_by(UF.id.desc()).first()
+        if inv_f:
+            invoice_file_url = f"/uploads/{inv_f.filename}"; invoice_file_name = inv_f.original_name
+
     return {
         "id": j.id,
         "title": j.title,
@@ -179,6 +191,10 @@ def _job_out(j: MaintenanceRequest, db=None) -> dict:
         "contractor_accepted": j.contractor_accepted,
         "contractor_quote": j.contractor_quote,
         "quote_status": j.quote_status,
+        "quote_file_url": quote_file_url,
+        "quote_file_name": quote_file_name,
+        "invoice_file_url": invoice_file_url,
+        "invoice_file_name": invoice_file_name,
         "scheduled_date": j.scheduled_date.isoformat() if j.scheduled_date else None,
         "proposed_date": j.proposed_date.isoformat() if j.proposed_date else None,
         "proposed_date_status": j.proposed_date_status,
@@ -225,11 +241,29 @@ def update_job(
 
     allowed_statuses = {"open", "in_progress", "completed", "cancelled"}
     if data.status and data.status in allowed_statuses:
+        if data.status == "completed" and not job.contractor_accepted:
+            raise HTTPException(status_code=400, detail="You must accept the job before marking it complete")
         job.status = data.status
     if data.actual_cost is not None:
         job.actual_cost = data.actual_cost
     if data.invoice_ref is not None:
         job.invoice_ref = data.invoice_ref
+    if data.status == "completed":
+        from datetime import date as _today
+        # Clear any pending date negotiation — irrelevant once work is done
+        if job.proposed_date_status in ("pending", "agent_proposed"):
+            job.proposed_date = None
+            job.proposed_date_status = None
+        # No agreed date — record today and leave an audit note
+        if not job.scheduled_date:
+            job.scheduled_date = _today.today()
+            note = MaintenanceNote(
+                maintenance_request_id=job.id,
+                author_type="contractor",
+                author_name=contractor.full_name + (f" ({contractor.company_name})" if contractor.company_name else ""),
+                body=f"Job marked complete on {_today.today().isoformat()}. No date had been agreed with the agent in advance.",
+            )
+            db.add(note)
     if data.completion_notes:
         note = MaintenanceNote(
             maintenance_request_id=job.id,
@@ -334,6 +368,28 @@ def propose_date(job_id: int, data: ProposeDateIn, contractor: Contractor = Depe
     return {"ok": True, "proposed_date": data.proposed_date}
 
 
+@router.post("/jobs/{job_id}/accept-agent-date")
+def accept_agent_date(job_id: int, contractor: Contractor = Depends(get_current_contractor), db: Session = Depends(get_db)):
+    job = db.query(MaintenanceRequest).filter(
+        MaintenanceRequest.id == job_id,
+        MaintenanceRequest.contractor_id == contractor.id,
+    ).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    if job.proposed_date_status != "agent_proposed":
+        raise HTTPException(status_code=400, detail="No agent-proposed date to accept")
+    job.scheduled_date = job.proposed_date
+    job.proposed_date = None
+    job.proposed_date_status = None
+    db.commit()
+    notifications.send(
+        f"✅ <b>Date Confirmed by Contractor</b>\n"
+        f"Job: {job.title}\n"
+        f"Contractor: {contractor.full_name} accepted the proposed date: {job.scheduled_date.isoformat()}"
+    )
+    return {"ok": True}
+
+
 # ── Quote submission ──────────────────────────────────────────────────────────
 
 class QuoteIn(BaseModel):
@@ -342,36 +398,141 @@ class QuoteIn(BaseModel):
 
 
 @router.post("/jobs/{job_id}/quote")
-def submit_quote(job_id: int, data: QuoteIn, contractor: Contractor = Depends(get_current_contractor), db: Session = Depends(get_db)):
+async def submit_quote(
+    job_id: int,
+    amount: float = Form(...),
+    proposed_date: str = Form(...),
+    notes: Optional[str] = Form(None),
+    file: Optional[UploadFile] = File(None),
+    contractor: Contractor = Depends(get_current_contractor),
+    db: Session = Depends(get_db),
+):
+    from datetime import date as _date
     job = db.query(MaintenanceRequest).filter(
         MaintenanceRequest.id == job_id, MaintenanceRequest.contractor_id == contractor.id
     ).first()
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
-    job.contractor_quote = data.amount
+
+    job.contractor_quote = amount
     job.quote_status = "pending"
-    db.commit()
+    try:
+        job.proposed_date = _date.fromisoformat(proposed_date)
+        job.proposed_date_status = "pending"
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid proposed_date format")
+
+    # Save file if provided
+    if file and file.filename:
+        from app.models.upload import UploadedFile
+        ext = os.path.splitext(file.filename)[1].lower() or ".pdf"
+        fname = f"{uuid.uuid4().hex}{ext}"
+        fpath = os.path.join(UPLOAD_DIR, fname)
+        content = await file.read()
+        with open(fpath, "wb") as out:
+            out.write(content)
+        rec = UploadedFile(
+            organisation_id=contractor.organisation_id,
+            entity_type="maintenance_quote",
+            entity_id=job_id,
+            filename=fname,
+            original_name=file.filename,
+            mime_type=file.content_type or "application/octet-stream",
+            file_size=len(content),
+        )
+        db.add(rec)
+
     unit = job.unit; prop = unit.property if unit else None
-    note_body = f"Quote submitted: £{data.amount:.2f}" + (f"\n{data.notes}" if data.notes else "")
-    note = MaintenanceNote(
+    note_body = (
+        f"Quote submitted: £{amount:.2f}\nProposed date: {proposed_date}"
+        + (f"\n{notes}" if notes else "")
+        + ("\n[Quote document attached]" if file and file.filename else "")
+    )
+    db.add(MaintenanceNote(
         maintenance_request_id=job.id,
         author_type="contractor",
         author_name=contractor.full_name + (f" ({contractor.company_name})" if contractor.company_name else ""),
         body=note_body,
-    )
-    db.add(note)
+    ))
     db.commit()
     notifications.send(
         f"💰 <b>Quote Submitted</b>\n{job.title}\n{prop.name if prop else ''} · {unit.name if unit else ''}\n"
-        f"Contractor: {contractor.full_name}\nAmount: £{data.amount:.2f}"
-        + (f"\nNotes: {data.notes}" if data.notes else "")
+        f"Contractor: {contractor.full_name}\nAmount: £{amount:.2f}\nProposed date: {proposed_date}"
+        + (f"\nNotes: {notes}" if notes else "")
     )
-    return {"ok": True, "quote": data.amount}
+    return {"ok": True, "quote": amount}
+
+
+# ── Invoice upload ────────────────────────────────────────────────────────────
+
+@router.post("/jobs/{job_id}/invoice")
+async def upload_invoice(
+    job_id: int,
+    file: UploadFile = File(...),
+    actual_cost: Optional[float] = Form(None),
+    invoice_ref: Optional[str] = Form(None),
+    contractor: Contractor = Depends(get_current_contractor),
+    db: Session = Depends(get_db),
+):
+    from app.models.upload import UploadedFile
+    job = db.query(MaintenanceRequest).filter(
+        MaintenanceRequest.id == job_id, MaintenanceRequest.contractor_id == contractor.id
+    ).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    ext = os.path.splitext(file.filename or "")[1].lower() or ".pdf"
+    fname = f"{uuid.uuid4().hex}{ext}"
+    fpath = os.path.join(UPLOAD_DIR, fname)
+    content = await file.read()
+    with open(fpath, "wb") as out:
+        out.write(content)
+
+    # Remove any previous invoice file for this job
+    db.query(UploadedFile).filter(
+        UploadedFile.entity_type == "maintenance_invoice",
+        UploadedFile.entity_id == job_id,
+    ).delete()
+
+    rec = UploadedFile(
+        organisation_id=contractor.organisation_id,
+        entity_type="maintenance_invoice",
+        entity_id=job_id,
+        filename=fname,
+        original_name=file.filename,
+        mime_type=file.content_type or "application/octet-stream",
+        file_size=len(content),
+    )
+    db.add(rec)
+
+    if actual_cost is not None:
+        job.actual_cost = actual_cost
+    if invoice_ref is not None:
+        job.invoice_ref = invoice_ref
+
+    unit = job.unit; prop = unit.property if unit else None
+    db.add(MaintenanceNote(
+        maintenance_request_id=job.id,
+        author_type="contractor",
+        author_name=contractor.full_name + (f" ({contractor.company_name})" if contractor.company_name else ""),
+        body=(
+            f"Invoice uploaded: {file.filename}"
+            + (f"\nAmount: £{actual_cost:.2f}" if actual_cost else "")
+            + (f"\nRef: {invoice_ref}" if invoice_ref else "")
+        ),
+    ))
+    db.commit()
+    notifications.send(
+        f"🧾 <b>Invoice Uploaded</b>\n{job.title}\n{prop.name if prop else ''} · {unit.name if unit else ''}\n"
+        f"Contractor: {contractor.full_name}"
+        + (f"\nAmount: £{actual_cost:.2f}" if actual_cost else "")
+    )
+    return {"ok": True, "filename": fname}
 
 
 # ── Photo upload ──────────────────────────────────────────────────────────────
 
-UPLOAD_DIR = "/root/propairty/backend/uploads"
+UPLOAD_DIR = "/root/propairty/uploads"
 
 @router.post("/jobs/{job_id}/photos")
 async def upload_job_photos(
@@ -401,7 +562,7 @@ async def upload_job_photos(
             filename=fname,
             original_name=f.filename,
             mime_type=f.content_type or "image/jpeg",
-            size=len(content),
+            file_size=len(content),
         )
         db.add(rec)
         saved.append(fname)

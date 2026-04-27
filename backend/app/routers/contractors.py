@@ -111,7 +111,7 @@ def get_contractor_profile(contractor_id: int, db: Session = Depends(get_db), cu
         })
 
     reviews = db.query(ContractorReview).filter(ContractorReview.contractor_id == contractor_id).order_by(ContractorReview.created_at.desc()).all()
-    reviews_out = [{"id": r.id, "rating": r.rating, "comment": r.comment, "created_at": str(r.created_at)[:10] if r.created_at else None} for r in reviews]
+    reviews_out = [{"id": r.id, "rating": r.stars, "comment": r.comment, "created_at": str(r.created_at)[:10] if r.created_at else None} for r in reviews]
 
     rating = _rating_summary(contractor_id, db)
 

@@ -27,13 +27,14 @@ def _org_leases(db: Session, org_id: int):
 
 
 def _ensure_payments_generated(db: Session, org_id: int):
-    """Generate pending payment records for active leases for the current + next month."""
+    """Generate pending payment records for active leases for the next 12 months."""
     today = date.today()
-    months = [(today.year, today.month)]
-    if today.month == 12:
-        months.append((today.year + 1, 1))
-    else:
-        months.append((today.year, today.month + 1))
+    months = []
+    for i in range(12):
+        m = today.month + i
+        y = today.year + (m - 1) // 12
+        m = ((m - 1) % 12) + 1
+        months.append((y, m))
 
     for lease in _org_leases(db, org_id):
         for year, month in months:
@@ -100,6 +101,8 @@ def _enrich(payments: list, db: Session) -> list:
             "unit": f"{prop.name} · {unit.name}" if prop and unit else "Unknown",
             "unit_id": unit.id if unit else None,
             "property_id": prop.id if prop else None,
+            "lease_end_date": str(lease.end_date) if lease and lease.end_date else None,
+            "monthly_rent": lease.monthly_rent if lease else None,
         })
     return result
 
@@ -133,12 +136,14 @@ def list_payments(month: Optional[str] = None, db: Session = Depends(get_db), cu
 def list_arrears(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     _ensure_payments_generated(db, current_user.organisation_id)
 
+    today = date.today()
     payments = db.query(RentPayment).join(Lease).join(Unit).join(Property).options(
         joinedload(RentPayment.lease).joinedload(Lease.tenant),
         joinedload(RentPayment.lease).joinedload(Lease.unit).joinedload(Unit.property),
     ).filter(
         Property.organisation_id == current_user.organisation_id,
-        RentPayment.status.in_(["overdue", "partial"])
+        RentPayment.status.in_(["overdue", "partial"]),
+        RentPayment.due_date <= today,
     ).order_by(RentPayment.due_date).all()
 
     enriched = _enrich(payments, db)
@@ -157,15 +162,40 @@ def mark_paid(payment_id: int, data: MarkPaidRequest, db: Session = Depends(get_
     if not payment:
         raise HTTPException(status_code=404, detail="Payment not found")
 
-    payment.amount_paid = data.amount_paid
+    surplus = round(data.amount_paid - payment.amount_due, 2)
+    paid_date_str = data.paid_date.strftime("%d/%m/%Y") if hasattr(data.paid_date, "strftime") else str(data.paid_date)
+
+    # Each month only records its own rent amount; surplus cascades separately
+    payment.amount_paid = payment.amount_due if surplus > 0 else data.amount_paid
     payment.paid_date = data.paid_date
-    payment.notes = data.notes
-    if data.amount_paid >= payment.amount_due:
-        payment.status = "paid"
+    payment.status = "paid" if payment.amount_paid >= payment.amount_due else "partial"
+
+    covered_months = []
+    if surplus > 0:
+        advance_note = f"Part of £{data.amount_paid:,.2f} advance payment received {paid_date_str}"
+        future_rows = db.query(RentPayment).filter(
+            RentPayment.lease_id == payment.lease_id,
+            RentPayment.due_date > payment.due_date,
+            RentPayment.amount_paid == None,
+        ).order_by(RentPayment.due_date).all()
+        for future in future_rows:
+            if surplus <= 0:
+                break
+            applied = min(surplus, future.amount_due)
+            future.amount_paid = round(applied, 2)
+            future.paid_date = data.paid_date
+            future.notes = advance_note
+            future.status = "paid" if future.amount_paid >= future.amount_due else "partial"
+            surplus = round(surplus - applied, 2)
+            covered_months.append(future.due_date.strftime("%B %Y"))
+        months_str = ", ".join(covered_months) if covered_months else "none"
+        payment.notes = (data.notes + " — " if data.notes else "") + \
+            f"£{data.amount_paid:,.2f} advance received {paid_date_str} — covers {len(covered_months) + 1} month(s): this month + {months_str}"
     else:
-        payment.status = "partial"
+        payment.notes = data.notes
+
     db.commit()
-    return {"ok": True, "status": payment.status}
+    return {"ok": True, "status": payment.status, "covered_months": covered_months}
 
 
 @router.post("/{payment_id}/send-reminder")

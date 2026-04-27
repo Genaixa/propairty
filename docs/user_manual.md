@@ -1,6 +1,6 @@
 # PropAIrty User Manual
 
-_Last updated: 2026-04-23_
+_Last updated: 2026-04-26_
 
 ---
 
@@ -53,10 +53,29 @@ The Properties page lists every property in your portfolio. You can:
 
 **Property profile** contains:
 - Overview (address, property type, key dates, EPC rating)
+- **Financial Summary** — a mini CFO panel showing monthly rent roll, annual rent roll, average rent per unit, deposits held, void cost, and any leases expiring within 90 days
 - Units (each rentable unit with current tenant and lease)
 - Compliance certificates (gas safety, EPC, EICR etc.)
 - Documents uploaded to this property
-- Notes
+- Photos and floorplan
+
+[SCREENSHOT: Property detail — Financial Summary card with 5 coloured metric tiles]
+
+---
+
+### Leases
+
+[SCREENSHOT: Leases page — properties grouped with CFO strip and per-group filters]
+
+The Leases page shows all tenancy agreements grouped by property. Each property group includes:
+
+- **Status filter pills** — filter that group's leases by All / Active / Expired / Terminated independently of other properties
+- **Mini CFO strip** — shows at a glance: monthly rent roll, annual rent roll, deposits held, void cost, and leases expiring within 90 days
+- A table of leases with unit, tenant, start date, end date, rent, deposit and status — all sortable
+
+Use the **property dropdown** at the top to jump straight to one property (useful when you have many).
+
+Click **+ New Lease** to create a tenancy agreement manually.
 
 ---
 
@@ -66,8 +85,15 @@ The Properties page lists every property in your portfolio. You can:
 
 The Tenants page lists all current and former tenants. From here you can:
 - Add a new tenant
-- Filter by active/former status
+- Search by name, email or phone
+- Filter by portal status or click the **Expiring ≤ 90d** tile to see tenants whose lease ends soon
 - Click a tenant to open their full profile
+
+The tenant table shows each tenant's **current monthly rent** and a colour-coded **Tenancy** chip:
+- 🟢 Active — lease running normally
+- 🟡 Expires Xd — lease expiring within 90 days (shows exact days)
+- 🔵 Periodic — rolling month-to-month tenancy
+- ⚪ No lease — no active lease found
 
 **Tenant profile** contains:
 - Personal details (name, email, phone, DOB, NI number)
@@ -96,15 +122,46 @@ The Landlords page shows all landlords whose properties you manage. Each landlor
 
 ### Maintenance
 
-[SCREENSHOT: Maintenance page — kanban or list of jobs by status]
+[SCREENSHOT: Maintenance page — jobs list with Jobs / Payments tab toggle]
 
-The Maintenance page shows all open and historical maintenance requests. You can:
+The Maintenance page has two views: **Jobs** and **Payments**.
+
+#### Jobs view
+
+Shows all maintenance requests. You can:
 - Log a new job manually
 - Assign a job to a contractor
 - Update job status (open → in progress → completed)
-- Filter by property, contractor, or status
+- Filter by status (Open, In Progress, Done, Cancelled, All) or by KPI cards
+- Search by job title, unit, or tenant name
+- **Edit** a job (title, description, priority) in the drawer
+- Approve or reject a contractor's quote
+- Accept or reject a contractor's proposed reschedule date
 
-Each job shows the tenant who reported it, the property and unit, priority level, description, and any photos uploaded.
+Opening a job shows a two-column drawer: **Details / Contractor / Financials** on the left, **Messages / Notes** on the right.
+
+**Quote workflow** — when a contractor submits a quote with a proposed date and optional PDF, you see it under the Contractor section. Click **Approve quote & confirm date** to accept both the price and the visit date in one step. Quotes can also be rejected.
+
+**Payments (Financials section)** — once a contractor has submitted an invoice amount, the Financials section shows:
+- Invoice amount and any attached invoice file
+- A list of all payments made so far, with amount, date, and reference
+- The outstanding balance
+- An **Add payment** inline form — enter the amount (pre-filled with the balance), date, and optional reference, then click **Record payment**
+- Payments auto-mark the job as **Paid in full** when the total reaches the invoice amount
+- Individual payments can be deleted (balance and paid status update automatically)
+
+#### Payments view
+
+[SCREENSHOT: Payments tab — table of outstanding invoices with checkboxes]
+
+The **Payments** tab shows all jobs with an unpaid invoice. It is the central place to run a payment batch:
+
+1. Tick one or more jobs (or **select all**)
+2. Click **Pay N selected — £X.XX**
+3. Enter a payment date and an optional bank reference (BACS ref, cheque number, etc.)
+4. Click **Confirm** — each selected job receives a payment entry for its full remaining balance
+
+Jobs that reach zero balance are automatically moved to the **Paid** section below. If a job is only partially paid (e.g. you can only afford half), record a partial amount from the job drawer — the balance stays in the outstanding list until cleared.
 
 ---
 
@@ -142,8 +199,16 @@ Each inspection record can include photos, condition notes by room, and an overa
 
 The Payments page shows the rent ledger for every active tenancy. You can:
 - See which payments are paid, overdue, or upcoming
-- Log a manual payment
+- Record a payment received against a rent charge
 - Generate a rent statement for a tenant
+
+**Recording a payment:** Click the **Record Payment** button on any unpaid or partially paid row. A modal opens where you enter:
+- **Amount Received** — can be less than the full amount (partial payments are flagged)
+- **Payment Date** — the actual date the funds arrived
+- **Method** — Bank Transfer, Standing Order, Cash, Cheque, Card, or Other
+- **Reference / Notes** — optional, e.g. tenant name or bank reference
+
+The row updates immediately to reflect the payment. If the amount is less than the amount due, the status shows as **Partial** and you can record further payments later.
 
 ---
 
@@ -194,8 +259,10 @@ Click any name to see their uploaded files. You can upload new files or download
 The Contractors page lists all maintenance contractors and tradespeople you work with. Each contractor record includes:
 - Company name and contact details
 - Trade(s) they cover
-- Jobs assigned to them
-- Performance rating
+- Jobs assigned to them and total spend
+- Performance rating (from tenant and agent reviews)
+
+Switch to the **Jobs & Costs** tab to see all maintenance jobs with estimated vs actual cost, invoice references, and totals. Click **Assign** or **Update** on any job row to assign a contractor and log costs — the panel saves and closes automatically on success.
 
 Contractors can also log in to their own portal (see Part 3).
 
@@ -496,9 +563,25 @@ Shows all maintenance jobs assigned to this contractor. Filter by:
 - **Cancelled**
 - **All**
 
-Each job shows the property address, description, priority, and status. Clicking a job expands it to show notes and a form to add updates.
+Each job shows the property address, description, priority, and status. Clicking a job opens an update panel.
 
-Contractors can mark a job as **Complete** once the work is done.
+**Quote flow** — for a newly assigned job:
+1. Click the job and fill in the **Quote amount (£)**, **Proposed visit date**, and optional notes
+2. Optionally attach a quote PDF (drag or click the paperclip area)
+3. Click **Submit quote** — the agent reviews and approves or rejects it
+
+Once the quote is approved, the visit date is confirmed and the job enters the **work phase**.
+
+**Work phase** — while the job is in progress:
+- Set the visit status: In Progress / Completed / Cancelled
+- Optionally propose a new date if the confirmed date no longer works
+- Fill in the **Invoice amount (£)** and **Invoice ref** once the work is done
+- Attach the invoice PDF using the **Attach invoice** file picker
+- Click **Save** — the agent can then record payments against the invoice
+
+**Invoice status** — at the bottom of the work phase panel:
+- Shows **Awaiting payment from agent** while the invoice is unpaid
+- Shows **Paid in full by agent** once the agent has fully paid it
 
 ### Messages
 

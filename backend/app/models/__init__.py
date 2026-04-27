@@ -39,3 +39,4 @@ from app.models.audit_log import AuditLog
 from app.models.feature_flag import OrgFeatureFlag
 from app.models.user_property_assignment import UserPropertyAssignment
 from app.models.tenant_moveout_check import TenantMoveOutCheck
+from app.models.maintenance_payment import MaintenancePayment

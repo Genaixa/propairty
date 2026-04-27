@@ -80,7 +80,8 @@ def get_tenant_profile(tenant_id: int, db: Session = Depends(get_db), current_us
             "property_id": prop.id if prop else None,
             "unit_id": unit.id if unit else None,
             "payments": [{"id": p.id, "due_date": str(p.due_date), "amount_due": p.amount_due,
-                          "amount_paid": p.amount_paid, "status": p.status} for p in payments],
+                          "amount_paid": p.amount_paid, "paid_date": str(p.paid_date) if p.paid_date else None,
+                          "status": p.status} for p in payments],
             "deposit": {"id": deposit.id, "amount": deposit.amount, "scheme": deposit.scheme,
                         "status": deposit.status} if deposit else None,
         })

@@ -483,9 +483,14 @@ export default function TenantDetail() {
                     </tr>
                     {open && payments.map(p => (
                       <tr key={p.id} className={`border-t border-gray-50 ${p.status === 'overdue' ? 'bg-red-50/40' : 'bg-gray-50/50'}`}>
-                        <td className="px-5 py-2.5 text-gray-500 text-xs pl-10">{p.due_date}</td>
+                        <td className="px-5 py-2.5 text-gray-500 text-xs pl-10">{fmtDate(p.due_date)}</td>
                         <td className="px-5 py-2.5 text-gray-600">£{p.amount_due}</td>
-                        <td className="px-5 py-2.5 text-green-600">{p.amount_paid ? `£${p.amount_paid}` : '—'}</td>
+                        <td className="px-5 py-2.5">
+                          {p.amount_paid
+                            ? <><span className="text-green-600">£{p.amount_paid.toLocaleString()}</span>
+                                {p.paid_date && <div className="text-xs text-gray-400">{fmtDate(p.paid_date)}</div>}</>
+                            : <span className="text-gray-400">—</span>}
+                        </td>
                         <td className="px-5 py-2.5"><Badge value={p.status} /></td>
                         <td />
                       </tr>

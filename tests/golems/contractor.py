@@ -22,12 +22,20 @@ class ContractorGolem(BaseGolem):
         r = self.post(f"/api/contractor/jobs/{job_id}/decline")
         return self.expect(r, 200, f"contractor decline job {job_id}")
 
-    def submit_quote(self, job_id: int, amount: float, notes: str = "") -> dict:
-        r = self.post(f"/api/contractor/jobs/{job_id}/quote", {
-            "amount": amount,
-            "notes": notes or f"Quote submitted by {self.name}",
-        })
-        return self.expect(r, 200, f"contractor submit quote £{amount} for job {job_id}")
+    def submit_quote(self, job_id: int, amount: float, proposed_date: str, notes: str = "") -> dict:
+        # Backend uses Form(...) — must send as multipart, not JSON
+        saved_ct = self.session.headers.pop("Content-Type", None)
+        r = self.session.post(
+            f"https://propairty.co.uk/api/contractor/jobs/{job_id}/quote",
+            data={
+                "amount": str(amount),
+                "proposed_date": proposed_date,
+                "notes": notes or f"Quote submitted by {self.name}",
+            },
+        )
+        if saved_ct:
+            self.session.headers["Content-Type"] = saved_ct
+        return self.expect(r, 200, f"contractor submit quote £{amount} proposed {proposed_date} for job {job_id}")
 
     def update_job_status(self, job_id: int, status: str, cost: float = None) -> dict:
         payload: dict = {"status": status}

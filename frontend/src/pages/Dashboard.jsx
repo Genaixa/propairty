@@ -552,7 +552,7 @@ export default function Dashboard() {
       {/* Secondary stats */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
         <StatCard label="Properties" value={data.properties} sub={`${data.units} total units`} color="indigo" icon={Icon.building} to="/properties" />
-        <StatCard label="Active Tenants" value={data.tenants} sub={`${data.active_leases} active leases`} color="indigo" icon={Icon.users} to="/tenants" />
+        <StatCard label="Active Tenants" value={data.tenants} sub={`${data.active_leases} lease${data.active_leases !== 1 ? 's' : ''} · incl. HMO rooms`} color="indigo" icon={Icon.users} to="/tenants" />
         <StatCard label="Vacant Units" value={data.vacant_units} sub={data.vacant_units > 0 ? 'Loss of income' : 'Fully let'} color={data.vacant_units > 0 ? 'amber' : 'green'} icon={Icon.key} to="/properties" />
         <StatCard label="Renewals Due" value={data.leases_expiring_soon} sub="Within 60 days" color={data.leases_expiring_soon > 0 ? 'amber' : 'green'} icon={Icon.refresh} to="/renewals" />
       </div>
@@ -635,6 +635,7 @@ export default function Dashboard() {
                   {data.recent_maintenance.map(m => {
                     const priorityColors = {
                       emergency: 'bg-red-100 text-red-700',
+                      urgent:    'bg-red-100 text-red-700',
                       high: 'bg-orange-100 text-orange-700',
                       medium: 'bg-yellow-100 text-yellow-700',
                       low: 'bg-gray-100 text-gray-600',

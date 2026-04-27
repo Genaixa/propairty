@@ -3,8 +3,9 @@ Scenario: Full maintenance job lifecycle.
 
   TenantGoilem reports a boiler issue
   AgentGoilem sees it, assigns ContractorGoilem
-  ContractorGoilem accepts, submits a quote
-  AgentGoilem approves the quote, sets a scheduled date
+  ContractorGoilem accepts, submits a quote with proposed date
+  AgentGoilem approves the quote → proposed_date stays pending → agent explicitly accepts date (two-step)
+  ContractorGoilem proposes a reschedule, agent accepts/rejects
   ContractorGoilem completes the job with actual cost
   AgentGoilem marks invoice paid
   LandlordGoilem can see the job and its cost
@@ -70,39 +71,58 @@ def run(verbose: bool = True) -> list[dict]:
         scheduled = c_job.get("scheduled_date")
         contractor.check("scheduled_date field present", "scheduled_date" in c_job)
 
-    # ── 5. Contractor accepts job and submits quote ───────────────────────────
+    # ── 5. Contractor accepts job and submits quote with proposed date ────────
     print("\n── Step 5: Contractor accepts and quotes ──")
     acc = contractor.accept_job(job_id)
     contractor.check("accept returns ok", acc.get("ok") is True, f"got: {acc}")
 
-    quote = contractor.submit_quote(job_id, 320.00, "Labour + parts for boiler repair")
+    quote = contractor.submit_quote(job_id, 320.00, "2026-05-15", "Labour + parts for boiler repair")
     contractor.check("quote submitted", quote.get("ok") is True, f"got: {quote}")
 
-    # ── 6. Agent sees the quote and approves ──────────────────────────────────
-    print("\n── Step 6: Agent sees quote, approves it ──")
+    # ── 6. Agent sees the quote (with proposed date) and approves ─────────────
+    print("\n── Step 6: Agent sees quote, approves it (auto-sets scheduled date) ──")
     all_jobs = agent.get("/api/maintenance").json()
     a_job = next((j for j in all_jobs if j.get("id") == job_id), None)
     agent.check("agent sees contractor_accepted=True", a_job and a_job.get("contractor_accepted") is True,
                 f"contractor_accepted={a_job.get('contractor_accepted') if a_job else 'N/A'}")
     agent.check("agent sees contractor_quote=320", a_job and a_job.get("contractor_quote") == 320.0,
                 f"quote={a_job.get('contractor_quote') if a_job else 'N/A'}")
+    agent.check("agent sees proposed_date from quote", a_job and a_job.get("proposed_date") == "2026-05-15",
+                f"proposed_date={a_job.get('proposed_date') if a_job else 'N/A'}")
 
     approve_result = agent.approve_quote(job_id)
     agent.check("quote approved", approve_result.get("quote_status") == "approved",
                 f"got: {approve_result}")
 
-    # ── 7. Agent sets scheduled date ─────────────────────────────────────────
-    print("\n── Step 7: Agent sets scheduled date ──")
-    sched = agent.set_scheduled_date(job_id, "2026-05-15")
-    agent.check("scheduled date set", sched.get("scheduled_date") == "2026-05-15",
-                f"got: {sched}")
+    # ── 7. Quote approved — proposed_date stays pending for explicit agent decision ──
+    print("\n── Step 7: Verify proposed_date still pending after quote approval ──")
+    all_jobs = agent.get("/api/maintenance").json()
+    a_job = next((j for j in all_jobs if j.get("id") == job_id), None)
+    agent.check("proposed_date still set after quote approval",
+                a_job and a_job.get("proposed_date") == "2026-05-15",
+                f"proposed_date={a_job.get('proposed_date') if a_job else 'N/A'}")
+    agent.check("proposed_date_status still pending after quote approval",
+                a_job and a_job.get("proposed_date_status") == "pending",
+                f"proposed_date_status={a_job.get('proposed_date_status') if a_job else 'N/A'}")
 
-    # ── 7b. Contractor proposes alternative date, agent accepts ──────────────
-    print("\n── Step 7b: Contractor proposes alternative date ──")
+    # Agent accepts the original proposed date (step 2 of two-step flow)
+    print("\n── Step 7a: Agent accepts contractor's proposed date ──")
+    accept_decision = agent.proposed_date_decision(job_id, "accepted")
+    agent.check("agent accepts proposed date", accept_decision.get("scheduled_date") == "2026-05-15",
+                f"got: {accept_decision}")
+
+    all_jobs = agent.get("/api/maintenance").json()
+    a_job = next((j for j in all_jobs if j.get("id") == job_id), None)
+    agent.check("scheduled_date set after explicit accept", a_job and a_job.get("scheduled_date") == "2026-05-15",
+                f"scheduled_date={a_job.get('scheduled_date') if a_job else 'N/A'}")
+    agent.check("proposed_date cleared after explicit accept", a_job and a_job.get("proposed_date") is None,
+                f"proposed_date={a_job.get('proposed_date') if a_job else 'N/A'}")
+
+    # ── 7b. Contractor proposes reschedule, agent accepts ────────────────────
+    print("\n── Step 7b: Contractor proposes reschedule ──")
     propose_result = contractor.propose_date(job_id, "2026-05-20")
-    contractor.check("propose date ok", propose_result.get("ok") is True, f"got: {propose_result}")
+    contractor.check("propose reschedule ok", propose_result.get("ok") is True, f"got: {propose_result}")
 
-    # Verify agent sees the proposal
     all_jobs = agent.get("/api/maintenance").json()
     a_job = next((j for j in all_jobs if j.get("id") == job_id), None)
     contractor.check("proposed_date visible to agent", a_job and a_job.get("proposed_date") == "2026-05-20",
@@ -110,16 +130,14 @@ def run(verbose: bool = True) -> list[dict]:
     contractor.check("proposed_date_status is pending", a_job and a_job.get("proposed_date_status") == "pending",
                      f"status={a_job.get('proposed_date_status') if a_job else 'N/A'}")
 
-    # Agent accepts the proposed date
-    print("\n── Step 7c: Agent accepts proposed date ──")
+    print("\n── Step 7c: Agent accepts reschedule ──")
     decision = agent.proposed_date_decision(job_id, "accepted")
     agent.check("proposed date accepted", decision.get("scheduled_date") == "2026-05-20",
                 f"got: {decision}")
 
-    # Verify scheduled_date updated and proposal cleared
     all_jobs = agent.get("/api/maintenance").json()
     a_job = next((j for j in all_jobs if j.get("id") == job_id), None)
-    agent.check("scheduled_date updated to proposed", a_job and a_job.get("scheduled_date") == "2026-05-20",
+    agent.check("scheduled_date updated to rescheduled date", a_job and a_job.get("scheduled_date") == "2026-05-20",
                 f"scheduled_date={a_job.get('scheduled_date') if a_job else 'N/A'}")
     agent.check("proposed_date cleared after accept", a_job and a_job.get("proposed_date") is None,
                 f"proposed_date={a_job.get('proposed_date') if a_job else 'N/A'}")
@@ -132,7 +150,6 @@ def run(verbose: bool = True) -> list[dict]:
     reject_decision = agent.proposed_date_decision(job_id, "rejected")
     agent.check("proposed date rejected ok", reject_decision.get("ok") is True, f"got: {reject_decision}")
 
-    # Verify original date preserved and proposal status = rejected
     all_jobs = agent.get("/api/maintenance").json()
     a_job = next((j for j in all_jobs if j.get("id") == job_id), None)
     agent.check("scheduled_date unchanged after reject", a_job and a_job.get("scheduled_date") == "2026-05-20",
