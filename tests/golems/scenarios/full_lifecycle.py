@@ -41,6 +41,18 @@ def run(verbose: bool = True) -> list[dict]:
     tenant.check("tenant can see submitted job", any(j.get("id") == job_id for j in t_jobs),
                  f"job_id={job_id} not in {[j.get('id') for j in t_jobs]}")
 
+    # ── 2b. Tenant cancels a mistake job, then re-submits ─────────────────────
+    print("\n── Step 2b: Tenant retract flow ──")
+    mistake_job = tenant.submit_maintenance("Wrong issue by mistake", priority="low")
+    mistake_id = mistake_job.get("id")
+    tenant.check("mistake job created", bool(mistake_id))
+    cancelled = tenant.cancel_maintenance(mistake_id)
+    tenant.check("tenant can retract open job", cancelled.get("ok") is True, f"got: {cancelled}")
+    m_jobs = tenant.get_maintenance()
+    m_job = next((j for j in m_jobs if j.get("id") == mistake_id), None)
+    tenant.check("retracted job shows cancelled", m_job and m_job.get("status") == "cancelled",
+                 f"status={m_job.get('status') if m_job else 'missing'}")
+
     # ── 3. Agent sees the job and assigns contractor ───────────────────────────
     print("\n── Step 3: Agent assigns contractor ──")
     time.sleep(1)  # let background dispatch run
@@ -59,6 +71,19 @@ def run(verbose: bool = True) -> list[dict]:
         assigned = agent.assign_contractor(job_id, contractor_id)
         agent.check("contractor assigned", assigned.get("contractor_id") == contractor_id,
                     f"got: {assigned}")
+
+    # ── 3a. Tenant cannot retract once in_progress ────────────────────────────
+    print("\n── Step 3a: Tenant cannot retract in_progress job ──")
+    status_code = tenant.cancel_maintenance_expect_fail(job_id)
+    tenant.check("cancel in_progress job returns 400", status_code == 400,
+                 f"expected 400 got {status_code}")
+
+    # ── 3b. Tenant sees contractor assigned ───────────────────────────────────
+    print("\n── Step 3b: Tenant sees contractor assigned ──")
+    t_jobs = tenant.get_maintenance()
+    t_job = next((j for j in t_jobs if j.get("id") == job_id), None)
+    tenant.check("tenant sees assigned_to after assignment", t_job and bool(t_job.get("assigned_to")),
+                 f"assigned_to={t_job.get('assigned_to') if t_job else 'N/A'}")
 
     # ── 4. Contractor sees the job ────────────────────────────────────────────
     print("\n── Step 4: Contractor sees assigned job ──")
@@ -93,6 +118,13 @@ def run(verbose: bool = True) -> list[dict]:
     approve_result = agent.approve_quote(job_id)
     agent.check("quote approved", approve_result.get("quote_status") == "approved",
                 f"got: {approve_result}")
+
+    # ── 6b. Contractor sees quote_status=approved ─────────────────────────────
+    print("\n── Step 6b: Contractor sees quote approved ──")
+    c_jobs = contractor.get_jobs()
+    c_job = next((j for j in c_jobs if j.get("id") == job_id), None)
+    contractor.check("contractor sees quote_status=approved", c_job and c_job.get("quote_status") == "approved",
+                     f"quote_status={c_job.get('quote_status') if c_job else 'N/A'}")
 
     # ── 7. Quote approved — proposed_date stays pending for explicit agent decision ──
     print("\n── Step 7: Verify proposed_date still pending after quote approval ──")

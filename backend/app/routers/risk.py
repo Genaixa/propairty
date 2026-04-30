@@ -50,11 +50,12 @@ def _score_tenant(lease: Lease, payments: list[RentPayment]) -> dict:
     score = 100
 
     # Penalise late paid payments
+    # ≤5 days is often a standing order lag / bank holiday — penalise lightly
     for days in late_days_list:
-        if days <= 3:
-            score -= 5
-        elif days <= 7:
-            score -= 10
+        if days <= 5:
+            score -= 3
+        elif days <= 10:
+            score -= 8
         elif days <= 14:
             score -= 18
         elif days <= 30:
@@ -142,17 +143,34 @@ def _score_tenant(lease: Lease, payments: list[RentPayment]) -> dict:
     elif trend == "improving":
         factors.append("Payment trend: improving")
 
-    # Recommendation
+    # Recommendation — factor in actual arrears and trend, not just score
     if level == 1:
         recommendation = "No action needed"
     elif level == 2:
         recommendation = "Monitor — send friendly reminder if trend continues"
     elif level == 3:
-        recommendation = "Send formal rent reminder"
+        if current_arrears > 0:
+            recommendation = "Send formal rent reminder and request payment plan"
+        else:
+            recommendation = "Send friendly reminder — no arrears currently"
     elif level == 4:
-        recommendation = "Issue arrears warning letter — consider Section 8"
-    else:
-        recommendation = "Urgent: consider Section 8 notice or legal action"
+        if current_arrears >= monthly_rent:
+            recommendation = "Issue arrears warning letter — approaching Section 8 threshold"
+        elif current_arrears > 0:
+            recommendation = "Issue arrears warning letter and request immediate payment"
+        else:
+            recommendation = "Habitual late payer — discuss standing order or payment date change; no arrears currently"
+    else:  # Critical
+        if current_arrears >= monthly_rent * 2:
+            recommendation = "Urgent: arrears exceed 2 months — serve Section 8 notice"
+        elif current_arrears >= monthly_rent:
+            recommendation = "Urgent: issue formal arrears warning — approaching Section 8 threshold"
+        elif current_arrears > 0:
+            recommendation = "Issue arrears warning letter; monitor closely — no Section 8 grounds yet"
+        elif trend == "worsening":
+            recommendation = "Habitual late payer with worsening trend — send formal warning letter"
+        else:
+            recommendation = "Habitual late payer — discuss direct debit or payment date; no arrears currently"
 
     unit = lease.unit
     prop = unit.property if unit else None

@@ -41,6 +41,7 @@ def _cfg_out(cfg: AutopilotConfig) -> dict:
     checks_out = {}
     for check_name, meta in CHECKS_META.items():
         saved = (cfg.checks or {}).get(check_name, {})
+        can_auto = meta.get("can_auto_act", False)
         checks_out[check_name] = {
             "enabled": saved.get("enabled", True),
             "days": saved.get("days", meta["default_days"]),
@@ -48,6 +49,9 @@ def _cfg_out(cfg: AutopilotConfig) -> dict:
             "description": meta["description"],
             "unit": meta["unit"],
             "default_days": meta["default_days"],
+            "can_auto_act": can_auto,
+            "auto_act": saved.get("auto_act", True) if can_auto else False,
+            "auto_act_description": meta.get("auto_act_description", ""),
         }
     return {
         "enabled": cfg.enabled,

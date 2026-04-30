@@ -79,7 +79,7 @@ export default function EpcRoadmap() {
   }
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6">
+    <div className="max-w-4xl space-y-6">
       <div>
         <PageHeader title="EPC Roadmap" subtitle="AI-powered energy efficiency improvement plans" />
       </div>
@@ -101,12 +101,12 @@ export default function EpcRoadmap() {
                 </div>
                 <div className="divide-y divide-gray-100">
                   {items.map(p => (
-                    <div key={p.property_id} className="px-5 py-3 flex items-center gap-4">
+                    <div key={p.unit_id} className="px-5 py-3 flex items-center gap-4">
                       <span className={`w-8 h-8 rounded flex items-center justify-center text-white text-sm font-bold shrink-0 ${EPC_COLORS[p.epc_rating] || 'bg-gray-400'}`}>
                         {p.epc_rating}
                       </span>
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-semibold text-gray-900">{p.property_name}</p>
+                        <p className="text-sm font-semibold text-gray-900">{p.property_name}{p.unit_name ? <span className="text-gray-400 font-normal"> · {p.unit_name}</span> : ''}</p>
                         <p className="text-xs text-gray-400">{p.address} · {p.postcode}</p>
                         {p.vacant
                           ? <p className="text-xs text-red-500 font-medium mt-0.5">Vacant — cannot re-let without EPC C</p>

@@ -1,0 +1,106 @@
+{% extends "documents/base.html" %}
+{% block content %}
+<h1>Notice of Seeking Possession</h1>
+<p style="text-align:center; color:#555; font-size:10pt; margin-bottom:6px;">
+  Housing Act 1988, Schedule 2
+</p>
+<p style="text-align:center; color:#c0392b; font-size:10pt; margin-bottom:20px;">
+  <strong>IMPORTANT NOTICE — Please read carefully</strong>
+</p>
+
+<div class="notice-box warning">
+  <strong>To the Tenant(s):</strong> Your landlord intends to apply to the County Court for an order requiring you to give up possession of your home. Read this notice carefully as it sets out the grounds on which possession is being sought. If you need advice, contact a Citizen's Advice Bureau, Housing Aid Centre, or solicitor immediately.
+</div>
+
+<div class="parties">
+  <table>
+    <tr><td>To (Tenant):</td><td>{{ tenant_name }}</td></tr>
+    <tr><td>Property Address:</td><td>{{ property_address }}</td></tr>
+    <tr><td>Landlord / Agent:</td><td>{{ org_name }}</td></tr>
+    <tr><td>Date of Notice:</td><td>{{ today }}</td></tr>
+    <tr><td>Tenancy Start Date:</td><td>{{ start_date }}</td></tr>
+    <tr><td>Monthly Rent:</td><td>£{{ monthly_rent }}</td></tr>
+  </table>
+</div>
+
+<h2>Grounds for Possession</h2>
+<div class="clause">
+<p>The Landlord intends to seek possession on the following ground(s) under Schedule 2 of the Housing Act 1988:</p>
+
+{% if ground_8 %}
+<div class="notice-box warning" style="margin:12px 0;">
+  <strong>Ground 8 (Mandatory) — Substantial Rent Arrears</strong><br>
+  At the date of service of this notice, at least two months' rent (or eight weeks' rent if paid weekly) is unpaid. The amount currently outstanding is <strong>£{{ "%.2f"|format(arrears_amount) }}</strong>, representing approximately <strong>{{ arrears_weeks }} weeks</strong> of rent arrears. If the tenant owes this amount both at the date of this notice and at the date of the court hearing, the court <em>must</em> grant a possession order.
+</div>
+{% endif %}
+
+{% if ground_10 %}
+<div class="notice-box" style="margin:12px 0; border-color:#e67e22; background:#fef9f0;">
+  <strong>Ground 10 (Discretionary) — Rent Lawfully Due is Unpaid</strong><br>
+  Some rent lawfully due from the tenant is unpaid on the date of service of this notice. The outstanding amount is <strong>£{{ "%.2f"|format(arrears_amount) }}</strong>.
+</div>
+{% endif %}
+
+{% if ground_11 %}
+<div class="notice-box" style="margin:12px 0; border-color:#e67e22; background:#fef9f0;">
+  <strong>Ground 11 (Discretionary) — Persistent Delay in Paying Rent</strong><br>
+  The tenant has persistently delayed paying rent which has become lawfully due, even if the rent is not currently in arrears.
+</div>
+{% endif %}
+
+{% if other_grounds %}
+<div class="notice-box" style="margin:12px 0;">
+  <strong>Additional grounds:</strong> {{ other_grounds }}
+</div>
+{% endif %}
+</div>
+
+<h2>Particulars in Support</h2>
+<div class="clause">
+<p>{{ particulars }}</p>
+{% if arrears_amount %}
+<p>As at the date of this notice, the total outstanding rent arrears are <strong>£{{ "%.2f"|format(arrears_amount) }}</strong>.</p>
+{% endif %}
+{% if payment_history %}
+<p>Recent payment history: {{ payment_history }}</p>
+{% endif %}
+</div>
+
+<h2>Court Proceedings</h2>
+<div class="clause">
+<p>After the expiry of <strong>{{ notice_days }} days</strong> from the date of service of this notice, the Landlord intends to apply to the County Court for an order for possession. The court will fix a date for the hearing and you will be served with notice of the hearing date.</p>
+<p>You should seek independent legal advice as soon as possible. You may be able to prevent possession proceedings if you pay all outstanding rent before the date of the hearing. However, if you are relying on Ground 8, the full arrears must be cleared before the hearing for the court to refuse the order.</p>
+</div>
+
+<div class="notice-box info">
+  <strong>Right to Appeal:</strong> You have the right to ask the court to postpone the date for possession. The court may do this if it considers it reasonable. You may also apply for legal aid if you qualify. Contact your local Citizen's Advice Bureau for free advice.
+</div>
+
+<h2>Service of Notice</h2>
+<div class="clause">
+<p>This notice was served on <strong>{{ today }}</strong> by:</p>
+<table style="width:100%; border-collapse:collapse; margin:8px 0;">
+  <tr><td style="padding:4px 0; width:40%;"><input type="checkbox" {% if service_method == 'hand' %}checked{% endif %}> Hand delivery to the property</td>
+      <td style="padding:4px 0;"><input type="checkbox" {% if service_method == 'post' %}checked{% endif %}> First class post</td></tr>
+  <tr><td style="padding:4px 0;"><input type="checkbox" {% if service_method == 'email' %}checked{% endif %}> Email (with tenant consent)</td>
+      <td style="padding:4px 0;"><input type="checkbox" {% if service_method == 'recorded' %}checked{% endif %}> Recorded delivery</td></tr>
+</table>
+</div>
+
+<div class="signature-block">
+  <div class="signature-line">
+    <hr>
+    <p>Signed: Landlord / Agent ({{ org_name }})</p>
+    <p>Date: {{ today }}</p>
+  </div>
+  <div class="signature-line">
+    <hr>
+    <p>Witness Name: ___________________</p>
+    <p>Witness Address: ___________________</p>
+  </div>
+</div>
+
+<div class="footer" style="margin-top:20px;">
+  Keep a copy of this notice and proof of service for court proceedings. If possession proceedings are issued, you will need to produce this notice as evidence.
+</div>
+{% endblock %}

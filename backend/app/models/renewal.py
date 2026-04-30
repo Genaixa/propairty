@@ -19,5 +19,6 @@ class LeaseRenewal(Base):
     landlord_viewed_at = Column(DateTime(timezone=True), nullable=True)
     sent_at = Column(DateTime(timezone=True), server_default=func.now())
     responded_at = Column(DateTime(timezone=True), nullable=True)
+    responded_via = Column(String, nullable=True)  # "portal" or "agent"
 
     lease = relationship("Lease", back_populates="renewals")

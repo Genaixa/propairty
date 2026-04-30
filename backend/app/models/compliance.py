@@ -22,6 +22,7 @@ class ComplianceCertificate(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     property_id = Column(Integer, ForeignKey("properties.id"), nullable=False)
+    unit_id = Column(Integer, ForeignKey("units.id"), nullable=True)
     cert_type = Column(String, nullable=False)   # gas_safety, epc, eicr, etc.
     issue_date = Column(Date, nullable=False)
     expiry_date = Column(Date, nullable=False)
@@ -31,3 +32,4 @@ class ComplianceCertificate(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     property = relationship("Property", backref="certificates")
+    unit = relationship("Unit", backref="certificates", foreign_keys=[unit_id])

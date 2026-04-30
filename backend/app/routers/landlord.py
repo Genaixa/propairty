@@ -170,6 +170,7 @@ def create_landlord(req: LandlordCreate, db: Session = Depends(get_db), agent: U
 @router.get("/landlords")
 def list_landlords(db: Session = Depends(get_db), agent: User = Depends(get_agent)):
     landlords = db.query(Landlord).filter(Landlord.organisation_id == agent.organisation_id).all()
+    landlords.sort(key=lambda l: (l.full_name or '').split()[-1].lower() if l.full_name else '')
     result = []
     for ll in landlords:
         props = db.query(Property).filter(Property.landlord_id == ll.id, Property.organisation_id == agent.organisation_id).all()
@@ -369,6 +370,7 @@ def portal_financials(landlord: Landlord = Depends(get_current_landlord), db: Se
 
 @router.get("/portal/compliance")
 def portal_compliance(landlord: Landlord = Depends(get_current_landlord), db: Session = Depends(get_db)):
+    from app.models.upload import UploadedFile
     prop_ids = [p.id for p in db.query(Property).filter(Property.landlord_id == landlord.id).all()]
     if not prop_ids:
         return []
@@ -385,17 +387,92 @@ def portal_compliance(landlord: Landlord = Depends(get_current_landlord), db: Se
             status = "expiring_soon"
         else:
             status = "valid"
+        # Most recent file attached to this cert
+        upload = (
+            db.query(UploadedFile)
+            .filter(UploadedFile.entity_type == "compliance_certificate", UploadedFile.entity_id == c.id)
+            .order_by(UploadedFile.created_at.desc())
+            .first()
+        )
+        prop = db.query(Property).filter(Property.id == c.property_id).first()
         result.append({
             "id": c.id,
             "property_id": c.property_id,
+            "property_name": prop.name if prop else "—",
+            "unit_id": c.unit_id,
             "cert_type": c.cert_type,
             "label": CERT_TYPES.get(c.cert_type, {}).get("label", c.cert_type),
             "issue_date": c.issue_date.isoformat() if c.issue_date else None,
             "expiry_date": c.expiry_date.isoformat() if c.expiry_date else None,
             "status": status,
             "days_remaining": days,
+            "upload_id": upload.id if upload else None,
+            "upload_name": upload.original_name if upload else None,
         })
     return result
+
+
+@router.get("/portal/deposits")
+def portal_deposits(landlord: Landlord = Depends(get_current_landlord), db: Session = Depends(get_db)):
+    from app.models.deposit import TenancyDeposit
+    from app.models.tenant import Tenant
+    prop_ids = [p.id for p in db.query(Property).filter(Property.landlord_id == landlord.id).all()]
+    if not prop_ids:
+        return []
+    # Get active leases across all units
+    units = db.query(Unit).filter(Unit.property_id.in_(prop_ids)).all()
+    unit_ids = [u.id for u in units]
+    unit_map = {u.id: u for u in units}
+    prop_map = {p.id: p for p in db.query(Property).filter(Property.id.in_(prop_ids)).all()}
+
+    leases = db.query(Lease).filter(Lease.unit_id.in_(unit_ids)).all()
+    result = []
+    for lease in leases:
+        unit = unit_map.get(lease.unit_id)
+        prop = prop_map.get(unit.property_id) if unit else None
+        tenant = db.query(Tenant).filter(Tenant.id == lease.tenant_id).first() if lease.tenant_id else None
+        deposit = db.query(TenancyDeposit).filter(TenancyDeposit.lease_id == lease.id).first()
+        if not deposit and not lease.deposit:
+            continue
+        dispute_pdf_url = None
+        dispute_summary = None
+        if deposit and deposit.status == "disputed" and deposit.dispute_notes:
+            for line in deposit.dispute_notes.split("\n"):
+                if line.startswith("PDF: "):
+                    fn = line[5:].strip()
+                    if fn:
+                        dispute_pdf_url = f"/api/landlord/portal/dispute-pdf/{fn}"
+                    break
+            dispute_summary = deposit.dispute_notes
+        result.append({
+            "lease_id": lease.id,
+            "property_name": prop.name if prop else "—",
+            "unit_name": unit.name if unit else "—",
+            "tenant_name": tenant.full_name if tenant else "—",
+            "lease_status": lease.status,
+            "deposit_amount": deposit.amount if deposit else lease.deposit,
+            "scheme": deposit.scheme if deposit else None,
+            "scheme_reference": deposit.scheme_reference if deposit else None,
+            "received_date": deposit.received_date.isoformat() if deposit and deposit.received_date else None,
+            "protected_date": deposit.protected_date.isoformat() if deposit and deposit.protected_date else None,
+            "status": deposit.status if deposit else "unknown",
+            "dispute_summary": dispute_summary,
+            "dispute_pdf_url": dispute_pdf_url,
+        })
+    return result
+
+
+@router.get("/portal/dispute-pdf/{filename}")
+def portal_landlord_dispute_pdf(filename: str, landlord: Landlord = Depends(get_current_landlord)):
+    import re
+    from pathlib import Path
+    from fastapi.responses import FileResponse
+    if not re.match(r'^dispute_\d+_\d+\.pdf$', filename):
+        raise HTTPException(status_code=400, detail="Invalid filename")
+    path = Path("/tmp/propairty_pdfs") / filename
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="PDF not found")
+    return FileResponse(str(path), media_type="application/pdf", filename=filename)
 
 
 @router.get("/portal/report")

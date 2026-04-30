@@ -54,7 +54,8 @@ def current_issues(db: Session = Depends(get_db), current_user: User = Depends(g
     overdue_payments = (
         db.query(RentPayment)
         .join(Lease).join(Unit).join(Property)
-        .filter(RentPayment.status.in_(["overdue", "partial"]), Property.organisation_id == org_id)
+        .filter(RentPayment.status.in_(["overdue", "partial"]), Property.organisation_id == org_id,
+                RentPayment.due_date <= date.today())
         .order_by(RentPayment.due_date)
         .all()
     )

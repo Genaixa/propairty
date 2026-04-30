@@ -20,6 +20,7 @@ from app.models.property import Property
 from app.models.tenant import Tenant
 from app.models.contractor import Contractor
 from app.models.organisation import Organisation
+from app.models.landlord import Landlord
 
 import os
 
@@ -34,11 +35,14 @@ def _build_report_data(
     to_date: date,
     property_id: Optional[int],
     db: Session,
+    landlord_id: Optional[int] = None,
 ):
     org = db.query(Organisation).filter(Organisation.id == org_id).first()
 
     # All properties for this org (or filtered)
     prop_query = db.query(Property).filter(Property.organisation_id == org_id)
+    if landlord_id:
+        prop_query = prop_query.filter(Property.landlord_id == landlord_id)
     if property_id:
         prop_query = prop_query.filter(Property.id == property_id)
     properties = prop_query.all()
@@ -53,8 +57,11 @@ def _build_report_data(
         income_rows = []
         expenditure_rows = []
 
+        # Build a fast unit lookup for this property
+        unit_lookup = {u.id: u for u in prop.units}
+
         # --- Income: paid rent payments in date range ---
-        unit_ids = [u.id for u in prop.units]
+        unit_ids = list(unit_lookup.keys())
         if unit_ids:
             payments = (
                 db.query(RentPayment)
@@ -71,9 +78,9 @@ def _build_report_data(
             for p in payments:
                 lease = p.lease
                 tenant = db.query(Tenant).filter(Tenant.id == lease.tenant_id).first() if lease else None
-                unit = db.query(Unit).filter(Unit.id == lease.unit_id).first() if lease else None
+                unit = unit_lookup.get(lease.unit_id) if lease else None
                 income_rows.append({
-                    "paid_date": p.paid_date.strftime("%d/%m/%Y") if p.paid_date else "—",
+                    "paid_date": p.paid_date.isoformat() if p.paid_date else None,
                     "tenant_name": tenant.full_name if tenant else "Unknown",
                     "unit_name": unit.name if unit else "—",
                     "period": p.due_date.strftime("%b %Y") if p.due_date else "—",
@@ -96,11 +103,13 @@ def _build_report_data(
             for j in jobs:
                 contractor = db.query(Contractor).filter(Contractor.id == j.contractor_id).first() if j.contractor_id else None
                 contractor_name = contractor.full_name if contractor else (j.assigned_to or None)
+                unit = unit_lookup.get(j.unit_id)
                 expenditure_rows.append({
-                    "date": j.created_at.strftime("%d/%m/%Y") if j.created_at else "—",
+                    "date": j.created_at.date().isoformat() if j.created_at else None,
                     "title": j.title,
                     "contractor": contractor_name,
                     "invoice_ref": j.invoice_ref,
+                    "unit_name": unit.name if unit else "—",
                     "amount": j.actual_cost,
                 })
 
@@ -112,6 +121,27 @@ def _build_report_data(
         income_count += len(income_rows)
         expenditure_count += len(expenditure_rows)
 
+        # Group by unit for the summary breakdown
+        from collections import defaultdict
+        unit_map: dict = defaultdict(lambda: {"income": 0.0, "expenditure": 0.0, "income_count": 0, "expenditure_count": 0})
+        for r in income_rows:
+            unit_map[r["unit_name"]]["income"] += r["amount"]
+            unit_map[r["unit_name"]]["income_count"] += 1
+        for r in expenditure_rows:
+            unit_map[r["unit_name"]]["expenditure"] += r["amount"]
+            unit_map[r["unit_name"]]["expenditure_count"] += 1
+        units_summary = [
+            {
+                "unit_name": k,
+                "income": v["income"],
+                "expenditure": v["expenditure"],
+                "net": v["income"] - v["expenditure"],
+                "income_count": v["income_count"],
+                "expenditure_count": v["expenditure_count"],
+            }
+            for k, v in sorted(unit_map.items())
+        ]
+
         prop_data.append({
             "name": prop.name,
             "address": f"{prop.address_line1}, {prop.city} {prop.postcode}",
@@ -120,6 +150,7 @@ def _build_report_data(
             "total_income": prop_income,
             "total_expenditure": prop_expenditure,
             "net": prop_income - prop_expenditure,
+            "units": units_summary,
         })
 
     return {
@@ -142,10 +173,11 @@ def get_report(
     from_date: date = Query(...),
     to_date: date = Query(...),
     property_id: Optional[int] = Query(None),
+    landlord_id: Optional[int] = Query(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    return _build_report_data(current_user.organisation_id, from_date, to_date, property_id, db)
+    return _build_report_data(current_user.organisation_id, from_date, to_date, property_id, db, landlord_id)
 
 
 @router.get("/export/pdf")
@@ -153,10 +185,11 @@ def export_pdf(
     from_date: date = Query(...),
     to_date: date = Query(...),
     property_id: Optional[int] = Query(None),
+    landlord_id: Optional[int] = Query(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    data = _build_report_data(current_user.organisation_id, from_date, to_date, property_id, db)
+    data = _build_report_data(current_user.organisation_id, from_date, to_date, property_id, db, landlord_id)
     env = Environment(loader=FileSystemLoader(TEMPLATES_DIR))
     template = env.get_template("documents/income_expenditure.html")
     html_content = template.render(**data)
@@ -174,10 +207,11 @@ def export_csv(
     from_date: date = Query(...),
     to_date: date = Query(...),
     property_id: Optional[int] = Query(None),
+    landlord_id: Optional[int] = Query(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    data = _build_report_data(current_user.organisation_id, from_date, to_date, property_id, db)
+    data = _build_report_data(current_user.organisation_id, from_date, to_date, property_id, db, landlord_id)
 
     output = io.StringIO()
     writer = csv.writer(output)
@@ -211,11 +245,14 @@ def export_csv(
     writer.writerow(["", "", "", "", "Net Profit", f"{data['net_profit']:.2f}"])
     writer.writerow([])
 
-    # Per-property totals
+    # Per-property totals (with unit breakdown for multi-unit properties)
     writer.writerow(["PER-PROPERTY SUMMARY"])
-    writer.writerow(["Property", "Income (£)", "Expenditure (£)", "Net (£)"])
+    writer.writerow(["Property / Unit", "Income (£)", "Expenditure (£)", "Net (£)"])
     for prop in data["properties"]:
         writer.writerow([prop["name"], f"{prop['total_income']:.2f}", f"{prop['total_expenditure']:.2f}", f"{prop['net']:.2f}"])
+        if len(prop.get("units", [])) > 1:
+            for u in prop["units"]:
+                writer.writerow([f"  └ {u['unit_name']}", f"{u['income']:.2f}", f"{u['expenditure']:.2f}", f"{u['net']:.2f}"])
 
     csv_content = output.getvalue()
     filename = f"income_expenditure_{from_date}_{to_date}.csv"
@@ -226,10 +263,27 @@ def export_csv(
     )
 
 
-@router.get("/properties")
-def list_properties(
+@router.get("/landlords")
+def list_landlords(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    props = db.query(Property).filter(Property.organisation_id == current_user.organisation_id).all()
-    return [{"id": p.id, "name": p.name} for p in props]
+    landlords = (
+        db.query(Landlord)
+        .filter(Landlord.organisation_id == current_user.organisation_id)
+        .all()
+    )
+    landlords.sort(key=lambda l: (l.full_name or '').split()[-1].lower() if l.full_name else '')
+    return [{"id": l.id, "full_name": l.full_name} for l in landlords]
+
+
+@router.get("/properties")
+def list_properties(
+    landlord_id: Optional[int] = Query(None),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    q = db.query(Property).filter(Property.organisation_id == current_user.organisation_id)
+    if landlord_id:
+        q = q.filter(Property.landlord_id == landlord_id)
+    return [{"id": p.id, "name": p.name} for p in q.order_by(Property.name).all()]

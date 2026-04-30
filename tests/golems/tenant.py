@@ -39,6 +39,14 @@ class TenantGolem(BaseGolem):
         r = self.get("/api/tenant/portal/me")
         return self.expect(r, 200, "tenant fetch profile")
 
+    def cancel_maintenance(self, job_id: int) -> dict:
+        r = self.post(f"/api/tenant/portal/maintenance/{job_id}/cancel")
+        return self.expect(r, 200, f"tenant cancel maintenance {job_id}")
+
+    def cancel_maintenance_expect_fail(self, job_id: int) -> int:
+        r = self.post(f"/api/tenant/portal/maintenance/{job_id}/cancel")
+        return r.status_code
+
     def get_unread_count(self) -> int:
         r = self.get("/api/tenant/portal/messages/unread-count")
         data = self.expect(r, 200, "tenant unread count")

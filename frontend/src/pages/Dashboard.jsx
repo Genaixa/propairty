@@ -119,7 +119,7 @@ function ActionRequired({ data, riskData }) {
   if (data.deposits_unprotected > 0)
     alerts.push({ label: `${data.deposits_unprotected} unprotected deposit${data.deposits_unprotected > 1 ? 's' : ''}`, to: '/deposits', color: 'red' })
   if (data.inspections_overdue > 0)
-    alerts.push({ label: `${data.inspections_overdue} inspection${data.inspections_overdue > 1 ? 's' : ''} overdue`, to: '/inspections', color: 'amber' })
+    alerts.push({ label: `${data.inspections_overdue} inspection${data.inspections_overdue > 1 ? 's' : ''} overdue`, to: '/inspections?tab=overdue', color: 'amber' })
   if (data.ppm_overdue > 0)
     alerts.push({ label: `${data.ppm_overdue} PPM task${data.ppm_overdue > 1 ? 's' : ''} overdue`, to: '/ppm', color: 'amber' })
   if (data.compliance_expiring_soon > 0)

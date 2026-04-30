@@ -110,6 +110,130 @@ def generate_rent_increase(lease, tenant, unit, org, new_rent: float, effective_
     return _render_pdf("documents/rent_increase.html", ctx)
 
 
+def generate_deed_of_surrender(lease, tenant, unit, org, surrender_date=None, deposit=None,
+                               deductions=None, condition_notes="", outstanding_rent=0.0,
+                               keys_returned="", signature_block=None) -> bytes:
+    from datetime import date as _date
+    dep_amount = deposit.amount if deposit else (lease.deposit or 0)
+    dep_scheme = deposit.scheme if deposit else "Tenancy Deposit Scheme (TDS)"
+    dep_ref = deposit.scheme_reference if deposit else ""
+    deductions = deductions or []
+    total_ded = sum(d.get("amount", 0) for d in deductions)
+    dep_return = max(0, dep_amount - total_ded - outstanding_rent)
+    ctx = _base_context(org.name, ref=f"SUR-{lease.id:04d}")
+    ctx.update({
+        "tenant_name": tenant.full_name,
+        "property_address": f"{unit.property.address_line1}, {unit.property.city}, {unit.property.postcode}",
+        "start_date": lease.start_date.strftime("%-d %B %Y"),
+        "surrender_date": surrender_date.strftime("%-d %B %Y") if surrender_date else _date.today().strftime("%-d %B %Y"),
+        "deposit_amount": f"{dep_amount:,.2f}",
+        "deposit_scheme": dep_scheme,
+        "deposit_ref": dep_ref,
+        "deductions": deductions,
+        "total_deductions": total_ded,
+        "deposit_return": dep_return,
+        "condition_notes": condition_notes,
+        "outstanding_rent": outstanding_rent,
+        "keys_returned": keys_returned,
+    })
+    _inject_sig(ctx, signature_block)
+    return _render_pdf("documents/deed_of_surrender.html", ctx)
+
+
+def generate_nosp(lease, tenant, unit, org, arrears_amount: float = 0.0, ground_8=True,
+                  ground_10=False, ground_11=False, other_grounds="", particulars="",
+                  payment_history="", notice_days=14, service_method="hand", signature_block=None) -> bytes:
+    weekly_rent = lease.monthly_rent * 12 / 52
+    arrears_weeks = round(arrears_amount / weekly_rent, 1) if weekly_rent else 0
+    if not particulars:
+        particulars = (
+            f"The Tenant has failed to pay rent due under the tenancy agreement. "
+            f"As at the date of this notice, the total rent outstanding is £{arrears_amount:,.2f}, "
+            f"representing approximately {arrears_weeks} weeks of rent. "
+            f"The Landlord has made repeated requests for payment which have not been met."
+        )
+    ctx = _base_context(org.name, ref=f"NOSP-{lease.id:04d}")
+    ctx.update({
+        "tenant_name": tenant.full_name,
+        "property_address": f"{unit.property.address_line1}, {unit.property.city}, {unit.property.postcode}",
+        "start_date": lease.start_date.strftime("%-d %B %Y"),
+        "monthly_rent": f"{lease.monthly_rent:,.2f}",
+        "arrears_amount": arrears_amount,
+        "arrears_weeks": arrears_weeks,
+        "ground_8": ground_8,
+        "ground_10": ground_10,
+        "ground_11": ground_11,
+        "other_grounds": other_grounds,
+        "particulars": particulars,
+        "payment_history": payment_history,
+        "notice_days": notice_days,
+        "service_method": service_method,
+    })
+    _inject_sig(ctx, signature_block)
+    return _render_pdf("documents/nosp.html", ctx)
+
+
+def generate_deposit_dispute(lease, tenant, unit, org, deposit=None, claim_items=None,
+                              checkin_notes="", checkout_notes="", checkin_items=None,
+                              timeline=None, supporting_docs=None, rent_arrears=0.0) -> bytes:
+    dep_amount = deposit.amount if deposit else (lease.deposit or 0)
+    dep_scheme = deposit.scheme if deposit else "Tenancy Deposit Scheme (TDS)"
+    dep_ref = deposit.scheme_reference if deposit else ""
+    dep_protected = deposit.protected_date.strftime("%-d %B %Y") if (deposit and deposit.protected_date) else None
+    claim_items = claim_items or []
+    claimed_total = sum(i.get("amount", 0) for i in claim_items)
+    agreed_return = max(0, dep_amount - claimed_total)
+    ctx = _base_context(org.name, ref=f"DD-{lease.id:04d}")
+    ctx.update({
+        "tenant_name": tenant.full_name,
+        "property_address": f"{unit.property.address_line1}, {unit.property.city}, {unit.property.postcode}",
+        "start_date": lease.start_date.strftime("%-d %B %Y"),
+        "end_date": lease.end_date.strftime("%-d %B %Y") if lease.end_date else "Periodic",
+        "monthly_rent": f"{lease.monthly_rent:,.2f}",
+        "deposit_amount": dep_amount,
+        "deposit_scheme": dep_scheme,
+        "deposit_ref": dep_ref,
+        "deposit_protected_date": dep_protected,
+        "claim_items": claim_items,
+        "claimed_amount": claimed_total,
+        "agreed_return": agreed_return,
+        "checkin_notes": checkin_notes,
+        "checkout_notes": checkout_notes,
+        "checkin_items": checkin_items or [],
+        "timeline": timeline or [],
+        "supporting_docs": supporting_docs or [],
+        "rent_arrears": rent_arrears,
+    })
+    return _render_pdf("documents/deposit_dispute.html", ctx)
+
+
+def generate_hmo_guidance(prop, org, units=None, compliance_certs=None) -> bytes:
+    units = units or []
+    bedroom_count = len(units) if units else "Not recorded"
+    mandatory = len(units) >= 5 if units else False
+    additional = len(units) in (3, 4) if units else False
+    cert_list = []
+    for c in (compliance_certs or []):
+        from datetime import date as _date
+        status = "expired" if (c.expiry_date and c.expiry_date < _date.today()) else "valid"
+        cert_list.append({
+            "cert_type": c.cert_type,
+            "status": status,
+            "expiry_date": c.expiry_date.strftime("%-d %B %Y") if c.expiry_date else None,
+        })
+    ctx = _base_context(org.name, ref=f"HMO-{prop.id:04d}")
+    ctx.update({
+        "property_address": f"{prop.address_line1}, {prop.city}, {prop.postcode}",
+        "property_type": getattr(prop, "property_type", "HMO"),
+        "bedroom_count": bedroom_count,
+        "storey_count": getattr(prop, "storeys", None),
+        "mandatory_licence": mandatory,
+        "additional_licence": additional and not mandatory,
+        "compliance_certs": cert_list,
+    })
+    return _render_pdf("documents/hmo_guidance.html", ctx)
+
+
 def generate_financial_report(landlord, properties_data: list, compliance_items: list, renewals: list, report_month: str, org_name: str) -> bytes:
     total_collected = sum(u["collected"] for p in properties_data for u in p["units"])
     total_expected = sum(u["expected"] for p in properties_data for u in p["units"])
@@ -161,6 +285,9 @@ def generate_renewal_offer(renewal, org) -> bytes:
         "is_periodic": renewal.is_periodic == "periodic",
         "agent_notes": renewal.agent_notes or "",
         "current_end": lease.end_date.strftime("%-d %B %Y") if lease and lease.end_date else "—",
+        "renewal_status": renewal.status or "sent",
+        "responded_at": renewal.responded_at.strftime("%-d %B %Y at %H:%M UTC") if renewal.responded_at else None,
+        "responded_via": renewal.responded_via or None,
     })
     return _render_pdf("documents/renewal_offer.html", ctx)
 

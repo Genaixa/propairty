@@ -20,3 +20,11 @@ api.interceptors.response.use(
 )
 
 export default api
+
+/** Build an authenticated download URL for /api/uploads/{id}/download.
+ *  Works for both agent (token) and tenant (tenant_token) sessions.
+ */
+export const dlUrl = (fileId) => {
+  const token = localStorage.getItem('token') || localStorage.getItem('tenant_token') || ''
+  return `/api/uploads/${fileId}/download?token=${encodeURIComponent(token)}`
+}

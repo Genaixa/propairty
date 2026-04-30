@@ -15,7 +15,7 @@ export default function PhoneAgent() {
   }, [])
 
   return (
-    <div className="max-w-3xl mx-auto space-y-6">
+    <div className="max-w-3xl space-y-6">
       <div>
         <PageHeader title="AI Phone Agent" subtitle="Twilio-powered voice intake for maintenance jobs" />
       </div>

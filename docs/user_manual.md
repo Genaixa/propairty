@@ -1,6 +1,6 @@
 # PropAIrty User Manual
 
-_Last updated: 2026-04-26_
+_Last updated: 2026-04-30_
 
 ---
 
@@ -233,8 +233,16 @@ Generate standard tenancy documents:
 - Section 21 Notice
 - Section 8 Notice
 - Check-in / Check-out Report
+- **Management Agreement** — between landlord and agency
+- **Deed of Surrender** — mutual agreement to end a tenancy early, including deposit settlement and deductions
+- **Notice of Seeking Possession (NOSP)** — formal notice before possession proceedings; Ground 8 (mandatory) is auto-selected if arrears exceed two months' rent
 
-Select the tenant and property, then click **Generate** to produce a PDF.
+Two additional documents are generated from a specific record rather than the tenant selector:
+
+- **Deposit Dispute Pack** — open via the Deposits page, generates a ready-to-submit claim pack with chronology table, condition notes, and supporting evidence list
+- **HMO Guidance Report** — open via a property's profile, assesses HMO licensing eligibility and produces a checklist of management regulations and application steps
+
+Select the tenant, property and document type, then click **Generate** to produce a PDF. For Deed of Surrender, enter the agreed surrender date and any notes. For NOSP, confirm the arrears figure.
 
 ---
 
@@ -338,13 +346,13 @@ A quick snapshot of the portfolio's current state: active tenancies, total month
 
 The AI section includes several intelligent tools:
 
-- **AI Chat** — ask questions about your portfolio in plain English
-- **Listing Generator** — write a rental listing description from property details
+- **AI Chat (Mendy)** — ask questions about your portfolio in plain English. Mendy has access to live portfolio data and 30 days of metric history, so you can ask things like "show me rent collection trend" or "chart occupancy this month". Charts appear inline in the chat as bar, line, or pie visualisations.
+- **Listing Generator** — write a rental listing description from property details. Upload photos to include them in the PDF; the generated listing is ready to paste into Rightmove, Zoopla, or OnTheMarket.
 - **Lease Analyser** — upload a lease document and ask questions about it
 - **Valuation** — AI-estimated rental value based on market data
 - **Rent Optimisation** — suggested rent adjustments across the portfolio
 - **Churn Risk** — tenants likely to leave at renewal
-- **Void Minimiser** — tips to reduce void periods
+- **Void Minimiser** — shows at-risk leases grouped by how close they are to expiry (0–30 days through 120+ days). For each lease you can draft a listing or send the tenant a renewal chaser email. Clicking **Email tenant** opens a preview of the email with editable subject and body before it is sent. Emails are sent from the agency's noreply address with your personal email set as the Reply-To, so the tenant's response comes directly back to you.
 - **Phone Agent** — AI voice assistant for tenant calls
 - **Email Triage** — automatically categorise incoming emails
 
@@ -680,4 +688,158 @@ All new checks appear in the Autopilot configuration screen and can be individua
 
 ---
 
+### Compliance matrix — clickable "No Record" cells and per-unit rows
+
+The compliance matrix (Compliance page) has two significant improvements:
+
+**Clickable No Record cells** — previously, clicking a grey "No Record" cell did nothing. Now clicking any cell opens the appropriate form:
+- If a certificate exists → opens the detail/edit modal for that cert
+- If no certificate → opens the Add Certificate form pre-filled with the correct property, certificate type, and unit (for multi-unit properties)
+
+**Per-unit rows for multi-unit properties** — for HMO and multi-unit buildings, the matrix now shows a separate row for each unit rather than a single property row. Each unit's compliance status is tracked independently. Property-level certificates (those without a unit assigned) count as a fallback for all units.
+
+[SCREENSHOT: Compliance matrix showing Riverside House with one row per flat, each with its own gas safety / EICR / EPC status cells]
+
+### Landlord portal — Compliance certificates now include download links
+
+The **Compliance** tab in the landlord portal now shows the property name for each certificate, and includes a **View →** download link when a PDF or image has been attached to the certificate. Landlords can now view their own compliance documents directly from their portal.
+
+### Landlord portal — new Deposits tab
+
+A new **Deposits** tab has been added to the landlord portal. It shows:
+- Which unit and tenant each deposit relates to
+- The deposit amount
+- The protection scheme (TDS / DPS / myDeposits)
+- The scheme reference number
+- The date the deposit was protected
+- The current status
+
+[SCREENSHOT: Landlord portal Deposits tab showing table with property, tenant, amount, scheme, reference, protected date, and status columns]
+
+### Certificate PDF downloads — all portal types now work
+
+Downloading compliance certificate PDFs now works from all three portals (agent, tenant, landlord). Previously the download link returned 401 for landlord tokens. Fixed.
+
+---
+
+---
+
+## Appendix — Recent Changes (2026-04-30)
+
+### Mendy AI — trend charts and 30-day metric history
+
+Mendy (the AI Chat assistant) can now answer questions about how your portfolio metrics have changed over time, and can display the results as inline charts.
+
+Ask things like:
+- "Show me the rent collection rate over the last month"
+- "Chart occupancy this week"
+- "How has average rent changed recently?"
+
+Mendy automatically selects the best chart type (bar, line, or pie) and renders it directly in the conversation. The underlying data is a rolling 30-day log of 10 portfolio metrics captured each night.
+
+[SCREENSHOT: Mendy chat window with a bar chart showing rent collection rate over the last 30 days]
+
+### Four new legal documents
+
+The Documents page now includes four additional document types:
+
+**Deed of Surrender**
+A mutual agreement to end a tenancy before the lease expiry date. Select the tenant, enter the agreed surrender date and any condition notes, and the system generates a formal deed covering deposit settlement (with optional deductions), outstanding rent, and key return confirmation. Both parties sign the output.
+
+**Notice of Seeking Possession (NOSP)**
+Required before commencing possession proceedings. Ground 8 (mandatory, rent ≥ 2 months overdue) is automatically included if the arrears amount exceeds two months' rent. Grounds 10 and 11 are included by default. The notice includes service method checkboxes and a witness signature block.
+
+**Deposit Dispute Pack**
+Generated from the Deposits page rather than the Documents page. Opens a complete submission pack for your deposit scheme adjudicator: claim summary table, chronology of events, check-in and check-out condition notes, and a supporting evidence list. Includes a statement of truth.
+
+**HMO Guidance Report**
+Generated from a property's profile page. Assesses whether the property meets the HMO licensing threshold, lists the applicable HMO Management Regulations, and produces a step-by-step application checklist. Pulls in any existing compliance certificates from the database.
+
+[SCREENSHOT: Documents page showing new Deed of Surrender and NOSP cards alongside existing document types]
+
+### Void Minimiser — editable email preview before sending
+
+Clicking **Email tenant** on the Void Minimiser page now opens a preview modal before the email is sent. You can edit both the subject line and the message body before it goes out.
+
+The email is pre-filled with:
+- The tenant's first name
+- Property name and unit
+- Lease end date and monthly rent
+- A link to the tenant portal Renewal tab
+- Your name, email address, and agency name as the closing signature
+
+Emails are sent from the agency's noreply address. Your personal email is set as the **Reply-To** address, so any reply from the tenant lands directly in your inbox.
+
+[SCREENSHOT: Void Minimiser email preview modal showing editable subject and body with Send and Cancel buttons]
+
+---
+
 _This manual is maintained alongside the codebase and updated at the end of each development session._
+
+### Navigation — Intelligence menu organised into sections
+
+The **Intelligence** sidebar group is now divided into labelled sub-sections so it's easier to find the right tool:
+
+- **Overview** — Analytics · CFO Dashboard · Market News
+- **Property & Revenue** — Valuation · Rent Optimiser · EPC Roadmap
+- **Tenant** — Renewals · Churn Risk · Void Minimiser
+- **Risk & Compliance** — Risk · Insurance Claims
+- **AI Tools** — Email Triage · AI Phone Agent · Lease Analyser · Listing Generator · Contractor Perf. · Surveys
+
+Market News has also moved here from Admin — it's market context, not a settings page.
+
+### Smart Inbox (Email Triage) — redesigned
+
+The Email Triage page has been redesigned to reduce visual clutter:
+
+- Channel configuration (Gmail, Outlook, SMS, WhatsApp, Telegram) is now hidden behind a small **Channels** button in the top-right — it only needs to be visited once during setup.
+- Pending/Urgent counts appear quietly under the page title.
+- The queue uses status tabs (Pending / Actioned / All) instead of dropdowns, with a coloured left stripe on each item indicating urgency at a glance.
+- Clicking a maintenance-related message now shows an **Open maintenance** button that links directly to that specific job rather than the maintenance list.
+
+### Email Triage → direct links to maintenance jobs
+
+When a tenant emails about a maintenance issue and a job is auto-created, the triage panel now links directly to that job (`/maintenance?job=ID`). Clicking the link opens the job drawer immediately without needing to search.
+
+If a linked job has since been deleted, the maintenance page shows a clear notice rather than silently doing nothing.
+
+[SCREENSHOT: Email Triage showing "Open maintenance" button linking directly to a specific job]
+
+---
+
+## Appendix — Recent Changes (2026-04-30, session 2)
+
+### Feature #57 — Making Tax Digital (HMRC MTD)
+
+PropAIrty now connects directly to HMRC for Making Tax Digital for Income Tax (MTD ITSA) — the legal requirement for landlords with income over £50,000 to submit quarterly financial updates digitally from April 2026.
+
+**Where to find it:** Accounting → Making Tax Digital tab (marked PREMIUM)
+
+**What it does:**
+- Connects to your HMRC Government Gateway account via a secure OAuth login
+- Retrieves your quarterly obligation periods automatically
+- Builds the correct HMRC-format submission from your existing rent and expense data — no double entry
+- Submits quarterly updates directly to HMRC in one click
+- Marks quarters as ✓ Submitted once accepted
+
+**Setup (one-time):**
+1. Go to Accounting → Making Tax Digital → click **Connect HMRC Account**
+2. Log in with your HMRC Government Gateway credentials
+3. Once connected, enter your **National Insurance Number (NINO)** and click Save
+4. Click **Fetch** next to Property Business ID — it retrieves your HMRC business source ID automatically
+5. You are now ready to submit
+
+**Submitting a quarter:**
+1. Find the quarter in the table (e.g. Q1 2026/27)
+2. Click **Preview** to see the exact figures and JSON payload before sending
+3. Click **Submit to HMRC** — you will see ✓ Submitted on success
+
+Quarters before 2026-27 are labelled **Pre-MTD** and cannot be submitted (the mandate only applies from the 2026-27 tax year onwards).
+
+Your HMRC connection persists across server restarts — you do not need to reconnect each session.
+
+[SCREENSHOT: Making Tax Digital tab showing Connected status, NINO field, quarterly table with ✓ Submitted on Q1 2026/27]
+
+### Landing page — feature count updated
+
+The public marketing site now correctly reflects the full feature set: **57 features** (was 33). The Agent Portal tab shows 29 features including the new MTD entry.

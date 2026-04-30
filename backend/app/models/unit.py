@@ -24,6 +24,8 @@ class Unit(Base):
     available_from = Column(Date, nullable=True)        # availability date
     furnished = Column(String, nullable=True)            # furnished | unfurnished | part-furnished
     deposit_weeks = Column(Integer, default=5)          # weeks of rent as deposit (5-week cap)
+    epc_rating = Column(String(1), nullable=True)        # A-G, overrides property-level EPC for this unit
+    epc_potential = Column(String(1), nullable=True)     # A-G potential after improvements
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     property = relationship("Property", back_populates="units")

@@ -1,4 +1,5 @@
 import { BrowserRouter, Routes, Route, Navigate, useParams, useLocation } from 'react-router-dom'
+import InventoryAck from './pages/InventoryAck'
 import { useEffect } from 'react'
 import { isLoggedIn } from './lib/auth'
 import Layout from './components/Layout'
@@ -161,6 +162,7 @@ export default function App() {
         <Route path="/demos" element={<Demos />} />
         <Route path="/privacy" element={<Privacy />} />
         <Route path="/sign/:token" element={<Sign />} />
+        <Route path="/inventory/ack/:token" element={<InventoryAck />} />
         <Route path="/terms" element={<Terms />} />
         <Route path="/site/:slug" element={<SiteRoute />} />
         <Route path="/site/:slug/about" element={<PublicAbout />} />

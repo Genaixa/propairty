@@ -1,0 +1,83 @@
+{% extends "documents/base.html" %}
+{% block content %}
+<h1>Deed of Surrender of Tenancy</h1>
+<p style="text-align:center; color:#555; font-size:10pt; margin-bottom:20px;">
+  By Mutual Agreement under the Law of Property Act 1925
+</p>
+
+<div class="notice-box info">
+  <strong>Important:</strong> This deed records the voluntary surrender of the tenancy by mutual agreement between the Landlord/Agent and the Tenant. Both parties must sign for this deed to be legally effective.
+</div>
+
+<div class="parties">
+  <table>
+    <tr><td>Landlord / Agent:</td><td>{{ org_name }}</td></tr>
+    <tr><td>Tenant(s):</td><td>{{ tenant_name }}</td></tr>
+    <tr><td>Property:</td><td>{{ property_address }}</td></tr>
+    <tr><td>Original Tenancy Start:</td><td>{{ start_date }}</td></tr>
+    <tr><td>Date of Surrender:</td><td>{{ surrender_date }}</td></tr>
+    <tr><td>Security Deposit:</td><td>£{{ deposit_amount }}</td></tr>
+    <tr><td>Deposit Scheme:</td><td>{{ deposit_scheme }}</td></tr>
+  </table>
+</div>
+
+<h2>1. Agreement to Surrender</h2>
+<div class="clause">
+<p>The Tenant hereby surrenders and yields up to the Landlord all interest in the above Property with effect from <strong>{{ surrender_date }}</strong>. The Landlord accepts this surrender. The tenancy agreement dated <strong>{{ start_date }}</strong> is hereby terminated by mutual consent with effect from the Surrender Date.</p>
+</div>
+
+<h2>2. Vacation of Property</h2>
+<div class="clause">
+<p>The Tenant confirms that they have vacated the Property and returned possession to the Landlord on the Surrender Date. All keys, fobs, and access devices have been returned. The Tenant confirms they have removed all personal belongings from the Property.</p>
+</div>
+
+<h2>3. Property Condition</h2>
+<div class="clause">
+<p>{{ condition_notes or 'The parties confirm that the condition of the property has been agreed between them at the time of surrender. Any outstanding repair obligations of the Tenant will be reflected in the deposit settlement below.' }}</p>
+</div>
+
+<h2>4. Deposit Settlement</h2>
+<div class="clause">
+<p>The security deposit of <strong>£{{ deposit_amount }}</strong> held in the <strong>{{ deposit_scheme }}</strong> scheme (reference: {{ deposit_ref or 'see scheme records' }}) shall be dealt with as follows:</p>
+<table style="width:100%; border-collapse:collapse; margin:10px 0;">
+  <tr style="background:#f5f5f5;"><th style="text-align:left; padding:6px 10px; border:1px solid #ddd;">Item</th><th style="text-align:right; padding:6px 10px; border:1px solid #ddd;">Amount</th></tr>
+  {% for item in deductions %}
+  <tr><td style="padding:6px 10px; border:1px solid #ddd;">{{ item.description }}</td><td style="text-align:right; padding:6px 10px; border:1px solid #ddd;">£{{ "%.2f"|format(item.amount) }}</td></tr>
+  {% endfor %}
+  <tr style="font-weight:bold; background:#f5f5f5;"><td style="padding:6px 10px; border:1px solid #ddd;">Total Deductions</td><td style="text-align:right; padding:6px 10px; border:1px solid #ddd;">£{{ "%.2f"|format(total_deductions) }}</td></tr>
+  <tr style="font-weight:bold;"><td style="padding:6px 10px; border:1px solid #ddd;">Deposit Returned to Tenant</td><td style="text-align:right; padding:6px 10px; border:1px solid #ddd;">£{{ "%.2f"|format(deposit_return) }}</td></tr>
+</table>
+{% if not deductions %}
+<p>The full deposit of <strong>£{{ deposit_amount }}</strong> shall be returned to the Tenant within 10 working days of the Surrender Date.</p>
+{% endif %}
+</div>
+
+<h2>5. Release of Obligations</h2>
+<div class="clause">
+<p>Subject to the deposit settlement above, both parties release each other from all obligations and liabilities arising under the tenancy agreement from and after the Surrender Date. This release does not affect any accrued rights or obligations arising before the Surrender Date.</p>
+</div>
+
+<h2>6. Rent to Surrender Date</h2>
+<div class="clause">
+<p>The Tenant confirms that all rent due up to and including the Surrender Date has been paid in full{% if outstanding_rent %}, with the exception of £{{ "%.2f"|format(outstanding_rent) }} which shall be deducted from the deposit{% endif %}.</p>
+</div>
+
+<div class="notice-box" style="margin-top:24px;">
+  <strong>Keys Returned:</strong> {{ keys_returned or 'All keys returned on surrender date.' }}
+</div>
+
+<p style="margin-top:20px;">By signing below, both parties confirm they have read, understood, and agreed to the terms of this Deed of Surrender.</p>
+
+<div class="signature-block">
+  <div class="signature-line">
+    <hr>
+    <p>Landlord / Agent: {{ org_name }}</p>
+    <p>Date: ___________________</p>
+  </div>
+  <div class="signature-line">
+    <hr>
+    <p>Tenant: {{ tenant_name }}</p>
+    <p>Date: ___________________</p>
+  </div>
+</div>
+{% endblock %}

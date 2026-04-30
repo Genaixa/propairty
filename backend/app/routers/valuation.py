@@ -114,8 +114,8 @@ def portfolio_summary(
 
         if value:
             total_value += value
-        total_annual_rent += annual_rent
-        total_annual_maintenance += annual_maintenance
+            total_annual_rent += annual_rent
+            total_annual_maintenance += annual_maintenance
 
     valued_count = sum(1 for i in items if i["estimated_value"])
     # Weighted by value rather than a simple average of per-property yields

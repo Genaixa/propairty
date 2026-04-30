@@ -371,7 +371,7 @@ export default function LeaseAnalyser() {
   }
 
   return (
-    <div className="p-6 max-w-3xl mx-auto">
+    <div className="max-w-3xl space-y-6">
       <PageHeader title="AI Lease Analyser" subtitle="Upload a lease PDF — AI extracts key terms and flags unusual clauses" />
 
       <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">

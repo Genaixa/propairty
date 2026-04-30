@@ -26,6 +26,7 @@ export default function RightToRent() {
   const [editing, setEditing] = useState(null)
   const [sortCol, setSortCol] = useState('full_name')
   const [sortDir, setSortDir] = useState('asc')
+  const [activeFilter, setActiveFilter] = useState(null)
 
   const fmt = d => d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
 
@@ -59,6 +60,10 @@ export default function RightToRent() {
     if (av > bv) return sortDir === 'asc' ? 1 : -1
     return 0
   })
+
+  const displayedTenants = activeFilter ? sortedTenants.filter(t => t.status === activeFilter) : sortedTenants
+  function toggleFilter(f) { setActiveFilter(v => v === f ? null : f) }
+
   const [form, setForm] = useState({ rtr_document_type: 'british_passport', rtr_check_date: '', rtr_expiry_date: '' })
   const [saving, setSaving] = useState(false)
 
@@ -98,33 +103,40 @@ export default function RightToRent() {
   if (loading) return <div className="p-8 text-gray-500">Loading...</div>
 
   return (
-    <div className="p-6 max-w-5xl mx-auto">
+    <div>
       <PageHeader title="Right to Rent" subtitle="UK immigration status checks · £20,000 penalty for non-compliance" />
 
       {(counts.expired > 0 || counts.expiring_soon > 0 || counts.not_checked > 0) && (
         <div className="grid grid-cols-3 gap-4 mb-6">
           {counts.expired > 0 && (
-            <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-center">
+            <button onClick={() => toggleFilter('expired')} className={`rounded-xl border p-4 text-center transition-all ${activeFilter === 'expired' ? 'ring-2 ring-red-400 bg-red-100 border-red-400' : 'bg-red-50 border-red-200 hover:ring-2 hover:ring-red-300'}`}>
               <div className="text-2xl font-bold text-red-700">{counts.expired}</div>
               <div className="text-sm text-red-600 font-medium">Expired</div>
-            </div>
+            </button>
           )}
           {counts.expiring_soon > 0 && (
-            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-center">
+            <button onClick={() => toggleFilter('expiring_soon')} className={`rounded-xl border p-4 text-center transition-all ${activeFilter === 'expiring_soon' ? 'ring-2 ring-amber-400 bg-amber-100 border-amber-400' : 'bg-amber-50 border-amber-200 hover:ring-2 hover:ring-amber-300'}`}>
               <div className="text-2xl font-bold text-amber-700">{counts.expiring_soon}</div>
               <div className="text-sm text-amber-600 font-medium">Expiring Soon</div>
-            </div>
+            </button>
           )}
           {counts.not_checked > 0 && (
-            <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-center">
+            <button onClick={() => toggleFilter('not_checked')} className={`rounded-xl border p-4 text-center transition-all ${activeFilter === 'not_checked' ? 'ring-2 ring-red-400 bg-red-100 border-red-400' : 'bg-red-50 border-red-200 hover:ring-2 hover:ring-red-300'}`}>
               <div className="text-2xl font-bold text-red-700">{counts.not_checked}</div>
               <div className="text-sm text-red-600 font-medium">Not Checked</div>
-            </div>
+            </button>
           )}
         </div>
       )}
 
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+        {activeFilter && (
+          <div className="flex items-center gap-2 px-4 py-2.5 bg-gray-50 border-b border-gray-200 text-xs text-gray-500">
+            Filtered: <span className="font-medium text-gray-700">{{ expired: 'Expired', expiring_soon: 'Expiring Soon', not_checked: 'Not Checked' }[activeFilter]}</span>
+            · {displayedTenants.length} result{displayedTenants.length !== 1 ? 's' : ''}
+            <button onClick={() => setActiveFilter(null)} className="ml-auto text-indigo-600 hover:underline">Show all</button>
+          </div>
+        )}
         <table className="w-full text-sm">
           <thead className="bg-gray-50 text-gray-500 text-xs uppercase">
             <tr>
@@ -137,7 +149,7 @@ export default function RightToRent() {
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
-            {sortedTenants.map(t => (
+            {displayedTenants.map(t => (
               <tr key={t.tenant_id} className="hover:bg-gray-50">
                 <td className="px-4 py-3 font-medium text-gray-900">{t.full_name}</td>
                 <td className="px-4 py-3 text-gray-600">{t.rtr_document_type ? DOC_LABELS[t.rtr_document_type] || t.rtr_document_type : '—'}</td>

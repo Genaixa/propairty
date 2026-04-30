@@ -44,7 +44,7 @@ export default function TaxSummary() {
   }
 
   return (
-    <div className="p-6 max-w-4xl mx-auto">
+    <div>
       <PageHeader title="Tax Summary" subtitle="Annual income & expense summary for landlord self-assessment" />
 
       <div className="bg-white border border-gray-200 rounded-xl p-6 mb-6">
@@ -88,7 +88,11 @@ export default function TaxSummary() {
 
       {data && !data.error && (() => {
         const grossIncome = data.gross_rental_income || 0
-        const totalExpenses = (data.maintenance_expenses || 0) + (data.management_fee_estimate || 0)
+        const maintenance = data.maintenance_expenses || 0
+        const mgmtFee = data.management_fee_estimate || 0
+        const mgmtFeePct = data.management_fee_rate_pct || 10
+        const mgmtFeeIsEstimate = data.management_fee_is_estimate ?? true
+        const netBeforeFees = grossIncome - maintenance
         const netProfit = data.net_profit_estimate || 0
         const estimatedTax = netProfit > 12570 ? Math.round((netProfit - 12570) * 0.2 * 100) / 100 : 0
 
@@ -106,18 +110,52 @@ export default function TaxSummary() {
 
         return (
           <div className="space-y-4">
-            <div className="grid grid-cols-4 gap-4">
-              {[
-                { label: 'Gross Rental Income', value: `£${grossIncome.toFixed(2)}`, color: 'text-green-600' },
-                { label: 'Total Expenses', value: `£${totalExpenses.toFixed(2)}`, color: 'text-red-600' },
-                { label: 'Net Profit', value: `£${netProfit.toFixed(2)}`, color: netProfit >= 0 ? 'text-green-600' : 'text-red-600' },
-                { label: 'Est. Tax (20% basic rate)', value: `£${estimatedTax.toFixed(2)}`, color: 'text-amber-600' },
-              ].map(({ label, value, color }) => (
-                <div key={label} className="bg-white border border-gray-200 rounded-xl p-4 text-center">
-                  <div className={`text-xl font-bold ${color}`}>{value}</div>
-                  <div className="text-xs text-gray-500 mt-1">{label}</div>
+            {/* P&L waterfall */}
+            <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+              <div className="px-5 py-3 bg-gray-50 border-b border-gray-100">
+                <h3 className="text-sm font-semibold text-gray-700">Income &amp; Expense Summary</h3>
+                <p className="text-xs text-gray-400">{data.period}</p>
+              </div>
+              <div className="divide-y divide-gray-100">
+                <div className="flex items-center justify-between px-5 py-3">
+                  <span className="text-sm text-gray-700">Gross rental income</span>
+                  <span className="text-sm font-semibold text-green-600">£{grossIncome.toLocaleString('en-GB', { minimumFractionDigits: 2 })}</span>
                 </div>
-              ))}
+                {maintenance > 0 && (
+                  <div className="flex items-center justify-between px-5 py-3">
+                    <span className="text-sm text-gray-500 pl-4">Less: maintenance &amp; repairs (actual)</span>
+                    <span className="text-sm text-red-500">−£{maintenance.toLocaleString('en-GB', { minimumFractionDigits: 2 })}</span>
+                  </div>
+                )}
+                <div className="flex items-center justify-between px-5 py-3 bg-gray-50/60">
+                  <span className="text-sm font-medium text-gray-700">Net before agency fees</span>
+                  <span className="text-sm font-semibold text-gray-800">£{netBeforeFees.toLocaleString('en-GB', { minimumFractionDigits: 2 })}</span>
+                </div>
+                {mgmtFee > 0 && (
+                  <div className="flex items-center justify-between px-5 py-3">
+                    <div>
+                      <span className="text-sm text-gray-500 pl-4">
+                        Less: agency management fees{mgmtFeeIsEstimate ? ' (estimated)' : ''}
+                      </span>
+                      <span className={`ml-2 text-xs font-medium px-1.5 py-0.5 rounded ${mgmtFeeIsEstimate ? 'bg-amber-100 text-amber-700' : 'bg-green-100 text-green-700'}`}>
+                        {mgmtFeePct}% of gross{mgmtFeeIsEstimate ? ' · no rate set' : ' · agreed rate'}
+                      </span>
+                    </div>
+                    <span className="text-sm text-red-500">−£{mgmtFee.toLocaleString('en-GB', { minimumFractionDigits: 2 })}</span>
+                  </div>
+                )}
+                <div className="flex items-center justify-between px-5 py-4 bg-blue-50/40">
+                  <span className="text-sm font-semibold text-gray-800">Net profit estimate</span>
+                  <span className={`text-lg font-bold ${netProfit >= 0 ? 'text-blue-700' : 'text-red-600'}`}>£{netProfit.toLocaleString('en-GB', { minimumFractionDigits: 2 })}</span>
+                </div>
+                <div className="flex items-center justify-between px-5 py-3 bg-amber-50/40">
+                  <div>
+                    <span className="text-sm text-gray-600">Estimated tax liability</span>
+                    <span className="ml-2 text-xs text-gray-400">20% basic rate · above £12,570 personal allowance</span>
+                  </div>
+                  <span className="text-sm font-semibold text-amber-700">£{estimatedTax.toLocaleString('en-GB', { minimumFractionDigits: 2 })}</span>
+                </div>
+              </div>
             </div>
 
             <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
@@ -156,14 +194,6 @@ export default function TaxSummary() {
                       </tr>
                     )
                   })}
-                  {data.management_fee_estimate > 0 && (
-                    <tr className="bg-gray-50 text-xs text-gray-400 italic">
-                      <td className="px-4 py-2" colSpan={2}>Estimated management fees (12%)</td>
-                      <td className="px-4 py-2 text-right"></td>
-                      <td className="px-4 py-2 text-right text-red-400">£{data.management_fee_estimate.toFixed(2)}</td>
-                      <td></td>
-                    </tr>
-                  )}
                 </tbody>
               </table>
             </div>

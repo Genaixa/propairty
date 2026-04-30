@@ -40,16 +40,17 @@ def get_dashboard(db: Session = Depends(get_db), current_user: User = Depends(ge
     total_rent = sum(l.monthly_rent for l in monthly_income)
     occupancy_rate = round((occupied / units * 100) if units > 0 else 0, 1)
 
-    # Arrears
+    # Arrears — only flag payments whose due date has passed
+    today = date.today()
     arrears_payments = db.query(RentPayment).join(Lease).join(Unit).join(Property).filter(
         Property.organisation_id == org_id,
-        RentPayment.status.in_(["overdue", "partial"])
+        RentPayment.status.in_(["overdue", "partial"]),
+        RentPayment.due_date <= today
     ).all()
     arrears_count = len(arrears_payments)
     arrears_total = sum((p.amount_due - (p.amount_paid or 0)) for p in arrears_payments)
 
     # Leases expiring within 60 days
-    today = date.today()
     from datetime import timedelta
     cutoff = today + timedelta(days=60)
     expiring_soon = db.query(Lease).join(Unit).join(Property).filter(

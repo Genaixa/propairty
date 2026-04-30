@@ -1,0 +1,121 @@
+{
+  "tenants": {
+    "7": {
+      "last_maintenance_reported": "2026-04-26",
+      "open_issues": [
+        92
+      ],
+      "last_message_sent": "2026-04-30"
+    },
+    "9": {
+      "last_message_sent": "2026-04-27"
+    },
+    "1": {
+      "last_maintenance_reported": "2026-04-24",
+      "open_issues": [
+        84
+      ],
+      "last_message_sent": "2026-04-30"
+    },
+    "3": {
+      "last_maintenance_reported": "2026-04-24",
+      "open_issues": [
+        81
+      ],
+      "last_message_sent": "2026-04-27"
+    },
+    "4": {
+      "last_message_sent": "2026-04-24",
+      "last_maintenance_reported": "2026-04-24",
+      "open_issues": [
+        82
+      ]
+    },
+    "5": {
+      "last_message_sent": "2026-04-30",
+      "last_maintenance_reported": "2026-04-25",
+      "open_issues": [
+        85
+      ]
+    },
+    "6": {},
+    "2": {},
+    "20": {
+      "last_message_sent": "2026-04-26"
+    }
+  },
+  "jobs": {
+    "81": {
+      "stage": "in_progress",
+      "stage_entered": "2026-04-28",
+      "contractor_trade": "plumbing",
+      "notes_added": 1,
+      "complete_target_days": 7,
+      "contractor_id": 12
+    },
+    "82": {
+      "stage": "assigned",
+      "stage_entered": "2026-04-24",
+      "contractor_trade": "electrical",
+      "notes_added": 0,
+      "complete_target_days": 6,
+      "contractor_id": 11
+    },
+    "84": {
+      "stage": "in_progress",
+      "stage_entered": "2026-04-28",
+      "contractor_trade": "plumbing",
+      "notes_added": 2,
+      "complete_target_days": 7,
+      "contractor_id": 12
+    },
+    "85": {
+      "stage": "assigned",
+      "stage_entered": "2026-04-25",
+      "contractor_trade": "plumbing",
+      "notes_added": 0,
+      "complete_target_days": 10,
+      "contractor_id": 12
+    },
+    "90": {
+      "stage": "in_progress",
+      "stage_entered": "2026-04-27",
+      "contractor_id": 12,
+      "notes_added": 2
+    },
+    "92": {
+      "stage": "in_progress",
+      "stage_entered": "2026-04-28",
+      "contractor_trade": "gas",
+      "notes_added": 2,
+      "complete_target_days": 10,
+      "contractor_id": 11
+    },
+    "107": {
+      "stage": "in_progress",
+      "stage_entered": "2026-04-28",
+      "contractor_id": 12,
+      "notes_added": 1
+    }
+  },
+  "landlords": {
+    "6": {
+      "last_message": "2026-04-30"
+    },
+    "7": {},
+    "2": {
+      "last_message": "2026-04-24"
+    },
+    "1": {
+      "last_message": "2026-04-24"
+    },
+    "8": {
+      "last_message": "2026-04-24"
+    },
+    "9": {
+      "last_message": "2026-04-27"
+    },
+    "5": {}
+  },
+  "last_run": "2026-04-30T17:30:06.362707"
+}

@@ -1,7 +1,7 @@
 import os
 import uuid
 from pathlib import Path
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from typing import Optional
@@ -140,12 +140,48 @@ def list_files(
 @router.get("/{file_id}/download")
 def download_file(
     file_id: int,
+    token: Optional[str] = Query(None),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
 ):
+    """Download a file. Accepts auth via Bearer header OR ?token= query param (needed for <a href> links)."""
+    from app.config import settings
+    from jose import jwt, JWTError
+
+    org_id = None
+
+    from fastapi import Request
+    if token:
+        try:
+            payload = jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
+            token_type = payload.get("type")
+            if token_type == "tenant":
+                from app.models.tenant import Tenant as TenantModel
+                tenant_id = int(payload.get("sub"))
+                tenant = db.query(TenantModel).filter(TenantModel.id == tenant_id).first()
+                if tenant:
+                    org_id = tenant.organisation_id
+            elif token_type == "landlord":
+                from app.models.landlord import Landlord
+                landlord_id = int(payload.get("sub"))
+                landlord = db.query(Landlord).filter(Landlord.id == landlord_id).first()
+                if landlord:
+                    org_id = landlord.organisation_id
+            else:
+                user_id = int(payload.get("sub"))
+                user = db.query(User).filter(User.id == user_id).first()
+                if user and user.is_active:
+                    org_id = user.organisation_id
+        except (JWTError, Exception):
+            raise HTTPException(status_code=401, detail="Invalid token")
+    else:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+
+    if org_id is None:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+
     record = db.query(UploadedFile).filter(
         UploadedFile.id == file_id,
-        UploadedFile.organisation_id == current_user.organisation_id,
+        UploadedFile.organisation_id == org_id,
     ).first()
     if not record:
         raise HTTPException(status_code=404, detail="File not found")

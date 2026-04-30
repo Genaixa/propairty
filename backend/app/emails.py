@@ -18,7 +18,7 @@ from app.models.user import User
 from app.models.compliance import ComplianceCertificate, CERT_TYPES
 
 
-def _send_email(to_email: str, subject: str, html: str):
+def _send_email(to_email: str, subject: str, html: str, reply_to: str = None):
     if not settings.smtp_host or not settings.smtp_user:
         print(f"[email] SMTP not configured — skipping email to {to_email}")
         return False
@@ -27,6 +27,8 @@ def _send_email(to_email: str, subject: str, html: str):
         msg["Subject"] = subject
         msg["From"] = settings.smtp_from
         msg["To"] = to_email
+        if reply_to:
+            msg["Reply-To"] = reply_to
         msg.attach(MIMEText(html, "html"))
 
         ctx = ssl.create_default_context()
@@ -414,26 +416,105 @@ def send_maintenance_update(tenant: Tenant, job_title: str, new_status: str, org
     _send_email(tenant.email, subject, html)
 
 
-def send_void_renewal_chaser(tenant: Tenant, lease, unit: Unit, prop: Property, org: Organisation, agent_name: str):
+def send_tenant_contractor_assigned(tenant: Tenant, job_title: str, contractor_name: str, org):
+    if not tenant.email:
+        return
+    first = html.escape(tenant.full_name.split()[0])
+    subject = f"Update on your maintenance request: {job_title}"
+    body = f"""
+    <h2>Contractor assigned</h2>
+    <p>Hi {first},</p>
+    <p>Good news — we've assigned a contractor to your maintenance request.</p>
+    <div class="amount-box">
+      <div class="label">Issue</div>
+      <div class="amount" style="font-size:16px">{html.escape(job_title)}</div>
+    </div>
+    <p><strong>Assigned to:</strong> {html.escape(contractor_name)}</p>
+    <p>We'll be in touch once a visit date has been agreed. You can track progress in your tenant portal.</p>
+    <a href="https://propairty.co.uk/tenant/portal" class="cta">View your tenant portal</a>
+    """
+    _send_email(tenant.email, subject, _base_template(subject, body, org.name if org else "PropAIrty"))
+
+
+def send_contractor_job_assigned(contractor, job_title: str, prop_name: str, unit_name: str, org):
+    if not contractor.email:
+        return
+    first = html.escape((contractor.full_name or contractor.company_name or "").split()[0] or "there")
+    subject = f"New job assigned: {job_title}"
+    location = html.escape(f"{prop_name} · {unit_name}" if prop_name else unit_name or "")
+    body = f"""
+    <h2>New job assigned to you</h2>
+    <p>Hi {first},</p>
+    <p>A new maintenance job has been assigned to you.</p>
+    <div class="amount-box">
+      <div class="label">Job</div>
+      <div class="amount" style="font-size:16px">{html.escape(job_title)}</div>
+    </div>
+    {f'<p><strong>Location:</strong> {location}</p>' if location else ''}
+    <p>Please log in to your contractor portal to accept or decline the job.</p>
+    <a href="https://propairty.co.uk/contractor/portal" class="cta">View contractor portal</a>
+    """
+    _send_email(contractor.email, subject, _base_template(subject, body, org.name if org else "PropAIrty"))
+
+
+def send_contractor_quote_decision(contractor, job_title: str, decision: str, org):
+    if not contractor.email:
+        return
+    first = html.escape((contractor.full_name or contractor.company_name or "").split()[0] or "there")
+    label = "approved" if decision == "approved" else "rejected"
+    subject = f"Quote {label}: {job_title}"
+    body = f"""
+    <h2>Quote {label}</h2>
+    <p>Hi {first},</p>
+    <p>The agent has <strong>{label}</strong> your quote for the following job:</p>
+    <div class="amount-box">
+      <div class="label">Job</div>
+      <div class="amount" style="font-size:16px">{html.escape(job_title)}</div>
+    </div>
+    {'<p>You can now proceed with the work. Please log in to agree a visit date.</p>' if decision == 'approved' else '<p>Please contact the agent if you have any questions.</p>'}
+    <a href="https://propairty.co.uk/contractor/portal" class="cta">View contractor portal</a>
+    """
+    _send_email(contractor.email, subject, _base_template(subject, body, org.name if org else "PropAIrty"))
+
+
+def send_void_renewal_chaser(tenant: Tenant, lease, unit: Unit, prop: Property, org: Organisation, agent_name: str, agent_email: str = None):
     """Send a renewal chaser email to a tenant from the Void Minimiser."""
     if not tenant.email:
         return False
     first = tenant.full_name.split()[0]
     lease_end = lease.end_date.strftime('%d %B %Y')
-    subject = f"Your tenancy at {prop.name} — renewal reminder"
+    monthly_rent = f"£{lease.monthly_rent:,.0f}" if lease.monthly_rent else None
+    subject = f"Your tenancy at {prop.name} is ending — would you like to stay?"
     body = f"""
-    <h2>Your tenancy renewal</h2>
+    <h2>Would you like to renew your tenancy?</h2>
     <p>Hi {html.escape(first)},</p>
-    <p>We're reaching out regarding your tenancy at <strong>{html.escape(prop.name)}, {html.escape(unit.name)}</strong>,
-    which is due to end on <strong>{lease_end}</strong>.</p>
-    <p>We'd love for you to stay! Please get in touch with us as soon as possible to discuss renewing your tenancy.</p>
-    <p>If you have already been in contact or have decided not to renew, please disregard this message.</p>
+    <p>Your tenancy at <strong>{html.escape(prop.name)}, {html.escape(unit.name)}</strong> is coming to an end
+    on <strong>{lease_end}</strong>.</p>
+    <p>We'd love to have you stay, and renewing is straightforward — just let us know you're interested
+    and we'll take care of the paperwork.</p>
+    <table style="border-collapse:collapse;margin:20px 0;width:100%;max-width:380px;">
+      <tr>
+        <td style="padding:8px 20px 8px 0;color:#6b7280;font-size:13px;">Property</td>
+        <td style="font-weight:600;font-size:13px;">{html.escape(prop.name)}, {html.escape(unit.name)}</td>
+      </tr>
+      <tr>
+        <td style="padding:8px 20px 8px 0;color:#6b7280;font-size:13px;">Current lease ends</td>
+        <td style="font-weight:600;font-size:13px;">{lease_end}</td>
+      </tr>
+      {'<tr><td style="padding:8px 20px 8px 0;color:#6b7280;font-size:13px;">Monthly rent</td><td style="font-weight:600;font-size:13px;">' + html.escape(monthly_rent) + '/mo</td></tr>' if monthly_rent else ''}
+    </table>
+    <p>To confirm your intention to renew, simply log in to your tenant portal and visit the
+    <strong>Renewal</strong> tab — or reply directly to this email and we'll be in touch.</p>
+    <a href="https://propairty.co.uk/tenant/portal" class="cta">Confirm renewal in your portal →</a>
+    <p style="margin-top:28px;font-size:13px;color:#6b7280;">
+      If you've already been in touch, or have decided not to renew, please ignore this message.
+      We'll need at least one month's written notice if you plan to leave.
+    </p>
     <p style="margin-top:24px;">Kind regards,<br>
     <strong>{html.escape(agent_name)}</strong><br>
     {html.escape(org.name)}</p>
-    <a href="https://propairty.co.uk/tenant/portal" class="cta">View your tenant portal</a>
     """
-    return _send_email(tenant.email, subject, _base_template(subject, body, org.name))
+    return _send_email(tenant.email, subject, _base_template(subject, body, org.name), reply_to=agent_email)
 
 
 def send_rent_review_recommendation(landlord, unit: Unit, prop: Property, org: Organisation,

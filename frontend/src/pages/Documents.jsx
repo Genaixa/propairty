@@ -4,14 +4,22 @@ import { Link } from 'react-router-dom'
 import api from '../lib/api'
 
 const DOC_TYPES = {
-  ast:             { icon: '📝', label: 'Assured Shorthold Tenancy Agreement', desc: 'Full AST with all standard clauses.' },
-  deposit_receipt: { icon: '🏦', label: 'Deposit Receipt', desc: 'Tenancy deposit receipt and protection confirmation.' },
-  rent_increase:   { icon: '📈', label: 'Rent Increase Notice', desc: 'Section 13 notice of proposed rent increase.' },
+  ast:               { icon: '📝', label: 'Assured Shorthold Tenancy Agreement', desc: 'Full AST with all standard clauses, populated from lease data.' },
+  deposit_receipt:   { icon: '🏦', label: 'Deposit Receipt', desc: 'Tenancy deposit receipt and protection confirmation.' },
+  rent_increase:     { icon: '📈', label: 'Rent Increase Notice', desc: 'Section 13 notice of proposed rent increase.' },
+  deed_of_surrender: { icon: '🤝', label: 'Deed of Surrender', desc: 'Formal surrender of tenancy by mutual consent — both parties sign.' },
+  nosp:              { icon: '⚖️', label: 'Notice of Seeking Possession (NOSP)', desc: 'Required before most Section 8 possession claims. Specifies grounds.' },
+}
+
+// These have their own dedicated generation endpoints (not lease-based)
+const SPECIAL_TYPES = {
+  deposit_dispute: { icon: '🔍', label: 'Deposit Dispute Evidence Pack', desc: 'Submission-ready evidence pack for TDS/DPS/MyDeposits adjudication.' },
+  hmo_guidance:    { icon: '🏘️', label: 'HMO Licensing Assessment', desc: 'Checks whether mandatory HMO licensing applies and generates an application checklist.' },
 }
 
 const NOTICE_TYPES = ['section_21', 'section_8']
 
-const SIGNABLE_TYPES = ['ast', 'deposit_receipt', 'rent_increase']
+const SIGNABLE_TYPES = ['ast', 'deposit_receipt', 'rent_increase', 'deed_of_surrender']
 
 const STATUS_COLOURS = {
   pending:  'bg-amber-100 text-amber-700',
@@ -28,7 +36,11 @@ export default function Documents() {
   const [landlords, setLandlords] = useState([])
   const [docTypes, setDocTypes] = useState([])
   const [selected, setSelected] = useState('ast')
-  const [form, setForm] = useState({ lease_id: '', new_rent: '', effective_date: '', arrears_amount: '', custom_notes: '' })
+  const [form, setForm] = useState({ lease_id: '', new_rent: '', effective_date: '', arrears_amount: '', custom_notes: '', surrender_date: '' })
+  const [specialSelected, setSpecialSelected] = useState(null)
+  const [specialForm, setSpecialForm] = useState({ deposit_id: '', property_id: '' })
+  const [specialGenerating, setSpecialGenerating] = useState(false)
+  const [deposits, setDeposits] = useState([])
   const [generating, setGenerating] = useState(false)
   const [error, setError] = useState('')
   // Management agreement state
@@ -51,12 +63,14 @@ export default function Documents() {
       api.get('/properties'),
       api.get('/documents/types'),
       api.get('/landlord/landlords'),
-    ]).then(([l, t, p, d, ll]) => {
+      api.get('/deposits/list').catch(() => ({ data: [] })),
+    ]).then(([l, t, p, d, ll, dep]) => {
       setLeases(l.data)
       setTenants(t.data)
       setProperties(p.data)
       setDocTypes((d.data || []).filter(dt => !NOTICE_TYPES.includes(dt.key)))
       setLandlords(ll.data || [])
+      setDeposits(dep.data || [])
     })
   }, [])
 
@@ -73,6 +87,30 @@ export default function Documents() {
   const allUnits = properties.flatMap(p => p.units.map(u => ({ ...u, propertyName: p.name })))
   const tenantName = id => tenants.find(t => t.id === id)?.full_name || '—'
 
+  const generateSpecial = async () => {
+    if (!specialSelected) return
+    setSpecialGenerating(true)
+    try {
+      let url
+      if (specialSelected === 'deposit_dispute') {
+        if (!specialForm.deposit_id) { setSpecialGenerating(false); return }
+        url = `/documents/deposit-dispute/${specialForm.deposit_id}`
+      } else {
+        if (!specialForm.property_id) { setSpecialGenerating(false); return }
+        url = `/documents/hmo-guidance/${specialForm.property_id}`
+      }
+      const res = await api.get(url, { responseType: 'blob' })
+      const cd = res.headers['content-disposition'] || ''
+      const fname = cd.match(/filename="([^"]+)"/)?.[1] || 'document.pdf'
+      const burl = URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }))
+      const a = document.createElement('a'); a.href = burl; a.download = fname; a.click()
+      URL.revokeObjectURL(burl)
+    } catch (e) {
+      alert(e.response?.data?.detail || 'Failed to generate document.')
+    }
+    setSpecialGenerating(false)
+  }
+
   const generate = async () => {
     if (!form.lease_id || !selected) return
     setGenerating(true); setError('')
@@ -82,6 +120,7 @@ export default function Documents() {
       if (form.effective_date) payload.effective_date = form.effective_date
       if (form.arrears_amount) payload.arrears_amount = parseFloat(form.arrears_amount)
       if (form.custom_notes) payload.custom_notes = form.custom_notes
+      if (form.surrender_date) payload.surrender_date = form.surrender_date
       const res = await api.post('/documents/generate', payload, { responseType: 'blob' })
       const cd = res.headers['content-disposition'] || ''
       const fname = cd.match(/filename="([^"]+)"/)?.[1] || 'document.pdf'
@@ -253,6 +292,38 @@ export default function Documents() {
                       </div>
                     )}
 
+                    {/* Deed of Surrender extra fields */}
+                    {d.key === 'deed_of_surrender' && (
+                      <div className="space-y-3">
+                        <div>
+                          <label className="block text-xs text-gray-500 mb-1">Surrender date</label>
+                          <input type="date" value={form.surrender_date} onChange={e => setForm({...form, surrender_date: e.target.value})}
+                            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                        </div>
+                        <div>
+                          <label className="block text-xs text-gray-500 mb-1">Condition notes (optional)</label>
+                          <input type="text" value={form.custom_notes} onChange={e => setForm({...form, custom_notes: e.target.value})}
+                            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="e.g. property returned in good condition" />
+                        </div>
+                      </div>
+                    )}
+
+                    {/* NOSP extra fields */}
+                    {d.key === 'nosp' && (
+                      <div className="space-y-3">
+                        <div>
+                          <label className="block text-xs text-gray-500 mb-1">Rent arrears amount (£)</label>
+                          <input type="number" value={form.arrears_amount} onChange={e => setForm({...form, arrears_amount: e.target.value})}
+                            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="0.00" />
+                        </div>
+                        <div>
+                          <label className="block text-xs text-gray-500 mb-1">Additional particulars (optional)</label>
+                          <input type="text" value={form.custom_notes} onChange={e => setForm({...form, custom_notes: e.target.value})}
+                            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="e.g. tenant has ignored 3 prior payment requests" />
+                        </div>
+                      </div>
+                    )}
+
                     {error && <p className="text-red-500 text-xs">{error}</p>}
 
                     <div className="flex gap-2">
@@ -351,6 +422,57 @@ export default function Documents() {
             )}
           </div>
 
+          {/* Special document types — deposit dispute + HMO guidance */}
+          {Object.entries(SPECIAL_TYPES).map(([key, meta]) => {
+            const isSelected = specialSelected === key
+            return (
+              <div key={key}
+                onClick={() => setSpecialSelected(isSelected ? null : key)}
+                className={`rounded-xl border p-5 cursor-pointer transition-all ${isSelected ? 'border-indigo-400 shadow-md bg-indigo-50/40' : 'bg-white border-gray-200 hover:border-gray-300 hover:shadow-sm'}`}>
+                <div className="flex items-center gap-3 mb-1">
+                  <span className="text-2xl">{meta.icon}</span>
+                  <div className="flex-1">
+                    <p className="font-semibold text-gray-900 text-sm">{meta.label}</p>
+                    <p className="text-gray-500 text-xs mt-0.5">{meta.desc}</p>
+                  </div>
+                  {isSelected && <span className="text-indigo-600 text-xs font-medium bg-indigo-100 px-2 py-1 rounded-full">Selected</span>}
+                </div>
+                {isSelected && (
+                  <div className="mt-4 border-t border-indigo-100 pt-4 space-y-3" onClick={e => e.stopPropagation()}>
+                    {key === 'deposit_dispute' && (
+                      <div>
+                        <label className="block text-xs text-gray-500 mb-1">Select deposit</label>
+                        <select value={specialForm.deposit_id} onChange={e => setSpecialForm({...specialForm, deposit_id: e.target.value})}
+                          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white">
+                          <option value="">Select deposit…</option>
+                          {deposits.map(d => {
+                            const lease = leases.find(l => l.id === d.lease_id)
+                            const tname = lease ? tenantName(lease.tenant_id) : '—'
+                            return <option key={d.id} value={d.id}>{tname} — £{d.amount} ({d.scheme || 'TDS'})</option>
+                          })}
+                        </select>
+                      </div>
+                    )}
+                    {key === 'hmo_guidance' && (
+                      <div>
+                        <label className="block text-xs text-gray-500 mb-1">Select property</label>
+                        <select value={specialForm.property_id} onChange={e => setSpecialForm({...specialForm, property_id: e.target.value})}
+                          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white">
+                          <option value="">Select property…</option>
+                          {properties.map(p => <option key={p.id} value={p.id}>{p.name} — {p.address_line1}</option>)}
+                        </select>
+                      </div>
+                    )}
+                    <button onClick={generateSpecial} disabled={specialGenerating}
+                      className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-medium px-4 py-2.5 rounded-lg text-sm disabled:opacity-50 transition-colors">
+                      {specialGenerating ? 'Generating…' : '⬇ Generate & Download PDF'}
+                    </button>
+                  </div>
+                )}
+              </div>
+            )
+          })}
+
           <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50 p-5 text-center text-sm text-gray-400">
             Section 8 & 21 notices → <Link to="/notices" className="text-indigo-500 hover:underline">Notices module</Link>
           </div>
@@ -403,10 +525,19 @@ export default function Documents() {
                         </button>
                       )}
                       {sr.status === 'signed' && sr.has_signed_pdf && (
-                        <a href={`/api/signing/requests/${sr.id}/download`} target="_blank" rel="noreferrer"
+                        <button
+                          onClick={async () => {
+                            const r = await api.get(`/signing/requests/${sr.id}/download`, { responseType: 'blob' })
+                            const url = URL.createObjectURL(r.data)
+                            const a = document.createElement('a')
+                            a.href = url
+                            a.download = `Signed_${sr.doc_label?.replace(/ /g,'_')}_${sr.signer_name?.replace(/ /g,'_')}.pdf`
+                            a.click()
+                            URL.revokeObjectURL(url)
+                          }}
                           className="text-xs bg-green-50 text-green-700 hover:bg-green-100 px-3 py-1.5 rounded-lg font-medium transition-colors">
                           ⬇ Download
-                        </a>
+                        </button>
                       )}
                       <button onClick={() => deleteSigningRequest(sr.id)}
                         className="text-xs text-gray-400 hover:text-red-500 transition-colors px-2 py-1.5">

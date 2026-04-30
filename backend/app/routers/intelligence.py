@@ -55,15 +55,28 @@ PDF_DIR.mkdir(exist_ok=True)
 # ── helpers ──────────────────────────────────────────────────────────────────
 
 def _claude(prompt: str, max_tokens: int = 1024) -> str:
-    from openai import OpenAI
+    from openai import OpenAI, RateLimitError
     from app.config import settings
     client = OpenAI(base_url="https://api.groq.com/openai/v1", api_key=settings.groq_api_key)
-    msg = client.chat.completions.create(
-        model="llama-3.3-70b-versatile",
-        max_tokens=max_tokens,
-        messages=[{"role": "user", "content": prompt}],
-    )
-    return msg.choices[0].message.content.strip()
+    try:
+        msg = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            max_tokens=max_tokens,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        return msg.choices[0].message.content.strip()
+    except RateLimitError:
+        # Groq daily limit hit — fall back to Claude Haiku for this request only
+        if not settings.anthropic_api_key:
+            raise HTTPException(status_code=503, detail="AI service daily limit reached. Please try again tomorrow or contact support.")
+        import anthropic
+        ac = anthropic.Anthropic(api_key=settings.anthropic_api_key)
+        msg = ac.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=max_tokens,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        return msg.content[0].text.strip()
 
 
 def _cache_get(key: str, ttl_seconds: int = 3600):
@@ -1102,6 +1115,7 @@ def churn_risk(
 
 class EpcRequest(BaseModel):
     property_id: int
+    unit_id: int | None = None      # None = whole property; set for flat/unit-level roadmap
     current_rating: str   # A-G
     property_type: str = ""
     year_built: int | None = None
@@ -1123,39 +1137,54 @@ def epc_roadmap(
     if not prop:
         raise HTTPException(status_code=404, detail="Property not found")
 
+    # Resolve unit name if unit_id provided
+    unit_name = None
+    if req.unit_id:
+        _unit = db.query(Unit).filter(Unit.id == req.unit_id, Unit.property_id == prop.id).first()
+        if _unit:
+            unit_name = _unit.name
+    display_name = f"{prop.name} — {unit_name}" if unit_name else prop.name
+
     if req.current_rating.upper() in ("A", "B", "C"):
-        # Persist compliant result to DB
         import json as _json
         from app.models.epc_roadmap import PropertyEpcRoadmap
-        _existing = db.query(PropertyEpcRoadmap).filter_by(
+        _q = db.query(PropertyEpcRoadmap).filter_by(
             property_id=req.property_id,
             organisation_id=current_user.organisation_id,
-        ).first()
+        )
+        if req.unit_id:
+            _q = _q.filter(PropertyEpcRoadmap.unit_id == req.unit_id)
+        else:
+            _q = _q.filter(PropertyEpcRoadmap.unit_id == None)
+        _existing = _q.first()
         if _existing:
             _existing.epc_rating = req.current_rating.upper()
             _existing.target_date = req.target_date
             _existing.improvements_json = _json.dumps([])
             _existing.property_name = prop.name
+            _existing.unit_name = unit_name
         else:
             db.add(PropertyEpcRoadmap(
                 organisation_id=current_user.organisation_id,
                 property_id=req.property_id,
+                unit_id=req.unit_id,
                 epc_rating=req.current_rating.upper(),
                 target_date=req.target_date,
                 improvements_json=_json.dumps([]),
                 property_name=prop.name,
+                unit_name=unit_name,
             ))
         db.commit()
         return {
-            "property_name": prop.name,
+            "property_name": display_name,
             "current_rating": req.current_rating.upper(),
             "target_rating": "C",
             "already_compliant": True,
-            "message": f"This property already meets EPC C — no action required before the 2028 deadline.",
+            "message": f"This unit already meets EPC C — no action required before the 2028 deadline." if unit_name else "This property already meets EPC C — no action required before the 2028 deadline.",
             "improvements": [],
         }
 
-    cache_key = f"epc_{req.property_id}_{req.current_rating}_{req.target_date or ''}"
+    cache_key = f"epc_{req.property_id}_{req.unit_id or 0}_{req.current_rating}_{req.target_date or ''}"
     cached = _cache_get(cache_key, ttl_seconds=86400)
     if cached:
         return cached
@@ -1163,7 +1192,7 @@ def epc_roadmap(
     prompt = f"""You are a UK energy efficiency consultant helping a landlord improve their property's EPC rating.
 
 Property details:
-- Address: {prop.address_line1}, {prop.city}, {prop.postcode}
+- Address: {prop.address_line1}, {prop.city}, {prop.postcode}{f' ({unit_name})' if unit_name else ''}
 - Type: {req.property_type or prop.property_type}
 - Current EPC rating: {req.current_rating.upper()}
 - Target EPC rating: C
@@ -1275,7 +1304,8 @@ Return JSON only:
             pass
 
     response = {
-        "property_name": prop.name,
+        "property_name": display_name,
+        "unit_name": unit_name,
         "current_rating": req.current_rating.upper(),
         "target_rating": "C",
         "already_compliant": False,
@@ -1288,10 +1318,15 @@ Return JSON only:
     # Persist tier-1 (to C) improvements to DB for portfolio procurement view
     import json as _json
     from app.models.epc_roadmap import PropertyEpcRoadmap
-    existing = db.query(PropertyEpcRoadmap).filter_by(
+    _q = db.query(PropertyEpcRoadmap).filter_by(
         property_id=req.property_id,
         organisation_id=current_user.organisation_id,
-    ).first()
+    )
+    if req.unit_id:
+        _q = _q.filter(PropertyEpcRoadmap.unit_id == req.unit_id)
+    else:
+        _q = _q.filter(PropertyEpcRoadmap.unit_id == None)
+    existing = _q.first()
     tier1_improvements = result.get("tiers", [{}])[0].get("improvements", []) if result.get("tiers") else result.get("improvements", [])
     improvements_json = _json.dumps(tier1_improvements)
     if existing:
@@ -1299,14 +1334,17 @@ Return JSON only:
         existing.target_date = req.target_date
         existing.improvements_json = improvements_json
         existing.property_name = prop.name
+        existing.unit_name = unit_name
     else:
         db.add(PropertyEpcRoadmap(
             organisation_id=current_user.organisation_id,
             property_id=req.property_id,
+            unit_id=req.unit_id,
             epc_rating=req.current_rating.upper(),
             target_date=req.target_date,
             improvements_json=improvements_json,
             property_name=prop.name,
+            unit_name=unit_name,
         ))
     db.commit()
 
@@ -1348,7 +1386,7 @@ def epc_procurement(
             g = groups[title]
             g["properties"].append({
                 "property_id": rm.property_id,
-                "property_name": rm.property_name,
+                "property_name": f"{rm.property_name} — {rm.unit_name}" if rm.unit_name else rm.property_name,
                 "epc_rating": rm.epc_rating,
                 "target_date": rm.target_date,
                 "cost_min": imp.get("estimated_cost_min"),
@@ -1576,14 +1614,19 @@ def void_risk(
     return results
 
 
+class VoidEmailRequest(BaseModel):
+    subject: str | None = None
+    body: str | None = None
+
 @router.post("/void-risk/{lease_id}/email-tenant")
 def void_email_tenant(
     lease_id: int,
+    req: VoidEmailRequest = VoidEmailRequest(),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Send a templated renewal chaser email to the tenant on a given lease."""
-    from app.emails import send_void_renewal_chaser
+    """Send a renewal chaser email to the tenant. Accepts optional custom subject/body."""
+    from app.emails import send_void_renewal_chaser, _send_email, _base_template
 
     lease = db.query(Lease).filter(Lease.id == lease_id).first()
     if not lease:
@@ -1601,7 +1644,13 @@ def void_email_tenant(
     org = db.query(Organisation).filter(Organisation.id == current_user.organisation_id).first()
     agent_name = current_user.full_name or current_user.email
 
-    sent = send_void_renewal_chaser(tenant, lease, unit, prop, org, agent_name)
+    agent_email = current_user.email
+    if req.subject and req.body:
+        html_body = req.body.replace('\n', '<br>')
+        sent = _send_email(tenant.email, req.subject, _base_template(req.subject, f"<p>{html_body}</p>", org.name), reply_to=agent_email)
+    else:
+        sent = send_void_renewal_chaser(tenant, lease, unit, prop, org, agent_name, agent_email=agent_email)
+
     if not sent:
         raise HTTPException(status_code=500, detail="Failed to send email — check SMTP configuration")
 
@@ -1615,7 +1664,9 @@ def epc_compliance(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Return non-compliant properties (EPC D-G) bucketed by urgency based on lease end dates."""
+    """Return non-compliant units (EPC D-G) bucketed by urgency based on lease end dates.
+    Each row represents one unit. Unit EPC overrides property EPC where set.
+    """
     org_id = current_user.organisation_id
     today = date.today()
 
@@ -1623,56 +1674,60 @@ def epc_compliance(
 
     results = []
     for prop in properties:
-        rating = prop.epc_rating
-        if not rating or rating.upper() in ("A", "B", "C"):
-            continue
-
         units = db.query(Unit).filter(Unit.property_id == prop.id).all()
-        unit_ids = [u.id for u in units]
-        if not unit_ids:
+        if not units:
             continue
 
-        # Find the soonest active lease end date across all units
-        active_leases = db.query(Lease).filter(
-            Lease.unit_id.in_(unit_ids),
-            Lease.status == "active",
-            Lease.end_date != None,
-        ).order_by(Lease.end_date.asc()).all()
+        for unit in units:
+            # Unit EPC takes priority; fall back to property EPC
+            rating = unit.epc_rating or prop.epc_rating
+            if not rating or rating.upper() in ("A", "B", "C"):
+                continue
 
-        if active_leases:
-            soonest = active_leases[0]
-            days_left = (soonest.end_date - today).days
-            tenant = soonest.tenant
-            lease_end = soonest.end_date.isoformat()
-        else:
-            # Vacant property with non-compliant EPC — can't re-let
-            days_left = 0
-            tenant = None
-            lease_end = None
+            # Find active lease for this specific unit
+            lease = db.query(Lease).filter(
+                Lease.unit_id == unit.id,
+                Lease.status == "active",
+                Lease.end_date != None,
+            ).order_by(Lease.end_date.asc()).first()
 
-        if days_left <= 30:
-            band = "30"
-        elif days_left <= 60:
-            band = "60"
-        elif days_left <= 90:
-            band = "90"
-        elif days_left <= 120:
-            band = "120"
-        else:
-            band = "later"
+            if lease:
+                days_left = (lease.end_date - today).days
+                tenant = lease.tenant
+                lease_end = lease.end_date.isoformat()
+                vacant = False
+            else:
+                days_left = 0
+                tenant = None
+                lease_end = None
+                vacant = True
 
-        results.append({
-            "property_id": prop.id,
-            "property_name": prop.name,
-            "address": f"{prop.address_line1}, {prop.city}",
-            "postcode": prop.postcode,
-            "epc_rating": rating.upper(),
-            "band": band,
-            "days_left": days_left,
-            "lease_end": lease_end,
-            "tenant_name": tenant.full_name if tenant else None,
-            "vacant": len(active_leases) == 0,
-        })
+            if days_left <= 30:
+                band = "30"
+            elif days_left <= 60:
+                band = "60"
+            elif days_left <= 90:
+                band = "90"
+            elif days_left <= 120:
+                band = "120"
+            else:
+                band = "later"
+
+            results.append({
+                "property_id": prop.id,
+                "property_name": prop.name,
+                "unit_id": unit.id,
+                "unit_name": unit.name,
+                "has_unit_epc": bool(unit.epc_rating),
+                "address": f"{prop.address_line1}, {prop.city}",
+                "postcode": prop.postcode,
+                "epc_rating": rating.upper(),
+                "band": band,
+                "days_left": days_left,
+                "lease_end": lease_end,
+                "tenant_name": tenant.full_name if tenant else None,
+                "vacant": vacant,
+            })
 
     results.sort(key=lambda x: x["days_left"])
     return results
@@ -2246,7 +2301,7 @@ Tenancy details:
 - Unit: {unit.name if unit else 'N/A'}
 - Tenant: {tenant.full_name if tenant else 'Unknown'}
 - Tenancy: {lease.start_date} to {lease.end_date or 'present'}
-- Monthly rent: £{lease.monthly_rent:.0f}
+- Monthly rent: {f'£{lease.monthly_rent:.0f}' if lease.monthly_rent else 'Unknown'}
 - Deposit held: {f'£{lease.deposit:.0f}' if lease.deposit else 'Unknown'}
 
 Dispute description:
@@ -2290,6 +2345,23 @@ Return as JSON:
 
     pdf_filename = _generate_dispute_pdf(lease, tenant, prop, unit, req, data, org)
 
+    # Update the deposit record to mark as disputed and record what was claimed
+    from app.models.deposit import TenancyDeposit
+    dep_record = db.query(TenancyDeposit).filter(TenancyDeposit.lease_id == lease.id).first()
+    if dep_record:
+        dep_record.status = "disputed"
+        notes_lines = [
+            f"Dispute ref: {data.get('reference', 'N/A')}",
+            f"Generated: {datetime.now().strftime('%d %B %Y')}",
+        ]
+        for d in data.get("deductions", []):
+            notes_lines.append(f"  - {d.get('item', '')}: £{d.get('amount', 0):.0f}")
+        notes_lines.append(f"Total claimed: £{data.get('total_recommended', total_claimed):.0f}")
+        if pdf_filename:
+            notes_lines.append(f"PDF: {pdf_filename}")
+        dep_record.dispute_notes = "\n".join(notes_lines)
+        db.commit()
+
     return {
         "lease_id": lease.id,
         "tenant_name": tenant.full_name if tenant else "",
@@ -2318,13 +2390,13 @@ def _generate_dispute_pdf(lease, tenant, prop, unit, req, data, org) -> str | No
         def ln_reset():
             pdf.set_x(pdf.l_margin)
 
-        # Header
-        pdf.set_font("Helvetica", "B", 18)
-        pdf.set_text_color(79, 70, 229)
-        pdf.cell(W, 10, "PropAIrty", ln=True)
+        # Header — agency branded (this is submitted to TDS/DPS, not a PropAIrty product doc)
+        pdf.set_font("Helvetica", "B", 16)
+        pdf.set_text_color(30, 30, 30)
+        pdf.cell(W, 9, _s(org.name if org else "Letting Agency"), ln=True)
         pdf.set_text_color(0, 0, 0)
-        pdf.set_font("Helvetica", "B", 14)
-        pdf.cell(W, 8, "Deposit Dispute Submission", ln=True)
+        pdf.set_font("Helvetica", "B", 13)
+        pdf.cell(W, 7, "Deposit Dispute Submission", ln=True)
         pdf.set_font("Helvetica", "", 9)
         pdf.set_text_color(130, 130, 130)
         pdf.cell(W, 5, _s(f"Reference: {data.get('reference', 'N/A')}   Generated: {datetime.now().strftime('%d %B %Y')}"), ln=True)
@@ -2441,7 +2513,7 @@ def _generate_dispute_pdf(lease, tenant, prop, unit, req, data, org) -> str | No
         pdf.set_font("Helvetica", "", 7)
         pdf.set_text_color(160, 160, 160)
         ln_reset()
-        pdf.cell(W, 5, "Generated by PropAIrty - propairty.co.uk - For guidance only. Verify with legal counsel before submission.", ln=True)
+        pdf.cell(W, 5, "For guidance only. Verify with legal counsel before submission.", ln=True)
 
         filename = f"dispute_{lease.id}_{int(time.time())}.pdf"
         pdf.output(str(PDF_DIR / filename))
@@ -2661,6 +2733,9 @@ def tax_summary(
     if not prop_ids:
         return {"landlord": landlord.full_name, "tax_year": f"{tax_year}/{str(tax_year+1)[-2:]}", "properties": [], "totals": {}}
 
+    # Build unit lookup for all properties (used for maintenance queries, consistent with Accounting page)
+    all_unit_ids = [u.id for p in props for u in p.units]
+
     # Rent income
     lease_ids = db.query(Lease.id).join(Unit).filter(Unit.property_id.in_(prop_ids)).subquery()
     payments = db.query(RentPayment).filter(
@@ -2671,27 +2746,27 @@ def tax_summary(
     ).all()
     total_income = sum(p.amount_paid or p.amount_due for p in payments)
 
-    # Maintenance costs (allowable expenses)
+    # Maintenance costs — filter by unit_id (same as Accounting page) and date range
+    maint_start = datetime.combine(year_start, datetime.min.time())
+    maint_end = datetime.combine(year_end, datetime.max.time())
     maint_jobs = db.query(MaintenanceRequest).filter(
-        MaintenanceRequest.organisation_id == current_user.organisation_id,
-        MaintenanceRequest.property_id.in_(prop_ids),
-        MaintenanceRequest.actual_cost != None,
-        MaintenanceRequest.created_at >= datetime.combine(year_start, datetime.min.time()),
-        MaintenanceRequest.created_at <= datetime.combine(year_end, datetime.max.time()),
+        MaintenanceRequest.unit_id.in_(all_unit_ids),
+        MaintenanceRequest.actual_cost.isnot(None),
+        MaintenanceRequest.actual_cost > 0,
+        MaintenanceRequest.created_at >= maint_start,
+        MaintenanceRequest.created_at <= maint_end,
     ).all()
     total_maintenance = sum(j.actual_cost for j in maint_jobs if j.actual_cost)
 
-    # Compliance certs (allowable)
-    certs = db.query(ComplianceCertificate).filter(
-        ComplianceCertificate.property_id.in_(prop_ids),
-    ).all()
-
-    # Management fees (~10-15% of rent income if using agent)
-    mgmt_fee_est = round(total_income * 0.12, 2)
+    # Management fees — use landlord's agreed rate, fall back to 10% if not set
+    fee_is_estimate = not landlord.management_fee_pct
+    fee_rate = (landlord.management_fee_pct / 100.0) if landlord.management_fee_pct else 0.10
+    mgmt_fee_est = round(total_income * fee_rate, 2)
 
     # Per property breakdown
     property_breakdown = []
     for prop in props:
+        prop_unit_ids = [u.id for u in prop.units]
         prop_lease_ids = db.query(Lease.id).join(Unit).filter(Unit.property_id == prop.id).subquery()
         prop_payments = db.query(RentPayment).filter(
             RentPayment.lease_id.in_(prop_lease_ids),
@@ -2701,11 +2776,14 @@ def tax_summary(
         ).all()
         prop_income = sum(p.amount_paid or p.amount_due for p in prop_payments)
 
-        prop_maint = db.query(MaintenanceRequest).filter(
-            MaintenanceRequest.property_id == prop.id,
-            MaintenanceRequest.actual_cost != None,
+        prop_maint_jobs = db.query(MaintenanceRequest).filter(
+            MaintenanceRequest.unit_id.in_(prop_unit_ids),
+            MaintenanceRequest.actual_cost.isnot(None),
+            MaintenanceRequest.actual_cost > 0,
+            MaintenanceRequest.created_at >= maint_start,
+            MaintenanceRequest.created_at <= maint_end,
         ).all()
-        prop_maint_cost = sum(j.actual_cost for j in prop_maint if j.actual_cost)
+        prop_maint_cost = sum(j.actual_cost for j in prop_maint_jobs if j.actual_cost)
 
         property_breakdown.append({
             "property_id": prop.id,
@@ -2728,7 +2806,10 @@ def tax_summary(
         "properties_count": len(props),
         "gross_rental_income": round(total_income, 2),
         "maintenance_expenses": round(total_maintenance, 2),
-        "management_fee_estimate": mgmt_fee_est,
+        "management_fee_amount": mgmt_fee_est,
+        "management_fee_estimate": mgmt_fee_est,  # kept for backwards compat
+        "management_fee_rate_pct": round(fee_rate * 100, 2),
+        "management_fee_is_estimate": fee_is_estimate,
         "net_profit_estimate": net_profit_estimate,
         "property_breakdown": property_breakdown,
         "pdf_url": f"/api/intelligence/tax-pdf/{pdf_filename}" if pdf_filename else None,
@@ -2775,7 +2856,8 @@ def _generate_tax_pdf(landlord, tax_year, year_start, year_end, income, maint, m
         pdf.line(10, pdf.get_y(), 200, pdf.get_y())
         pdf.ln(2)
         money_row("Maintenance & repairs", -maint)
-        money_row("Management fees (estimate at 12%)", -mgmt_fee)
+        mgmt_pct = round(mgmt_fee / income * 100, 1) if income else 0
+        money_row(f"Management fees ({mgmt_pct}% of gross income)", -mgmt_fee)
         pdf.set_draw_color(79, 70, 229)
         pdf.line(10, pdf.get_y(), 200, pdf.get_y())
         pdf.ln(2)

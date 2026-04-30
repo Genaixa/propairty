@@ -142,7 +142,7 @@ export default function InsuranceClaims() {
   }
 
   return (
-    <div className="max-w-3xl mx-auto space-y-6">
+    <div className="space-y-6">
       <PageHeader title="Insurance Claims" subtitle="AI-assisted claim documentation" />
 
       {/* Tabs */}
@@ -322,10 +322,16 @@ function ClaimCard({ claim, photos, uploadingFor, onUpload, onDeletePhoto, onSta
               <option value="rejected">Rejected</option>
             </select>
             {claim.pdf_url && (
-              <a href={`${API_BASE}${claim.pdf_url}`} target="_blank" rel="noreferrer"
+              <button
+                onClick={async () => {
+                  const r = await api.get(claim.pdf_url.replace(/^\/api/, ''), { responseType: 'blob' })
+                  const url = URL.createObjectURL(r.data)
+                  const a = document.createElement('a'); a.href = url; a.download = claim.pdf_url.split('/').pop(); a.click()
+                  URL.revokeObjectURL(url)
+                }}
                 className="bg-indigo-600 text-white text-xs font-semibold px-4 py-1.5 rounded-lg hover:bg-indigo-700">
                 ↓ PDF
-              </a>
+              </button>
             )}
             <button onClick={onDelete}
               className="text-xs text-red-500 hover:text-red-700 border border-red-200 hover:border-red-400 px-3 py-1.5 rounded-lg transition-colors">

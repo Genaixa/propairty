@@ -28,7 +28,7 @@ export default function Surveys() {
   const responseRate = total_sent > 0 ? Math.round((total_responses / total_sent) * 100) : 0
 
   return (
-    <div className="p-6 max-w-5xl mx-auto">
+    <div className="max-w-5xl space-y-5">
       <PageHeader title="Tenant Satisfaction" subtitle="Auto-sent surveys when maintenance jobs are closed" />
 
       <div className="grid grid-cols-3 gap-4 mb-6">

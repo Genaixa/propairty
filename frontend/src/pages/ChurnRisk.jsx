@@ -33,7 +33,7 @@ export default function ChurnRisk() {
   )
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6">
+    <div className="max-w-4xl space-y-6">
       <div>
         <PageHeader title="Churn Risk" subtitle="Predict which tenants are likely to leave" />
       </div>

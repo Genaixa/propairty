@@ -1,3 +1,4 @@
+import json
 import uuid
 from pathlib import Path
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, UploadFile, File, status
@@ -31,6 +32,7 @@ UPLOAD_DIR = Path("/root/propairty/uploads")
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 from app.models.user import User
 from app.models.organisation import Organisation
+from app.models.compliance import ComplianceCertificate, CERT_TYPES
 from app.schemas.auth import Token
 from app.config import settings
 from app import notifications, emails as _emails
@@ -236,6 +238,7 @@ def portal_maintenance(tenant: Tenant = Depends(get_current_tenant), db: Session
             "tenant_satisfied": j.tenant_satisfied,
             "tenant_feedback": j.tenant_feedback,
             "created_at": j.created_at.isoformat() if j.created_at else None,
+            "ai_triage": json.loads(j.ai_triage) if j.ai_triage else None,
             "photos": [
                 {"id": p.id, "url": f"/uploads/{p.filename}"}
                 for p in db.query(UploadedFile).filter(
@@ -290,7 +293,14 @@ async def upload_maintenance_photos(
         saved.append(stored_name)
 
     db.commit()
-    return {"uploaded": len(saved)}
+
+    # Run AI visual triage if any images were saved (best-effort, synchronous for immediate card display)
+    triage = None
+    if saved:
+        from app.vision_triage import run_visual_triage
+        triage = run_visual_triage(job.id, db)
+
+    return {"uploaded": len(saved), "triage": triage}
 
 
 class MaintenanceSubmit(BaseModel):
@@ -421,6 +431,35 @@ Return as JSON:
 
 class TenantNoteCreate(BaseModel):
     body: str
+
+
+@router.post("/portal/maintenance/{job_id}/cancel")
+def portal_cancel_maintenance(job_id: int, tenant: Tenant = Depends(get_current_tenant), db: Session = Depends(get_db)):
+    job = db.query(MaintenanceRequest).filter(
+        MaintenanceRequest.id == job_id,
+        MaintenanceRequest.reported_by_tenant_id == tenant.id,
+    ).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    if job.status not in ("open",) or job.contractor_id is not None:
+        raise HTTPException(status_code=400, detail="Job cannot be cancelled — a contractor has already been assigned or work is in progress. Please contact your agent.")
+    job.status = "cancelled"
+    note = MaintenanceNote(
+        maintenance_request_id=job.id,
+        author_type="tenant",
+        author_name=tenant.full_name,
+        body="Request retracted by tenant.",
+    )
+    db.add(note)
+    db.commit()
+    # Notify agent
+    from app import notifications
+    notifications.send(
+        f"🗑 <b>Maintenance Request Retracted by Tenant</b>\n\n"
+        f"Tenant: {tenant.full_name}\n"
+        f"Job: {job.title}"
+    )
+    return {"ok": True}
 
 
 @router.get("/portal/maintenance/{job_id}/notes")
@@ -613,6 +652,7 @@ def portal_respond_renewal(
     renewal.status = "accepted" if req.accept else "declined"
     renewal.tenant_notes = req.tenant_notes
     renewal.responded_at = sqlfunc.now()
+    renewal.responded_via = "portal"
     db.commit()
 
     unit = lease.unit
@@ -876,6 +916,24 @@ def portal_deposit(tenant: Tenant = Depends(get_current_tenant), db: Session = D
         if lease.deposit:
             return {"amount": lease.deposit, "scheme": None, "scheme_reference": None, "status": "unknown", "from_lease": True}
         return None
+
+    dispute_notice = None
+    if deposit.status == "disputed" and deposit.dispute_notes:
+        ref = None
+        generated = None
+        deductions = []
+        total = None
+        for line in deposit.dispute_notes.split("\n"):
+            if line.startswith("Dispute ref: "):
+                ref = line[13:]
+            elif line.startswith("Generated: "):
+                generated = line[11:]
+            elif line.startswith("  - "):
+                deductions.append(line[4:])
+            elif line.startswith("Total claimed: "):
+                total = line[15:]
+        dispute_notice = {"reference": ref, "generated": generated, "deductions": deductions, "total": total}
+
     return {
         "amount": deposit.amount,
         "scheme": deposit.scheme,
@@ -889,6 +947,7 @@ def portal_deposit(tenant: Tenant = Depends(get_current_tenant), db: Session = D
         "deduction_reason": deposit.deduction_reason,
         "returned_date": deposit.returned_date.isoformat() if deposit.returned_date else None,
         "notes": deposit.notes,
+        "dispute_notice": dispute_notice,
     }
 
 
@@ -1319,6 +1378,53 @@ def tenant_ai_chat(req: _PortalChatReq, tenant: Tenant = Depends(get_current_ten
     context = _tenant_context(tenant, db)
     msgs = [{"role": m.role, "content": m.content} for m in req.messages]
     return _portal_chat_with_tools(msgs, _wendy.get('mendy_tenant'), context, tools, {"send_message_to_agent": _send_message})
+
+
+@router.get("/portal/compliance")
+def portal_compliance_certs(tenant: Tenant = Depends(get_current_tenant), db: Session = Depends(get_db)):
+    """Compliance certs for the tenant's current property — gas safety, EICR, EPC which they are entitled to see."""
+    from datetime import date as _date, timedelta
+    lease = db.query(Lease).filter(Lease.tenant_id == tenant.id, Lease.status == "active").first()
+    if not lease or not lease.unit:
+        return []
+    prop = lease.unit.property
+    if not prop:
+        return []
+
+    TENANT_VISIBLE = {"gas_safety", "eicr", "epc", "fire_risk", "legionella"}
+    certs = db.query(ComplianceCertificate).filter(
+        ComplianceCertificate.property_id == prop.id,
+        ComplianceCertificate.cert_type.in_(TENANT_VISIBLE),
+    ).order_by(ComplianceCertificate.expiry_date.desc()).all()
+
+    today = _date.today()
+    def status(exp):
+        if exp < today: return "expired"
+        if exp <= today + timedelta(days=60): return "expiring_soon"
+        return "valid"
+
+    seen = {}
+    for c in certs:
+        if c.cert_type not in seen:
+            seen[c.cert_type] = {
+                "cert_type": c.cert_type,
+                "cert_label": CERT_TYPES.get(c.cert_type, {}).get("label", c.cert_type),
+                "issue_date": str(c.issue_date),
+                "expiry_date": str(c.expiry_date),
+                "reference": c.reference,
+                "status": status(c.expiry_date),
+                "upload_id": None,
+            }
+            # attach most recent uploaded file if any
+            f = db.query(UploadedFile).filter(
+                UploadedFile.entity_type == "compliance_certificate",
+                UploadedFile.entity_id == c.id,
+            ).order_by(UploadedFile.id.desc()).first()
+            if f:
+                seen[c.cert_type]["upload_id"] = f.id
+                seen[c.cert_type]["upload_name"] = f.original_name
+
+    return list(seen.values())
 
 
 @router.get("/portal/features")

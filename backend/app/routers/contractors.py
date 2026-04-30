@@ -10,6 +10,7 @@ from app.models.maintenance import MaintenanceRequest
 from app.models.contractor_review import ContractorReview
 from app.models.unit import Unit
 from app.models.property import Property
+from app.models.organisation import Organisation
 from app import emails, notifications
 
 router = APIRouter(prefix="/api/contractors", tags=["contractors"])
@@ -188,10 +189,13 @@ def assign_contractor(job_id: int, data: AssignContractor, db: Session = Depends
     db.commit()
     db.refresh(job)
 
-    # Notify via Telegram
     if data.contractor_id and contractor:
         unit = db.query(Unit).filter(Unit.id == job.unit_id).first()
-        unit_name = f"{unit.property.name} · {unit.name}" if unit else "Unknown"
+        prop = unit.property if unit else None
+        unit_name = f"{prop.name} · {unit.name}" if prop and unit else "Unknown"
+        org = db.query(Organisation).filter(Organisation.id == current_user.organisation_id).first()
+
+        # Notify agent channel
         notifications.send(
             f"🔧 <b>Contractor Assigned</b>\n\n"
             f"Job: {job.title}\n"
@@ -200,6 +204,26 @@ def assign_contractor(job_id: int, data: AssignContractor, db: Session = Depends
             + (f" ({contractor.company_name})" if contractor.company_name else "")
             + (f"\nEstimate: £{data.estimated_cost:.0f}" if data.estimated_cost else "")
         )
+
+        # Notify contractor — Telegram + email
+        contractor_name = contractor.full_name or contractor.company_name or "Contractor"
+        if contractor.telegram_chat_id:
+            notifications.send(
+                f"🔧 <b>New Job Assigned to You</b>\n\n"
+                f"Job: {job.title}\n"
+                f"Location: {unit_name}\n"
+                f"Please log in to your portal to accept or decline.",
+                chat_id=contractor.telegram_chat_id,
+            )
+        if contractor.notify_email:
+            emails.send_contractor_job_assigned(contractor, job.title, prop.name if prop else "", unit.name if unit else "", org)
+
+        # Notify tenant
+        if job.reported_by_tenant_id:
+            from app.models.tenant import Tenant
+            tenant = db.query(Tenant).filter(Tenant.id == job.reported_by_tenant_id).first()
+            if tenant:
+                emails.send_tenant_contractor_assigned(tenant, job.title, contractor_name, org)
 
     return {
         "ok": True,

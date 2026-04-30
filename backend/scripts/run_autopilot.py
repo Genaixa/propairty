@@ -37,6 +37,8 @@ CHECKS_META = {
         "default_days": 5,
         "unit": "days without update",
         "dedup_hours": 72,
+        "can_auto_act": True,
+        "auto_act_description": "Automatically messages the contractor via portal",
     },
     "tenant_message_unanswered": {
         "label": "Tenant message unanswered",
@@ -65,6 +67,8 @@ CHECKS_META = {
         "default_days": 7,
         "unit": "days since offer sent",
         "dedup_hours": 120,
+        "can_auto_act": True,
+        "auto_act_description": "Automatically sends a reminder message to the tenant",
     },
     "compliance_expiring": {
         "label": "Compliance certificate expiring",
@@ -79,6 +83,8 @@ CHECKS_META = {
         "default_days": 5,
         "unit": "days overdue",
         "dedup_hours": 72,
+        "can_auto_act": True,
+        "auto_act_description": "Automatically sends an arrears reminder to the tenant",
     },
     "applicant_followup_overdue": {
         "label": "Applicant follow-up overdue",
@@ -159,7 +165,14 @@ CHECKS_META = {
     },
 }
 
-DEFAULT_CONFIG = {k: {"enabled": True, "days": v["default_days"]} for k, v in CHECKS_META.items()}
+DEFAULT_CONFIG = {
+    k: {
+        "enabled": True,
+        "days": v["default_days"],
+        **({"auto_act": True} if v.get("can_auto_act") else {}),
+    }
+    for k, v in CHECKS_META.items()
+}
 
 
 # ── Groq message generation ───────────────────────────────────────────────────
@@ -297,7 +310,7 @@ def check_maintenance_unassigned(db: Session, org_id: int, days: int, agency_nam
     return results
 
 
-def check_maintenance_stalled(db: Session, org_id: int, days: int, agency_name: str, dry_run: bool) -> list:
+def check_maintenance_stalled(db: Session, org_id: int, days: int, agency_name: str, dry_run: bool, auto_act: bool = True) -> list:
     from app.models.maintenance import MaintenanceRequest
     from app.models.unit import Unit
     from app.models.property import Property
@@ -327,11 +340,13 @@ def check_maintenance_stalled(db: Session, org_id: int, days: int, agency_name: 
                    f"Many thanks, The {agency_name} Team")
         summary = f"Job #{job.id} '{job.title}' at {addr} assigned to {c_name} — no update for {days}+ days"
         if not dry_run:
-            if contractor:
+            if auto_act and contractor:
                 _send_contractor_message(db, org_id, contractor.id, msg)
-            _send_agent_alert(org_id, f"🔧 {summary} — chased contractor")
+            alert_suffix = "chased contractor" if auto_act else "alert only — auto-act is off"
+            _send_agent_alert(org_id, f"🔧 {summary} — {alert_suffix}")
+            action = "portal_message_contractor" if auto_act else "agent_alert"
             _log_action(db, org_id, "maintenance_stalled", "maintenance", job.id,
-                        "portal_message_contractor", c_name, summary, msg, dedup)
+                        action, c_name, summary, msg if auto_act else None, dedup)
         results.append({"check": "maintenance_stalled", "summary": summary, "entity_id": job.id})
     return results
 
@@ -455,7 +470,7 @@ def check_lease_expiring_no_offer(db: Session, org_id: int, days: int, agency_na
     return results
 
 
-def check_renewal_no_response(db: Session, org_id: int, days: int, agency_name: str, dry_run: bool) -> list:
+def check_renewal_no_response(db: Session, org_id: int, days: int, agency_name: str, dry_run: bool, auto_act: bool = True) -> list:
     from app.models.renewal import RenewalOffer
     from app.models.lease import Lease
     from app.models.unit import Unit
@@ -488,10 +503,13 @@ def check_renewal_no_response(db: Session, org_id: int, days: int, agency_name: 
                    f"could you log into your tenant portal and let us know if you'd like to accept or decline? "
                    f"Happy to chat through any questions. The {agency_name} Team")
         summary = f"Renewal offer for {t_name} at {addr} — no response after {days} days"
-        if not dry_run and tenant:
-            _send_tenant_message(db, org_id, tenant.id, msg)
+        if not dry_run:
+            if auto_act and tenant:
+                _send_tenant_message(db, org_id, tenant.id, msg)
+            _send_agent_alert(org_id, f"📋 {summary}" + ("" if auto_act else " — alert only, auto-act off"))
+            action = "portal_message_tenant" if auto_act else "agent_alert"
             _log_action(db, org_id, "renewal_no_response", "renewal", offer.id,
-                        "portal_message_tenant", t_name, summary, msg, dedup)
+                        action, t_name, summary, msg if auto_act else None, dedup)
         results.append({"check": "renewal_no_response", "summary": summary, "entity_id": offer.id})
     return results
 
@@ -523,7 +541,7 @@ def check_compliance_expiring(db: Session, org_id: int, days: int, agency_name: 
     return results
 
 
-def check_arrears_chase(db: Session, org_id: int, days: int, agency_name: str, dry_run: bool) -> list:
+def check_arrears_chase(db: Session, org_id: int, days: int, agency_name: str, dry_run: bool, auto_act: bool = True) -> list:
     from app.models.payment import RentPayment
     from app.models.lease import Lease
     from app.models.unit import Unit
@@ -559,11 +577,14 @@ def check_arrears_chase(db: Session, org_id: int, days: int, agency_name: str, d
                    f"Please make payment at your earliest convenience or get in touch if there's an issue. "
                    f"The {agency_name} Team")
         summary = f"Rent arrears: {t_name} — £{owed:.2f} overdue {overdue_days} days (payment #{pmt.id})"
-        if not dry_run and tenant:
-            _send_tenant_message(db, org_id, tenant.id, msg)
-            _send_agent_alert(org_id, f"💷 {summary} — tenant chased")
+        if not dry_run:
+            if auto_act and tenant:
+                _send_tenant_message(db, org_id, tenant.id, msg)
+            alert_suffix = "tenant chased" if auto_act else "alert only — auto-act off"
+            _send_agent_alert(org_id, f"💷 {summary} — {alert_suffix}")
+            action = "portal_message_tenant" if auto_act else "agent_alert"
             _log_action(db, org_id, "arrears_chase", "payment", pmt.id,
-                        "portal_message_tenant", t_name, summary, msg, dedup)
+                        action, t_name, summary, msg if auto_act else None, dedup)
         results.append({"check": "arrears_chase", "summary": summary, "entity_id": pmt.id})
     return results
 
@@ -953,7 +974,10 @@ def run_for_org(db: Session, org: Organisation, dry_run: bool = False) -> list:
         meta = CHECKS_META[check_name]
         days = check_cfg.get("days", meta["default_days"])
         try:
-            results = check_fn(db, org.id, days, agency_name, dry_run)
+            kwargs = {}
+            if meta.get("can_auto_act"):
+                kwargs["auto_act"] = check_cfg.get("auto_act", True)
+            results = check_fn(db, org.id, days, agency_name, dry_run, **kwargs)
             all_results.extend(results)
             if results:
                 log.info(f"Org {org.id} — {check_name}: {len(results)} action(s)")

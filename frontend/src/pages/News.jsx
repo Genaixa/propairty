@@ -52,7 +52,7 @@ export default function News() {
   const counts = [5,4,3,2,1].map(s => ({ score: s, n: articles.filter(a => (a.score||3) === s).length }))
 
   return (
-    <div className="max-w-4xl mx-auto space-y-5">
+    <div className="max-w-4xl space-y-5">
       <PageHeader title="Property News" subtitle="Latest industry news · ranked by relevance to letting agents">
         {cached_at && (
           <span className={`text-xs px-2.5 py-1 rounded-full border font-medium
@@ -76,7 +76,7 @@ export default function News() {
           {/* Score filter */}
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-xs text-gray-500 font-medium">Show:</span>
-            {[1,2,3,4,5].map(s => {
+            {[5,4,3,2,1].map(s => {
               const m = SCORE_META[s]
               const active = minScore <= s
               const n = counts.find(c => c.score === s)?.n || 0

@@ -69,15 +69,18 @@ export default function Section13() {
                       {generating === lease.lease_id ? 'Generating…' : 'Generate Notice'}
                     </button>
                   )}
-                  {result && !result.error && (
-                    <a
-                      href={`${API_BASE}/api/intelligence/section13/${result.notice_id}/pdf`}
-                      target="_blank"
-                      rel="noreferrer"
+                  {result && !result.error && result.pdf_url && (
+                    <button
+                      onClick={async () => {
+                        const r = await api.get(result.pdf_url.replace(/^\/api/, ''), { responseType: 'blob' })
+                        const url = URL.createObjectURL(r.data)
+                        const a = document.createElement('a'); a.href = url; a.download = `Section13_${result.tenant_name?.replace(/ /g,'_') || 'notice'}.pdf`; a.click()
+                        URL.revokeObjectURL(url)
+                      }}
                       className="ml-4 bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-700 whitespace-nowrap"
                     >
                       Download PDF
-                    </a>
+                    </button>
                   )}
                 </div>
                 {result?.error && <p className="mt-2 text-sm text-red-600">{result.error}</p>}

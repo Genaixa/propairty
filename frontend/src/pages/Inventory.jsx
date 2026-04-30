@@ -17,8 +17,12 @@ const condColor = {
 }
 
 function CondBadge({ cond }) {
-  if (!cond) return <span className="text-gray-300 text-xs">—</span>
-  return <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${condColor[cond] || 'bg-gray-100 text-gray-600'}`}>{cond}</span>
+  if (!cond) return <span className="inline-flex items-center justify-center w-20 text-gray-300 text-xs">—</span>
+  return (
+    <span className={`inline-flex items-center justify-center w-20 text-xs font-semibold px-2 py-1 rounded-md ${condColor[cond] || 'bg-gray-100 text-gray-600'}`}>
+      {cond}
+    </span>
+  )
 }
 
 function downloadPdf(url, filename) {
@@ -38,7 +42,7 @@ export default function Inventory() {
   const [drafts, setDrafts] = useState([])
   const [leases, setLeases] = useState([])
   const [defaultRooms, setDefaultRooms] = useState({})
-  const [view, setView] = useState('list')    // list | create | detail | compare | review_draft
+  const [view, setView] = useState('list')    // list | create | edit | detail | compare | review_draft
   const [selected, setSelected] = useState(null)
   const [compareData, setCompareData] = useState(null)
   const [compareLease, setCompareLease] = useState(null)
@@ -259,6 +263,16 @@ export default function Inventory() {
         />
       )}
 
+      {view === 'edit' && selected && (
+        <InventoryBuilder
+          leases={leases}
+          defaultRooms={defaultRooms}
+          editInv={selected}
+          onSaved={async () => { await load(); setView('detail') }}
+          onCancel={() => setView('detail')}
+        />
+      )}
+
       {/* Review draft (from Telegram bot) */}
       {view === 'review_draft' && reviewDraft && (
         <InventoryBuilder
@@ -274,6 +288,8 @@ export default function Inventory() {
       {view === 'detail' && selected && (
         <InventoryDetail
           inv={selected}
+          onEdit={() => setView('edit')}
+          onAckSent={load}
           onDelete={async () => {
             await api.delete(`/inventory/${selected.id}`)
             load(); setView('list')
@@ -297,20 +313,108 @@ export default function Inventory() {
 }
 
 
-function InventoryBuilder({ leases, defaultRooms, draft, onSaved, onCancel }) {
-  const [leaseId, setLeaseId] = useState(draft ? String(draft.lease_id) : '')
-  const [invType, setInvType] = useState(draft?.inv_type ?? 'check_in')
-  const [invDate, setInvDate] = useState(draft?.inv_date ?? new Date().toISOString().slice(0, 10))
-  const [conductedBy, setConductedBy] = useState(draft?.conducted_by ?? '')
-  const [tenantPresent, setTenantPresent] = useState(draft?.tenant_present ?? true)
-  const [overallNotes, setOverallNotes] = useState(draft?.overall_notes ?? '')
-  const [meterElectric, setMeterElectric] = useState(draft?.meter_electric ?? '')
-  const [meterGas, setMeterGas] = useState(draft?.meter_gas ?? '')
-  const [meterWater, setMeterWater] = useState(draft?.meter_water ?? '')
-  const [keysHanded, setKeysHanded] = useState(draft?.keys_handed ?? '')
+const PRESET_KEYS = ['Front', 'Back', 'Garage', 'Garden', 'Yard']
+
+function parseKeys(str) {
+  const counts = Object.fromEntries(PRESET_KEYS.map(k => [k, 0]))
+  const others = []
+  if (!str) return { counts, others }
+  str.split(',').map(s => s.trim()).forEach(part => {
+    const m = part.match(/^(\d+)\s+(.+)$/)
+    if (!m) return
+    const n = parseInt(m[1]), label = m[2].trim()
+    const preset = PRESET_KEYS.find(k => k.toLowerCase() === label.toLowerCase())
+    if (preset) counts[preset] = n
+    else others.push({ label, count: n })
+  })
+  return { counts, others }
+}
+
+function serializeKeys(counts, others) {
+  const parts = []
+  PRESET_KEYS.forEach(k => { if (counts[k] > 0) parts.push(`${counts[k]} ${k.toLowerCase()}`) })
+  others.forEach(o => { if (o.count > 0 && o.label.trim()) parts.push(`${o.count} ${o.label.trim()}`) })
+  return parts.join(', ')
+}
+
+function KeysInput({ value, onChange }) {
+  const parsed = parseKeys(value)
+  const [counts, setCounts] = useState(parsed.counts)
+  const [others, setOthers] = useState(parsed.others.length ? parsed.others : [])
+
+  function update(newCounts, newOthers) {
+    setCounts(newCounts)
+    setOthers(newOthers)
+    onChange(serializeKeys(newCounts, newOthers))
+  }
+
+  function setCount(key, val) {
+    const n = Math.max(0, parseInt(val) || 0)
+    update({ ...counts, [key]: n }, others)
+  }
+
+  function setOtherField(i, field, val) {
+    const next = others.map((o, idx) => idx === i ? { ...o, [field]: field === 'count' ? Math.max(0, parseInt(val) || 0) : val } : o)
+    update(counts, next)
+  }
+
+  function addOther() { update(counts, [...others, { label: '', count: 1 }]) }
+  function removeOther(i) { update(counts, others.filter((_, idx) => idx !== i)) }
+
+  return (
+    <div className="space-y-2">
+      <div className="flex flex-wrap gap-2">
+        {PRESET_KEYS.map(key => (
+          <div key={key} className="flex items-center gap-1.5 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
+            <span className="text-sm text-gray-600 w-14">{key}</span>
+            <input
+              type="number" min={0} value={counts[key]}
+              onChange={e => setCount(key, e.target.value)}
+              className="w-14 border border-gray-300 rounded px-2 py-1 text-sm text-center focus:outline-none focus:ring-2 focus:ring-indigo-400"
+            />
+          </div>
+        ))}
+      </div>
+      {others.map((o, i) => (
+        <div key={i} className="flex items-center gap-2">
+          <input
+            type="text" placeholder="e.g. Swimming pool, Stable…" value={o.label}
+            onChange={e => setOtherField(i, 'label', e.target.value)}
+            className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
+          />
+          <input
+            type="number" min={0} value={o.count}
+            onChange={e => setOtherField(i, 'count', e.target.value)}
+            className="w-16 border border-gray-300 rounded-lg px-2 py-2 text-sm text-center focus:outline-none focus:ring-2 focus:ring-indigo-400"
+          />
+          <button type="button" onClick={() => removeOther(i)} className="text-gray-400 hover:text-red-500 text-lg px-1">×</button>
+        </div>
+      ))}
+      <button type="button" onClick={addOther}
+        className="text-xs text-indigo-600 hover:underline font-medium">
+        + Other key type
+      </button>
+      {value && <p className="text-xs text-gray-400">Will record: <span className="text-gray-600">{value}</span></p>}
+    </div>
+  )
+}
+
+
+function InventoryBuilder({ leases, defaultRooms, draft, editInv, onSaved, onCancel }) {
+  const prefill = editInv || draft
+  const [leaseId, setLeaseId] = useState(prefill ? String(prefill.lease_id) : '')
+  const [invType, setInvType] = useState(prefill?.inv_type ?? 'check_in')
+  const [invDate, setInvDate] = useState(prefill?.inv_date ?? new Date().toISOString().slice(0, 10))
+  const [conductedBy, setConductedBy] = useState(prefill?.conducted_by ?? '')
+  const [tenantPresent, setTenantPresent] = useState(prefill?.tenant_present ?? true)
+  const [overallNotes, setOverallNotes] = useState(prefill?.overall_notes ?? '')
+  const [meterElectric, setMeterElectric] = useState(prefill?.meter_electric ?? '')
+  const [meterGas, setMeterGas] = useState(prefill?.meter_gas ?? '')
+  const [meterWater, setMeterWater] = useState(prefill?.meter_water ?? '')
+  const [keysHanded, setKeysHanded] = useState(prefill?.keys_handed ?? '')
   const [rooms, setRooms] = useState(() => {
-    if (draft?.rooms?.length) {
-      return draft.rooms.map((r, ri) => ({
+    if (prefill?.rooms?.length) {
+      return prefill.rooms.map((r, ri) => ({
         room_name: r.room_name,
         order: ri,
         notes: r.notes ?? '',
@@ -326,16 +430,33 @@ function InventoryBuilder({ leases, defaultRooms, draft, onSaved, onCancel }) {
   })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [templateInfo, setTemplateInfo] = useState(null) // { source, inv_type, inv_date }
+  const [loadingTemplate, setLoadingTemplate] = useState(false)
 
-  function loadDefaultRooms() {
-    const built = Object.entries(defaultRooms).map(([roomName, items], ri) => ({
-      room_name: roomName,
-      order: ri,
-      notes: '',
-      items: items.map((item, ii) => ({ item_name: item, condition: '', notes: '', order: ii })),
-    }))
-    setRooms(built)
-  }
+  // Auto-load template when lease changes (new inventories only, not edits/drafts)
+  useEffect(() => {
+    if (prefill || !leaseId) return
+    setLoadingTemplate(true)
+    setTemplateInfo(null)
+    api.get(`/inventory/template/${leaseId}`)
+      .then(r => {
+        const { rooms: tRooms, source, inv_type, inv_date } = r.data
+        setRooms(tRooms.map((r, ri) => ({
+          room_name: r.room_name,
+          order: ri,
+          notes: r.notes ?? '',
+          items: r.items.map((i, ii) => ({
+            item_name: i.item_name,
+            condition: i.condition ?? '',
+            notes: i.notes ?? '',
+            order: ii,
+          })),
+        })))
+        setTemplateInfo({ source, inv_type, inv_date })
+      })
+      .catch(() => {})
+      .finally(() => setLoadingTemplate(false))
+  }, [leaseId])
 
   function addRoom() {
     setRooms([...rooms, { room_name: '', order: rooms.length, notes: '', items: [] }])
@@ -398,7 +519,9 @@ function InventoryBuilder({ leases, defaultRooms, draft, onSaved, onCancel }) {
       })).filter(r => r.room_name),
     }
     try {
-      if (draft) {
+      if (editInv) {
+        await api.put(`/inventory/${editInv.id}`, payload)
+      } else if (draft) {
         await api.post(`/inventory/${draft.id}/confirm`, payload)
       } else {
         await api.post('/inventory', payload)
@@ -416,12 +539,34 @@ function InventoryBuilder({ leases, defaultRooms, draft, onSaved, onCancel }) {
       <div className="bg-white rounded-xl border border-gray-200 p-5 space-y-4">
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Lease / Tenant</label>
-            <select value={leaseId} onChange={e => setLeaseId(e.target.value)} required
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
-              <option value="">Select lease…</option>
-              {leases.map(l => <option key={l.id} value={l.id}>{l.tenant_name} — {l.unit}</option>)}
-            </select>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Tenancy</label>
+            {leases.length === 0 ? (
+              <p className="text-sm text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                No active leases found. Create a lease first before recording an inventory.
+              </p>
+            ) : (
+              <select value={leaseId} onChange={e => setLeaseId(e.target.value)} required
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                <option value="">Select property / unit…</option>
+                {Object.entries(
+                  leases.reduce((acc, l) => {
+                    const p = l.property_name || l.unit.split(' · ')[0] || 'Unknown'
+                    if (!acc[p]) acc[p] = []
+                    acc[p].push(l)
+                    return acc
+                  }, {})
+                ).map(([propName, propLeases]) => (
+                  <optgroup key={propName} label={propName}>
+                    {propLeases.map(l => (
+                      <option key={l.id} value={l.id}>
+                        {l.unit_name || l.unit} — {l.tenant_name}
+                        {l.has_check_in && !l.has_check_out ? ' ✓ check-in done' : ''}
+                      </option>
+                    ))}
+                  </optgroup>
+                ))}
+              </select>
+            )}
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Type</label>
@@ -456,32 +601,54 @@ function InventoryBuilder({ leases, defaultRooms, draft, onSaved, onCancel }) {
             </label>
           </div>
         </div>
-        <div className="grid grid-cols-4 gap-3">
+        <div className="grid grid-cols-3 gap-3">
           {[['Electric', meterElectric, setMeterElectric], ['Gas', meterGas, setMeterGas],
-            ['Water', meterWater, setMeterWater], ['Keys Handed', keysHanded, setKeysHanded]].map(([label, val, set]) => (
+            ['Water', meterWater, setMeterWater]].map(([label, val, set]) => (
             <div key={label}>
               <label className="block text-xs font-medium text-gray-600 mb-1">{label}</label>
-              <input value={val} onChange={e => set(e.target.value)} placeholder={label === 'Keys Handed' ? 'e.g. 2 front door' : '00000'}
+              <input value={val} onChange={e => set(e.target.value)} placeholder="00000"
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
             </div>
           ))}
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-2">Keys Handed</label>
+          <KeysInput value={keysHanded} onChange={setKeysHanded} />
         </div>
       </div>
 
       {/* Room builder */}
       <div className="flex items-center justify-between">
         <h3 className="font-semibold text-gray-800">Rooms &amp; Items</h3>
-        <div className="flex gap-2">
-          <button onClick={loadDefaultRooms} type="button"
-            className="text-sm text-indigo-600 border border-indigo-200 hover:bg-indigo-50 px-3 py-1.5 rounded-lg transition-colors">
-            Load Default Rooms
-          </button>
-          <button onClick={addRoom} type="button"
-            className="text-sm text-gray-600 border border-gray-300 hover:bg-gray-50 px-3 py-1.5 rounded-lg transition-colors">
-            + Add Room
-          </button>
-        </div>
+        <button onClick={addRoom} type="button"
+          className="text-sm text-gray-600 border border-gray-300 hover:bg-gray-50 px-3 py-1.5 rounded-lg transition-colors">
+          + Add Room
+        </button>
       </div>
+
+      {loadingTemplate && (
+        <p className="text-xs text-gray-400 animate-pulse">Loading rooms for this tenancy…</p>
+      )}
+
+      {templateInfo && !loadingTemplate && (
+        <div className={`rounded-lg px-4 py-2.5 text-xs flex items-center gap-2 ${templateInfo.source === 'inventory' ? 'bg-indigo-50 border border-indigo-200 text-indigo-700' : 'bg-gray-50 border border-gray-200 text-gray-500'}`}>
+          {templateInfo.source === 'inventory' ? (
+            <>
+              <span>📋</span>
+              <span>
+                Rooms and conditions pre-loaded from last {templateInfo.inv_type === 'check_in' ? 'check-in' : 'check-out'}
+                {templateInfo.inv_date ? ` (${new Date(templateInfo.inv_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })})` : ''}.
+                Update any items whose condition has changed.
+              </span>
+            </>
+          ) : (
+            <>
+              <span>📋</span>
+              <span>No previous inventory for this unit — loaded default room template. Conditions are blank.</span>
+            </>
+          )}
+        </div>
+      )}
 
       {rooms.map((room, ri) => (
         <div key={ri} className="bg-white rounded-xl border border-gray-200 overflow-hidden">
@@ -535,7 +702,24 @@ function InventoryBuilder({ leases, defaultRooms, draft, onSaved, onCancel }) {
 }
 
 
-function InventoryDetail({ inv, onDelete }) {
+function InventoryDetail({ inv, onDelete, onEdit, onAckSent }) {
+  const [sending, setSending] = useState(false)
+  const [sendDone, setSendDone] = useState(false)
+  const [sendError, setSendError] = useState('')
+
+  async function sendAck() {
+    setSending(true); setSendError('')
+    try {
+      await api.post(`/inventory/${inv.id}/send-acknowledgement`)
+      setSendDone(true)
+      if (onAckSent) onAckSent()
+    } catch (e) {
+      setSendError(e.response?.data?.detail || 'Failed to send')
+    } finally {
+      setSending(false)
+    }
+  }
+
   return (
     <div className="space-y-4">
       <div className="bg-white rounded-xl border border-gray-200 p-5">
@@ -543,14 +727,42 @@ function InventoryDetail({ inv, onDelete }) {
           <div>
             <h3 className="font-bold text-gray-900 text-lg">{inv.inv_type === 'check_in' ? 'Check-In' : 'Check-Out'} Inventory</h3>
             <p className="text-sm text-gray-500">{inv.tenant_name} · {inv.unit}</p>
+            <div className="mt-1.5">
+              {inv.tenant_acknowledged_at ? (
+                <span className="inline-flex items-center gap-1 text-xs bg-green-100 text-green-700 font-semibold px-2.5 py-1 rounded-full">
+                  ✓ Acknowledged {new Date(inv.tenant_acknowledged_at).toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' })}
+                </span>
+              ) : inv.ack_sent_at ? (
+                <span className="inline-flex items-center gap-1 text-xs bg-amber-100 text-amber-700 font-semibold px-2.5 py-1 rounded-full">
+                  ⏳ Sent {new Date(inv.ack_sent_at).toLocaleDateString('en-GB', { day:'numeric', month:'short' })} — awaiting tenant
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1 text-xs bg-gray-100 text-gray-500 font-semibold px-2.5 py-1 rounded-full">
+                  Pending acknowledgement
+                </span>
+              )}
+            </div>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2 justify-end">
             <button onClick={() => downloadPdf(`${BASE}/inventory/${inv.id}/report`, `Inventory_${inv.tenant_name.replace(' ', '_')}.pdf`)}
               className="text-sm text-indigo-600 border border-indigo-200 hover:bg-indigo-50 px-3 py-1.5 rounded-lg">PDF</button>
-            <button onClick={() => { if (confirm('Delete this inventory?')) onDelete() }}
-              className="text-sm text-red-500 border border-red-200 hover:bg-red-50 px-3 py-1.5 rounded-lg">Delete</button>
+            {!inv.is_locked && (
+              <>
+                <button onClick={onEdit}
+                  className="text-sm text-gray-700 border border-gray-300 hover:bg-gray-50 px-3 py-1.5 rounded-lg">Edit</button>
+                <button onClick={sendAck} disabled={sending || sendDone}
+                  className="text-sm bg-indigo-600 text-white hover:bg-indigo-700 px-3 py-1.5 rounded-lg disabled:opacity-50">
+                  {sendDone ? '✓ Sent' : sending ? 'Sending…' : inv.ack_sent_at ? 'Resend to Tenant' : 'Send to Tenant'}
+                </button>
+              </>
+            )}
+            {!inv.is_locked && (
+              <button onClick={() => { if (confirm('Delete this inventory?')) onDelete() }}
+                className="text-sm text-red-500 border border-red-200 hover:bg-red-50 px-3 py-1.5 rounded-lg">Delete</button>
+            )}
           </div>
         </div>
+        {sendError && <p className="text-xs text-red-500 mb-2">{sendError}</p>}
         <div className="grid grid-cols-4 gap-3 text-sm">
           {[['Date', fmt(inv.inv_date)], ['Conducted By', inv.conducted_by || '—'],
             ['Tenant Present', inv.tenant_present ? 'Yes' : 'No'],
@@ -606,65 +818,120 @@ function InventoryDetail({ inv, onDelete }) {
 
 function ComparisonView({ data, lease, onDownload }) {
   const { check_in, check_out, comparison, declined_items, declined_count } = data
+  const fmtD = d => d ? new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'
 
   return (
     <div className="space-y-5">
-      <div className="flex items-center justify-between">
-        <div>
-          <h3 className="font-bold text-gray-900 text-lg">{lease.tenant_name} — {lease.unit}</h3>
-          <p className="text-sm text-gray-500">
-            Check-In: {check_in?.inv_date} &nbsp;→&nbsp; Check-Out: {check_out?.inv_date}
-          </p>
+
+      {/* Header */}
+      <div className="bg-white rounded-xl border border-gray-200 p-5">
+        <div className="flex items-start justify-between gap-4 flex-wrap">
+          <div>
+            <h3 className="text-lg font-bold text-gray-900">{lease.tenant_name}</h3>
+            <p className="text-sm text-gray-500 mt-0.5">{lease.unit}</p>
+            <div className="flex items-center gap-3 mt-3">
+              <div className="text-center px-4 py-2 bg-blue-50 rounded-lg">
+                <p className="text-[10px] font-semibold text-blue-400 uppercase tracking-wide mb-0.5">Check-In</p>
+                <p className="text-sm font-semibold text-blue-700">{fmtD(check_in?.inv_date)}</p>
+              </div>
+              <svg className="w-4 h-4 text-gray-300 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6" />
+              </svg>
+              <div className="text-center px-4 py-2 bg-orange-50 rounded-lg">
+                <p className="text-[10px] font-semibold text-orange-400 uppercase tracking-wide mb-0.5">Check-Out</p>
+                <p className="text-sm font-semibold text-orange-700">{fmtD(check_out?.inv_date)}</p>
+              </div>
+            </div>
+          </div>
+          <button onClick={onDownload}
+            className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold px-4 py-2.5 rounded-lg transition-colors shrink-0">
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+            Download PDF
+          </button>
         </div>
-        <button onClick={onDownload}
-          className="bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold px-4 py-2 rounded-lg transition-colors">
-          Download Comparison PDF
-        </button>
       </div>
 
+      {/* Declined items summary */}
       {declined_count > 0 && (
-        <div className="bg-red-50 border border-red-200 rounded-xl p-4">
-          <p className="font-semibold text-red-700 text-sm mb-2">{declined_count} item{declined_count > 1 ? 's' : ''} with declined condition</p>
-          <div className="space-y-1">
-            {declined_items.map((d, i) => (
-              <div key={i} className="flex items-center gap-3 text-sm text-red-700">
-                <span className="font-medium">{d.room} — {d.item}:</span>
-                <CondBadge cond={d.in_condition} />
-                <span className="text-red-400">→</span>
-                <CondBadge cond={d.out_condition} />
-              </div>
-            ))}
+        <div className="bg-rose-50 border border-rose-200 rounded-xl overflow-hidden">
+          <div className="px-5 py-3 border-b border-rose-200 flex items-center gap-2">
+            <svg className="w-4 h-4 text-rose-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+            <p className="text-sm font-semibold text-rose-700">
+              {declined_count} item{declined_count !== 1 ? 's' : ''} declined in condition
+            </p>
           </div>
+          <table className="w-full text-sm">
+            <colgroup>
+              <col className="w-auto" />
+              <col className="w-24" />
+              <col className="w-6" />
+              <col className="w-24" />
+            </colgroup>
+            <tbody className="divide-y divide-rose-100">
+              {declined_items.map((d, i) => (
+                <tr key={i}>
+                  <td className="px-5 py-2.5 text-rose-800 font-medium">{d.room} — {d.item}</td>
+                  <td className="py-2.5 text-center"><CondBadge cond={d.in_condition} /></td>
+                  <td className="py-2.5 text-center">
+                    <svg className="w-3.5 h-3.5 text-rose-300 mx-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                    </svg>
+                  </td>
+                  <td className="pr-5 py-2.5 text-center"><CondBadge cond={d.out_condition} /></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
 
+      {/* Room-by-room comparison */}
       {comparison?.filter(room => room.items.some(i => i.item_name?.trim() && (i.condition || i.out_condition))).map(room => {
         const filledItems = room.items.filter(i => i.item_name?.trim() && (i.condition || i.out_condition))
-        const hasChanges = filledItems.some(i => i.changed)
+        const changedCount = filledItems.filter(i => i.changed).length
         return (
-          <div key={room.room_name} className={`bg-white rounded-xl border overflow-hidden ${hasChanges ? 'border-amber-200' : 'border-gray-200'}`}>
-            <div className={`px-5 py-3 border-b ${hasChanges ? 'bg-amber-50 border-amber-100' : 'bg-gray-50 border-gray-100'}`}>
+          <div key={room.room_name} className={`bg-white rounded-xl border overflow-hidden ${changedCount > 0 ? 'border-amber-200' : 'border-gray-200'}`}>
+            {/* Room header */}
+            <div className={`flex items-center justify-between px-5 py-3 border-b ${changedCount > 0 ? 'bg-amber-50 border-amber-100' : 'bg-gray-50 border-gray-100'}`}>
               <h4 className="font-semibold text-gray-800">{room.room_name}</h4>
+              {changedCount > 0 && (
+                <span className="text-xs font-semibold text-amber-600 bg-amber-100 px-2 py-0.5 rounded-full">
+                  {changedCount} change{changedCount !== 1 ? 's' : ''}
+                </span>
+              )}
             </div>
             <table className="w-full text-sm">
-              <thead className="bg-gray-50 text-xs text-gray-500">
-                <tr>
-                  <th className="text-left px-5 py-2">Item</th>
-                  <th className="text-center px-5 py-2">Check-In</th>
-                  <th className="text-center px-5 py-2">Check-Out</th>
-                  <th className="text-center px-5 py-2">Change</th>
+              <colgroup>
+                <col className="w-auto" />
+                <col className="w-28" />
+                <col className="w-28" />
+                <col className="w-16" />
+              </colgroup>
+              <thead>
+                <tr className="border-b border-gray-100">
+                  <th className="text-left px-5 py-2.5 text-xs font-medium text-gray-400">Item</th>
+                  <th className="text-center py-2.5 text-xs font-medium text-blue-400">Check-In</th>
+                  <th className="text-center py-2.5 text-xs font-medium text-orange-400">Check-Out</th>
+                  <th className="text-center pr-5 py-2.5 text-xs font-medium text-gray-400">Δ</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {filledItems.map((item, i) => (
-                  <tr key={i} className={item.changed ? 'bg-red-50/40' : 'hover:bg-gray-50'}>
-                    <td className="px-5 py-2.5 text-gray-700">{item.item_name}</td>
-                    <td className="px-5 py-2.5 text-center"><CondBadge cond={item.condition} /></td>
-                    <td className="px-5 py-2.5 text-center"><CondBadge cond={item.out_condition} /></td>
-                    <td className="px-5 py-2.5 text-center text-xs font-bold">
-                      {item.changed ? <span className="text-red-600">▼</span>
-                        : item.improved ? <span className="text-green-600">▲</span>
-                        : <span className="text-gray-300">—</span>}
+                  <tr key={i} className={item.changed ? 'bg-rose-50/50' : item.improved ? 'bg-emerald-50/40' : 'hover:bg-gray-50/60'}>
+                    <td className="px-5 py-3 text-gray-700 font-medium">{item.item_name}</td>
+                    <td className="py-3 text-center"><CondBadge cond={item.condition} /></td>
+                    <td className="py-3 text-center"><CondBadge cond={item.out_condition} /></td>
+                    <td className="pr-5 py-3 text-center">
+                      {item.changed
+                        ? <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-rose-100 text-rose-600 text-xs font-bold">▼</span>
+                        : item.improved
+                          ? <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-emerald-100 text-emerald-600 text-xs font-bold">▲</span>
+                          : <span className="text-gray-200 text-sm">—</span>
+                      }
                     </td>
                   </tr>
                 ))}

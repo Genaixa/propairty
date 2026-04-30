@@ -13,7 +13,10 @@ class Checklist(Base):
     organisation_id = Column(Integer, ForeignKey("organisations.id"), nullable=False)
     name = Column(String, nullable=False)
     checklist_type = Column(String, nullable=False, default='custom')
+    is_template = Column(Boolean, nullable=False, default=False)
     property_id = Column(Integer, ForeignKey("properties.id"), nullable=True)
+    unit_name = Column(String, nullable=True)
+    tenant_name = Column(String, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     items = relationship("ChecklistItem", back_populates="checklist",

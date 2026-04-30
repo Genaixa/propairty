@@ -16,6 +16,8 @@ class UnitOut(UnitBase):
     id: int
     property_id: int
     created_at: datetime
+    epc_rating: Optional[str] = None
+    epc_potential: Optional[str] = None
     class Config:
         from_attributes = True
 

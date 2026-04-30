@@ -35,6 +35,11 @@ const statusBadge = (status, extra = '') => {
   return <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${cls} ${extra}`}>{status?.replace(/_/g, ' ')}</span>
 }
 
+const landlordDlUrl = (fileId) => {
+  const token = localStorage.getItem('landlord_token') || ''
+  return `/api/uploads/${fileId}/download?token=${encodeURIComponent(token)}`
+}
+
 const NAV_ICONS = {
   Overview:    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}><path strokeLinecap="round" strokeLinejoin="round" d="M2.25 12l8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25"/></svg>,
   Properties:  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}><path strokeLinecap="round" strokeLinejoin="round" d="M2.25 21h19.5m-18-18v18m10.5-18v18m6-13.5V21M6.75 6.75h.75m-.75 3h.75m-.75 3h.75m3-6h.75m-.75 3h.75m-.75 3h.75M6.75 21v-3.375c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21M3 3h12m-.75 4.5H21m-3.75 3.75h.008v.008h-.008v-.008Zm0 3h.008v.008h-.008v-.008Zm0 3h.008v.008h-.008v-.008Z"/></svg>,
@@ -47,6 +52,7 @@ const NAV_ICONS = {
   Renewals:    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}><path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"/></svg>,
   Inspections: <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z"/></svg>,
   Documents:   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z"/></svg>,
+  Deposits:    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}><path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z"/></svg>,
   Statements:  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}><path strokeLinecap="round" strokeLinejoin="round" d="M9 14.25l6-6m4.5-3.493V21.75l-3.75-1.5-3.75 1.5-3.75-1.5-3.75 1.5V4.757c0-1.108.806-2.057 1.907-2.185a48.507 48.507 0 0111.186 0c1.1.128 1.907 1.077 1.907 2.185zM9.75 9h.008v.008H9.75V9zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm4.125 4.5h.008v.008h-.008V13.5zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z"/></svg>,
   Messages:    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}><path strokeLinecap="round" strokeLinejoin="round" d="M8.625 12a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H8.25m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H12m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0h-.375M21 12c0 4.556-4.03 8.25-9 8.25a9.764 9.764 0 01-2.555-.337A5.972 5.972 0 015.41 20.97a5.969 5.969 0 01-.474-.065 4.48 4.48 0 00.978-2.025c.09-.457-.133-.901-.467-1.226C3.93 16.178 3 14.189 3 12c0-4.556 4.03-8.25 9-8.25s9 3.694 9 8.25z"/></svg>,
 }
@@ -57,6 +63,7 @@ const NAV = [
   { key: 'CFO' },
   { key: 'Financials' },
   { key: 'Arrears' },
+  { key: 'Deposits' },
   { key: 'Maintenance' },
   { key: 'Compliance' },
   { key: 'Notices' },
@@ -75,6 +82,7 @@ export default function LandlordPortal() {
   const [financials, setFinancials] = useState(null)
   const [arrears, setArrears] = useState([])
   const [compliance, setCompliance] = useState([])
+  const [deposits, setDeposits] = useState([])
   const [maintenance, setMaintenance] = useState([])
   const [renewals, setRenewals] = useState([])
   const [inspections, setInspections] = useState([])
@@ -96,6 +104,7 @@ export default function LandlordPortal() {
     landlordApi.get('/portal/financials').then(r => setFinancials(r.data)).catch(() => {})
     landlordApi.get('/portal/arrears').then(r => setArrears(r.data)).catch(() => {})
     landlordApi.get('/portal/compliance').then(r => setCompliance(r.data)).catch(() => {})
+    landlordApi.get('/portal/deposits').then(r => setDeposits(r.data)).catch(() => {})
     landlordApi.get('/portal/maintenance').then(r => setMaintenance(r.data)).catch(() => {})
     landlordApi.get('/portal/renewals').then(r => setRenewals(r.data)).catch(() => {})
     landlordApi.get('/portal/inspections').then(r => setInspections(r.data)).catch(() => {})
@@ -157,6 +166,7 @@ export default function LandlordPortal() {
 
   const NAV_FLAGS = {
     'Financials': 'landlord_financials', 'Arrears': 'landlord_arrears',
+    'Deposits': 'landlord_deposits',
     'Maintenance': 'landlord_maintenance', 'Compliance': 'landlord_compliance',
     'Notices': 'landlord_notices', 'Renewals': 'landlord_renewals',
     'Inspections': 'landlord_inspections', 'Documents': 'landlord_documents',
@@ -538,10 +548,12 @@ export default function LandlordPortal() {
                 <table className="w-full text-sm">
                   <thead className="bg-gray-50 text-xs text-gray-500 uppercase">
                     <tr>
+                      <th className="px-6 py-3 text-left">Property</th>
                       <th className="px-6 py-3 text-left">Certificate</th>
                       <th className="px-6 py-3 text-left">Issued</th>
                       <th className="px-6 py-3 text-left">Expires</th>
                       <th className="px-6 py-3 text-center">Status</th>
+                      <th className="px-6 py-3 text-center">Download</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
@@ -549,6 +561,7 @@ export default function LandlordPortal() {
                       const rowCls = c.status === 'expired' ? 'bg-red-50' : c.status === 'expiring_soon' ? 'bg-amber-50' : ''
                       return (
                         <tr key={c.id} className={rowCls}>
+                          <td className="px-6 py-3 text-gray-600 text-xs">{c.property_name}</td>
                           <td className="px-6 py-3 font-medium text-gray-900">{c.label}</td>
                           <td className="px-6 py-3 text-gray-600">{c.issue_date || '—'}</td>
                           <td className={`px-6 py-3 font-medium ${c.status === 'expired' ? 'text-red-700' : c.status === 'expiring_soon' ? 'text-amber-700' : 'text-gray-600'}`}>{c.expiry_date || '—'}</td>
@@ -558,11 +571,21 @@ export default function LandlordPortal() {
                               <span className="text-xs text-gray-400 ml-1">({c.days_remaining}d)</span>
                             )}
                           </td>
+                          <td className="px-6 py-3 text-center">
+                            {c.upload_id ? (
+                              <a href={landlordDlUrl(c.upload_id)} target="_blank" rel="noreferrer"
+                                className="text-xs text-emerald-600 hover:underline font-medium">
+                                📎 View →
+                              </a>
+                            ) : (
+                              <span className="text-xs text-gray-300">—</span>
+                            )}
+                          </td>
                         </tr>
                       )
                     })}
                     {compliance.length === 0 && (
-                      <tr><td colSpan="4" className="px-6 py-8 text-center text-gray-400">No certificates on record.</td></tr>
+                      <tr><td colSpan="6" className="px-6 py-8 text-center text-gray-400">No certificates on record.</td></tr>
                     )}
                   </tbody>
                 </table>
@@ -731,6 +754,75 @@ export default function LandlordPortal() {
               </div>
             )
           })()}
+
+          {/* Deposits */}
+          {tab === 'Deposits' && (
+            <div>
+              <PageHeader title="Tenancy Deposits" subtitle="Deposit protection status across all properties" />
+              {deposits.length === 0 ? (
+                <div className="bg-white rounded-xl border border-gray-200 p-8 text-center text-gray-400">No deposit records found.</div>
+              ) : (
+                <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+                  <table className="w-full text-sm">
+                    <thead className="bg-gray-50 text-xs text-gray-500 uppercase">
+                      <tr>
+                        <th className="px-6 py-3 text-left">Property / Unit</th>
+                        <th className="px-6 py-3 text-left">Tenant</th>
+                        <th className="px-6 py-3 text-right">Amount</th>
+                        <th className="px-6 py-3 text-left">Scheme</th>
+                        <th className="px-6 py-3 text-left">Reference</th>
+                        <th className="px-6 py-3 text-left">Protected</th>
+                        <th className="px-6 py-3 text-center">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {deposits.map(d => (
+                        <>
+                          <tr key={d.lease_id}>
+                            <td className="px-6 py-3">
+                              <p className="font-medium text-gray-900">{d.property_name}</p>
+                              <p className="text-xs text-gray-500">{d.unit_name}</p>
+                            </td>
+                            <td className="px-6 py-3 text-gray-700">{d.tenant_name}</td>
+                            <td className="px-6 py-3 text-right font-medium text-gray-900">{d.deposit_amount != null ? `£${Number(d.deposit_amount).toLocaleString()}` : '—'}</td>
+                            <td className="px-6 py-3 text-gray-600">{d.scheme || <span className="text-gray-300">Not recorded</span>}</td>
+                            <td className="px-6 py-3 text-gray-500 text-xs">{d.scheme_reference || '—'}</td>
+                            <td className="px-6 py-3 text-gray-600 text-xs">{d.protected_date || '—'}</td>
+                            <td className="px-6 py-3 text-center">{statusBadge(d.status)}</td>
+                          </tr>
+                          {d.status === 'disputed' && d.dispute_summary && (
+                            <tr key={`${d.lease_id}-dispute`} className="bg-purple-50">
+                              <td colSpan={7} className="px-6 py-3">
+                                <div className="flex items-start justify-between gap-4">
+                                  <div>
+                                    <p className="text-xs font-semibold text-purple-700 mb-1">Dispute in Progress</p>
+                                    <p className="text-xs text-purple-600 whitespace-pre-line">{d.dispute_summary.split('\n').filter(l => !l.startsWith('PDF: ')).join('\n')}</p>
+                                  </div>
+                                  {d.dispute_pdf_url && (
+                                    <button
+                                      onClick={async () => {
+                                        const path = d.dispute_pdf_url.replace(/^\/api\/landlord/, '')
+                                        const r = await landlordApi.get(path, { responseType: 'blob' })
+                                        const url = URL.createObjectURL(r.data)
+                                        const a = document.createElement('a'); a.href = url; a.download = d.dispute_pdf_url.split('/').pop(); a.click()
+                                        URL.revokeObjectURL(url)
+                                      }}
+                                      className="shrink-0 text-xs font-medium text-purple-700 border border-purple-300 rounded-lg px-3 py-1.5 hover:bg-purple-100 whitespace-nowrap">
+                                      Download PDF
+                                    </button>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+                        </>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Statements */}
           {tab === 'Statements' && (

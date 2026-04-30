@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import tenantApi from '../../lib/tenantApi'
+import { dlUrl } from '../../lib/api'
 import NotificationPrefs from '../../components/NotificationPrefs'
 import PortalAiChat from '../../components/PortalAiChat'
 import OtherPortals from '../../components/OtherPortals'
@@ -373,6 +374,39 @@ function MaintenanceNotesThread({ job, onResponded }) {
   )
 }
 
+function TriageCard({ triage }) {
+  const severityStyle = {
+    minor:     'bg-green-50 border-green-200 text-green-700',
+    moderate:  'bg-amber-50 border-amber-200 text-amber-700',
+    urgent:    'bg-orange-50 border-orange-200 text-orange-700',
+    emergency: 'bg-red-50 border-red-200 text-red-700',
+  }[triage.severity] || 'bg-gray-50 border-gray-200 text-gray-600'
+
+  return (
+    <div className="mt-2 rounded-lg border bg-indigo-50 border-indigo-100 p-3 text-left max-w-sm">
+      <div className="flex items-center gap-2 mb-1.5">
+        <span className="text-indigo-500 text-sm">🔍</span>
+        <span className="text-xs font-semibold text-indigo-700">AI Diagnosis</span>
+        <span className={`ml-auto text-[10px] font-semibold px-1.5 py-0.5 rounded-full border ${severityStyle}`}>
+          {triage.severity}
+        </span>
+      </div>
+      <p className="text-xs text-gray-700 leading-snug">{triage.diagnosis}</p>
+      {triage.self_fix_possible && triage.self_fix_tip && (
+        <div className="mt-2 bg-green-50 border border-green-100 rounded p-2">
+          <p className="text-[10px] font-semibold text-green-700 mb-0.5">💡 You may be able to fix this yourself:</p>
+          <p className="text-xs text-gray-600">{triage.self_fix_tip}</p>
+        </div>
+      )}
+      {!triage.self_fix_possible && triage.contractor_needed && (
+        <p className="mt-1.5 text-[10px] font-medium text-amber-600">
+          🔧 {triage.contractor_type ? triage.contractor_type.charAt(0).toUpperCase() + triage.contractor_type.slice(1) : 'Contractor'} recommended
+        </p>
+      )}
+    </div>
+  )
+}
+
 const statusBadge = status => {
   const map = {
     active: 'bg-green-100 text-green-700',
@@ -409,6 +443,7 @@ export default function TenantPortal() {
   const [notifications, setNotifications] = useState([])
   const [showNotifications, setShowNotifications] = useState(false)
   const [documents, setDocuments] = useState([])
+  const [complianceCerts, setComplianceCerts] = useState([])
   const [signingDoc, setSigningDoc] = useState(null)
   const [deposit, setDeposit] = useState(null)
   const [inspections, setInspections] = useState([])
@@ -471,6 +506,7 @@ export default function TenantPortal() {
     tenantApi.get('/portal/notices').then(r => setNotices(r.data || [])).catch(() => {})
     tenantApi.get('/portal/notifications').then(r => setNotifications(r.data)).catch(() => {})
     tenantApi.get('/portal/documents').then(r => setDocuments(r.data)).catch(() => {})
+    tenantApi.get('/portal/compliance').then(r => setComplianceCerts(r.data)).catch(() => {})
     tenantApi.get('/portal/deposit').then(r => setDeposit(r.data)).catch(() => {})
     tenantApi.get('/portal/inspections').then(r => setInspections(r.data)).catch(() => {})
     tenantApi.get('/portal/property-info').then(r => setPropertyInfo(r.data)).catch(() => {})
@@ -611,10 +647,11 @@ export default function TenantPortal() {
     try {
       const res = await tenantApi.post('/portal/maintenance', newJob)
       const jobId = res.data.id
-      // Upload photos if any
+      // Upload photos — backend runs AI triage and returns result
       if (newJobPhotos.length > 0) {
         const fd = new FormData()
         newJobPhotos.forEach(f => fd.append('files', f))
+        setSubmitMsg('Analysing photos with AI…')
         await tenantApi.post(`/portal/maintenance/${jobId}/photos`, fd, {
           headers: { 'Content-Type': 'multipart/form-data' }
         })
@@ -1089,6 +1126,40 @@ export default function TenantPortal() {
               </div>
             )}
             </div>
+
+            {/* Safety & compliance certificates */}
+            {complianceCerts.length > 0 && (
+              <div className="bg-white rounded-xl border border-gray-200 p-6 mt-4">
+                <h3 className="text-sm font-semibold text-gray-700 mb-4">Safety &amp; Compliance Certificates</h3>
+                <div className="space-y-2">
+                  {complianceCerts.map(c => {
+                    const statusColor = c.status === 'valid' ? 'text-green-600' : c.status === 'expired' ? 'text-red-600' : 'text-amber-600'
+                    const statusLabel = c.status === 'valid' ? 'Valid' : c.status === 'expired' ? 'Expired' : 'Expiring Soon'
+                    return (
+                      <div key={c.cert_type} className="flex items-center justify-between px-4 py-3 rounded-lg border border-gray-100 hover:border-violet-200 transition-colors">
+                        <div>
+                          <p className="text-sm font-medium text-gray-900">{c.cert_label}</p>
+                          <p className="text-xs text-gray-400">
+                            Expires {c.expiry_date ? new Date(c.expiry_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}
+                            {c.reference ? ` · Ref: ${c.reference}` : ''}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <span className={`text-xs font-semibold ${statusColor}`}>{statusLabel}</span>
+                          {c.upload_id && (
+                            <a href={dlUrl(c.upload_id)} target="_blank" rel="noreferrer"
+                              className="text-xs text-violet-600 hover:underline">
+                              View →
+                            </a>
+                          )}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+                <p className="text-xs text-gray-400 mt-3">Your landlord is legally required to provide these certificates. Contact your agent if a certificate is missing or expired.</p>
+              </div>
+            )}
           </>
         )}
 
@@ -1117,6 +1188,31 @@ export default function TenantPortal() {
                   ))}
                 </div>
                 {deposit.notes && <p className="text-sm text-gray-600 bg-gray-50 rounded-lg p-3">{deposit.notes}</p>}
+                {deposit.dispute_notice && (
+                  <div className="bg-amber-50 border border-amber-300 rounded-xl p-4 space-y-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-base">⚠️</span>
+                      <p className="text-sm font-semibold text-amber-900">Deposit Dispute Notice</p>
+                      <span className="ml-auto text-xs text-amber-600">{deposit.dispute_notice.reference}</span>
+                    </div>
+                    <p className="text-sm text-amber-800">
+                      Your landlord or agent has raised a deposit dispute. The following deductions are being claimed against your deposit:
+                    </p>
+                    {deposit.dispute_notice.deductions.length > 0 && (
+                      <ul className="text-sm text-amber-900 space-y-1 pl-2">
+                        {deposit.dispute_notice.deductions.map((d, i) => (
+                          <li key={i} className="flex items-start gap-1"><span className="text-amber-500 mt-0.5">•</span>{d}</li>
+                        ))}
+                      </ul>
+                    )}
+                    {deposit.dispute_notice.total && (
+                      <p className="text-sm font-semibold text-amber-900 pt-1 border-t border-amber-200">{deposit.dispute_notice.total}</p>
+                    )}
+                    <p className="text-xs text-amber-700 mt-1">
+                      You have the right to raise your own evidence with your deposit scheme. Contact {deposit.scheme || 'your deposit scheme'} directly to respond.
+                    </p>
+                  </div>
+                )}
                 <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm text-blue-800 space-y-1">
                   <p className="font-semibold">Deposit Protection Schemes</p>
                   <p>Your deposit must be protected in a government-approved scheme within 30 days of receipt.</p>
@@ -1475,6 +1571,7 @@ export default function TenantPortal() {
                                   ))}
                                 </div>
                               )}
+                              {j.ai_triage && <TriageCard triage={j.ai_triage} />}
                               {j.tenant_satisfied === true && <span className="text-xs text-green-600">resolved ✓</span>}
                               {j.tenant_satisfied === false && <span className="text-xs text-red-500">complaint raised</span>}
                             </td>
@@ -1485,11 +1582,24 @@ export default function TenantPortal() {
                             </td>
                             <td className="px-4 py-2.5 text-xs text-gray-400">{j.created_at?.slice(0, 10)}</td>
                             <td className="px-4 py-2.5">
-                              <button
-                                onClick={() => setExpandedNotes(prev => ({ ...prev, [j.id]: !prev[j.id] }))}
-                                className={`text-xs px-2 py-0.5 rounded font-medium ${expandedNotes[j.id] ? 'bg-violet-100 text-violet-700 border border-violet-300' : 'border border-violet-300 text-violet-600 hover:bg-violet-50'}`}>
-                                💬 {expandedNotes[j.id] ? 'hide chat ▲' : j.status === 'completed' && j.tenant_satisfied === null ? 'respond ▼' : 'open chat ▼'}
-                              </button>
+                              <div className="flex flex-col gap-1 items-start">
+                                <button
+                                  onClick={() => setExpandedNotes(prev => ({ ...prev, [j.id]: !prev[j.id] }))}
+                                  className={`text-xs px-2 py-0.5 rounded font-medium ${expandedNotes[j.id] ? 'bg-violet-100 text-violet-700 border border-violet-300' : 'border border-violet-300 text-violet-600 hover:bg-violet-50'}`}>
+                                  💬 {expandedNotes[j.id] ? 'hide chat ▲' : j.status === 'completed' && j.tenant_satisfied === null ? 'respond ▼' : 'open chat ▼'}
+                                </button>
+                                {j.status === 'open' && (
+                                  <button
+                                    onClick={async () => {
+                                      if (!window.confirm('Are you sure you want to retract this request?')) return
+                                      await tenantApi.post(`/portal/maintenance/${j.id}/cancel`)
+                                      setMaintenance(prev => prev.map(m => m.id === j.id ? { ...m, status: 'cancelled' } : m))
+                                    }}
+                                    className="text-xs px-2 py-0.5 rounded border border-gray-200 text-gray-400 hover:border-red-300 hover:text-red-500 transition-colors">
+                                    Retract
+                                  </button>
+                                )}
+                              </div>
                             </td>
                           </tr>
                           {expandedNotes[j.id] && (

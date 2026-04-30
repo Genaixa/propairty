@@ -19,11 +19,13 @@ from app import docgen
 router = APIRouter(prefix="/api/documents", tags=["documents"])
 
 DOCUMENT_TYPES = {
-    "ast":            "Assured Shorthold Tenancy Agreement",
-    "section_21":     "Section 21 Notice",
-    "section_8":      "Section 8 Notice",
-    "rent_increase":  "Rent Increase Notice",
-    "deposit_receipt": "Deposit Receipt",
+    "ast":               "Assured Shorthold Tenancy Agreement",
+    "section_21":        "Section 21 Notice",
+    "section_8":         "Section 8 Notice",
+    "rent_increase":     "Rent Increase Notice",
+    "deposit_receipt":   "Deposit Receipt",
+    "deed_of_surrender": "Deed of Surrender",
+    "nosp":              "Notice of Seeking Possession (NOSP)",
 }
 
 
@@ -47,6 +49,7 @@ class GenerateRequest(BaseModel):
     effective_date: Optional[date] = None
     arrears_amount: Optional[float] = None
     custom_notes: Optional[str] = None
+    surrender_date: Optional[date] = None
 
 
 @router.get("/types")
@@ -83,6 +86,28 @@ def generate_document(req: GenerateRequest, db: Session = Depends(get_db), curre
         pdf = docgen.generate_deposit_receipt(lease, tenant, unit, org)
         filename = f"DepositReceipt_{tenant.full_name.replace(' ', '_')}.pdf"
 
+    elif req.doc_type == "deed_of_surrender":
+        from app.models.deposit import TenancyDeposit
+        dep = db.query(TenancyDeposit).filter(TenancyDeposit.lease_id == lease.id).first()
+        pdf = docgen.generate_deed_of_surrender(
+            lease, tenant, unit, org,
+            surrender_date=req.surrender_date,
+            deposit=dep,
+            condition_notes=req.custom_notes or "",
+        )
+        filename = f"DeedOfSurrender_{tenant.full_name.replace(' ', '_')}.pdf"
+
+    elif req.doc_type == "nosp":
+        arrears = req.arrears_amount or 0.0
+        pdf = docgen.generate_nosp(
+            lease, tenant, unit, org,
+            arrears_amount=arrears,
+            ground_8=arrears >= (lease.monthly_rent * 2),
+            ground_10=arrears > 0,
+            particulars=req.custom_notes or "",
+        )
+        filename = f"NOSP_{tenant.full_name.replace(' ', '_')}.pdf"
+
     else:
         raise HTTPException(status_code=400, detail=f"Unknown document type: {req.doc_type}")
 
@@ -91,6 +116,66 @@ def generate_document(req: GenerateRequest, db: Session = Depends(get_db), curre
         media_type="application/pdf",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'}
     )
+
+
+@router.get("/deposit-dispute/{deposit_id}")
+def generate_deposit_dispute_doc(
+    deposit_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    from app.models.deposit import TenancyDeposit
+    from app.models.inspection import Inspection
+    from app.models.payment import RentPayment
+    dep = db.query(TenancyDeposit).filter(TenancyDeposit.id == deposit_id).first()
+    if not dep:
+        raise HTTPException(status_code=404, detail="Deposit not found")
+    lease, tenant, unit, org = _get_lease_context(dep.lease_id, current_user.organisation_id, db)
+
+    # Pull overdue payments for rent arrears figure
+    overdue = db.query(RentPayment).filter(
+        RentPayment.lease_id == lease.id, RentPayment.status == "overdue"
+    ).all()
+    rent_arrears = sum((r.amount or 0) - (r.amount_paid or 0) for r in overdue)
+
+    # Latest inspection as checkout evidence
+    inspection = db.query(Inspection).filter(
+        Inspection.unit_id == unit.id
+    ).order_by(Inspection.scheduled_date.desc()).first()
+    checkout_notes = inspection.notes if (inspection and inspection.notes) else ""
+
+    pdf = docgen.generate_deposit_dispute(
+        lease, tenant, unit, org,
+        deposit=dep,
+        checkout_notes=checkout_notes,
+        rent_arrears=rent_arrears,
+    )
+    filename = f"DepositDispute_{tenant.full_name.replace(' ', '_')}.pdf"
+    return Response(content=pdf, media_type="application/pdf",
+                    headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+
+@router.get("/hmo-guidance/{property_id}")
+def generate_hmo_guidance_doc(
+    property_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    from app.models.compliance import ComplianceCertificate
+    prop = db.query(Property).filter(
+        Property.id == property_id,
+        Property.organisation_id == current_user.organisation_id,
+    ).first()
+    if not prop:
+        raise HTTPException(status_code=404, detail="Property not found")
+    org = db.query(Organisation).filter(Organisation.id == current_user.organisation_id).first()
+    from app.models.unit import Unit as UnitModel
+    units = db.query(UnitModel).filter(UnitModel.property_id == prop.id).all()
+    certs = db.query(ComplianceCertificate).filter(ComplianceCertificate.property_id == prop.id).all()
+    pdf = docgen.generate_hmo_guidance(prop, org, units=units, compliance_certs=certs)
+    filename = f"HMO_Guidance_{prop.name.replace(' ', '_')}.pdf"
+    return Response(content=pdf, media_type="application/pdf",
+                    headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
 
 class ManagementAgreementRequest(BaseModel):

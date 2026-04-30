@@ -1,6 +1,6 @@
 import { PageHeader } from '../components/Illustration'
 import { useState, useEffect, useRef, useCallback } from 'react'
-import api from '../lib/api'
+import api, { dlUrl } from '../lib/api'
 
 const TYPE_LABELS = {
   routine: 'Routine',
@@ -40,7 +40,10 @@ const CLEANLINESS_OPTIONS = ['clean', 'satisfactory', 'dirty']
 export default function Inspections() {
   const [inspections, setInspections] = useState([])
   const [units, setUnits] = useState([])
-  const [tab, setTab] = useState('upcoming')
+  const [tab, setTab] = useState(() => {
+    const p = new URLSearchParams(window.location.search).get('tab')
+    return ['all', 'overdue', 'upcoming', 'completed', 'cancelled', 'thisMonth'].includes(p) ? p : 'upcoming'
+  })
   const [loading, setLoading] = useState(true)
   const [showCreate, setShowCreate] = useState(false)
   const [selected, setSelected] = useState(null) // inspection being edited/viewed
@@ -83,10 +86,22 @@ export default function Inspections() {
     }
   }
 
-  const upcoming = inspections.filter(i => i.status === 'scheduled')
+  const todayMidnight = new Date(); todayMidnight.setHours(0, 0, 0, 0)
+  const overdue = inspections.filter(i => i.status === 'scheduled' && i.scheduled_date && new Date(i.scheduled_date) < todayMidnight)
+  const upcoming = inspections.filter(i => i.status === 'scheduled' && i.scheduled_date && new Date(i.scheduled_date) >= todayMidnight)
   const completed = inspections.filter(i => i.status === 'completed')
   const cancelled = inspections.filter(i => i.status === 'cancelled')
-  const base = tab === 'upcoming' ? upcoming : tab === 'completed' ? completed : cancelled
+  const thisMonth = inspections.filter(i => {
+    if (!i.scheduled_date) return false
+    const d = new Date(i.scheduled_date), now = new Date()
+    return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear()
+  })
+  const base = tab === 'all' ? inspections
+    : tab === 'overdue' ? overdue
+    : tab === 'upcoming' ? upcoming
+    : tab === 'completed' ? completed
+    : tab === 'thisMonth' ? thisMonth
+    : cancelled
   const displayed = [...base].sort((a, b) => {
     let av, bv
     if      (sortCol === 'property')   { av = a.property || '';          bv = b.property || '' }
@@ -147,40 +162,37 @@ export default function Inspections() {
         </button>
       </PageHeader>
 
-      {/* Summary cards */}
-      <div className="grid grid-cols-3 gap-4 mb-6">
-        <div className="bg-white border border-gray-200 rounded-xl p-4">
+      {/* Summary cards — clickable filters */}
+      <div className="grid grid-cols-4 gap-4 mb-6">
+        <button onClick={() => setTab('overdue')} className={`rounded-xl border p-4 text-left transition-all ${tab === 'overdue' ? 'ring-2 ring-red-400 bg-red-50 border-red-300' : 'bg-white border-gray-200 hover:border-red-200'}`}>
+          <p className="text-xs text-gray-500 font-medium uppercase tracking-wide">Overdue</p>
+          <p className={`text-3xl font-bold mt-1 ${overdue.length > 0 ? 'text-red-600' : 'text-gray-400'}`}>{overdue.length}</p>
+        </button>
+        <button onClick={() => setTab('upcoming')} className={`rounded-xl border p-4 text-left transition-all ${tab === 'upcoming' ? 'ring-2 ring-yellow-400 bg-yellow-50 border-yellow-300' : 'bg-white border-gray-200 hover:border-yellow-200'}`}>
           <p className="text-xs text-gray-500 font-medium uppercase tracking-wide">Upcoming</p>
           <p className="text-3xl font-bold text-yellow-600 mt-1">{upcoming.length}</p>
-        </div>
-        <div className="bg-white border border-gray-200 rounded-xl p-4">
+        </button>
+        <button onClick={() => setTab('completed')} className={`rounded-xl border p-4 text-left transition-all ${tab === 'completed' ? 'ring-2 ring-green-400 bg-green-50 border-green-300' : 'bg-white border-gray-200 hover:border-green-200'}`}>
           <p className="text-xs text-gray-500 font-medium uppercase tracking-wide">Completed</p>
           <p className="text-3xl font-bold text-green-600 mt-1">{completed.length}</p>
-        </div>
-        <div className="bg-white border border-gray-200 rounded-xl p-4">
-          <p className="text-xs text-gray-500 font-medium uppercase tracking-wide">This month</p>
-          <p className="text-3xl font-bold text-indigo-600 mt-1">
-            {inspections.filter(i => {
-              if (!i.scheduled_date) return false
-              const d = new Date(i.scheduled_date)
-              const now = new Date()
-              return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear()
-            }).length}
-          </p>
-        </div>
+        </button>
+        <button onClick={() => setTab('all')} className={`rounded-xl border p-4 text-left transition-all ${tab === 'all' ? 'ring-2 ring-gray-400 bg-gray-50 border-gray-300' : 'bg-white border-gray-200 hover:border-gray-300'}`}>
+          <p className="text-xs text-gray-500 font-medium uppercase tracking-wide">All</p>
+          <p className="text-3xl font-bold text-gray-700 mt-1">{inspections.length}</p>
+        </button>
       </div>
 
       {/* Tabs */}
       <div className="flex gap-1 mb-4 bg-gray-100 rounded-lg p-1 w-fit">
-        {[['upcoming', 'Upcoming'], ['completed', 'Completed'], ['cancelled', 'Cancelled']].map(([key, label]) => (
+        {[['all', 'All'], ['overdue', 'Overdue'], ['upcoming', 'Upcoming'], ['completed', 'Completed'], ['cancelled', 'Cancelled'], ['thisMonth', 'This month']].map(([key, label]) => (
           <button
             key={key}
             onClick={() => setTab(key)}
             className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${
               tab === key ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-600 hover:text-gray-900'
-            }`}
+            } ${key === 'overdue' && overdue.length > 0 && tab !== 'overdue' ? 'text-red-500' : ''}`}
           >
-            {label}
+            {label}{key === 'overdue' && overdue.length > 0 ? ` (${overdue.length})` : ''}
           </button>
         ))}
       </div>
@@ -191,8 +203,8 @@ export default function Inspections() {
           <div className="p-12 text-center text-gray-400">Loading...</div>
         ) : displayed.length === 0 ? (
           <div className="p-12 text-center text-gray-400">
-            No {tab} inspections.
-            {tab === 'upcoming' && (
+            No {tab === 'all' ? '' : tab === 'thisMonth' ? 'this-month' : tab} inspections.
+            {(tab === 'upcoming' || tab === 'all') && (
               <button onClick={() => setShowCreate(true)} className="ml-2 text-indigo-600 font-medium hover:underline">
                 Schedule one
               </button>
@@ -212,8 +224,10 @@ export default function Inspections() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {displayed.map(i => (
-                <tr key={i.id} className="hover:bg-gray-50">
+              {displayed.map(i => {
+                const isOverdue = i.status === 'scheduled' && i.scheduled_date && new Date(i.scheduled_date) < todayMidnight
+                return (
+                <tr key={i.id} className={`hover:bg-gray-50 ${isOverdue ? 'bg-red-50/40' : ''}`}>
                   <td className="px-4 py-3">
                     <p className="font-medium text-gray-900">{i.property}</p>
                     <p className="text-xs text-gray-500">{i.unit}</p>
@@ -235,9 +249,13 @@ export default function Inspections() {
                     ) : <span className="text-gray-400">—</span>}
                   </td>
                   <td className="px-4 py-3">
-                    <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${STATUS_COLORS[i.status] || 'bg-gray-100'}`}>
-                      {i.status.charAt(0).toUpperCase() + i.status.slice(1)}
-                    </span>
+                    {isOverdue ? (
+                      <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-red-100 text-red-700">Overdue</span>
+                    ) : (
+                      <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${STATUS_COLORS[i.status] || 'bg-gray-100'}`}>
+                        {i.status.charAt(0).toUpperCase() + i.status.slice(1)}
+                      </span>
+                    )}
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex gap-2 justify-end">
@@ -280,7 +298,8 @@ export default function Inspections() {
                     </div>
                   </td>
                 </tr>
-              ))}
+              )
+              })}
             </tbody>
           </table>
         )}
@@ -371,7 +390,7 @@ export default function Inspections() {
                           ) : f.mime_type?.startsWith('video/') ? (
                             <video src={f.url} controls className="w-48 h-28 rounded-xl border border-gray-200 object-cover" />
                           ) : (
-                            <a href={`/api/uploads/${f.id}/download`} className="flex items-center gap-2 text-xs text-indigo-600 hover:underline">
+                            <a href={dlUrl(f.id)} className="flex items-center gap-2 text-xs text-indigo-600 hover:underline">
                               📄 {f.original_name}
                             </a>
                           )}
@@ -557,7 +576,7 @@ function MediaUploader({ inspectionId, tag, label }) {
                   <span className="text-2xl">🎬</span>
                 </a>
               ) : (
-                <a href={`/api/uploads/${f.id}/download`} className="flex items-center justify-center w-16 h-16 bg-gray-100 rounded-lg border border-gray-200 text-xs text-gray-500 p-1 text-center">{f.original_name}</a>
+                <a href={dlUrl(f.id)} className="flex items-center justify-center w-16 h-16 bg-gray-100 rounded-lg border border-gray-200 text-xs text-gray-500 p-1 text-center">{f.original_name}</a>
               )}
               <button onClick={() => remove(f.id)}
                 className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white rounded-full text-xs leading-none items-center justify-center hidden group-hover:flex">×</button>

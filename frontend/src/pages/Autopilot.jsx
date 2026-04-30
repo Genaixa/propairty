@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback } from 'react'
-import Layout from '../components/Layout'
 
 const API = import.meta.env.VITE_API_URL || ''
 
@@ -42,6 +41,9 @@ const ACTION_LABELS = {
   portal_message_contractor: 'Messaged contractor',
   agent_alert:               'Alerted agent',
 }
+
+// Checks that autonomously send messages — not just alerts
+const AUTO_ACT_CHECKS = new Set(['maintenance_stalled', 'arrears_chase', 'renewal_no_response'])
 
 function Toggle({ checked, onChange, disabled }) {
   return (
@@ -109,6 +111,11 @@ export default function Autopilot() {
     saveConfig({ checks: { [checkName]: { ...current, enabled: val } } })
   }
 
+  const toggleAutoAct = (checkName, val) => {
+    const current = config.checks[checkName] || {}
+    saveConfig({ checks: { [checkName]: { ...current, auto_act: val } } })
+  }
+
   const updateDays = (checkName, days) => {
     const current = config.checks[checkName] || {}
     saveConfig({ checks: { [checkName]: { ...current, days: parseInt(days, 10) } } })
@@ -143,19 +150,16 @@ export default function Autopilot() {
 
   if (!config) {
     return (
-      <Layout>
-        <div className="flex items-center justify-center h-64">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600" />
-        </div>
-      </Layout>
+      <div className="flex items-center justify-center h-64">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600" />
+      </div>
     )
   }
 
   const checkEntries = Object.entries(config.checks || {})
 
   return (
-    <Layout>
-      <div className="max-w-5xl mx-auto px-4 py-8 space-y-8">
+    <div className="space-y-8">
 
         {/* Toast */}
         {toast && (
@@ -264,7 +268,12 @@ export default function Autopilot() {
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center justify-between gap-2">
-                        <span className="text-sm font-semibold text-gray-900">{check.label}</span>
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <span className="text-sm font-semibold text-gray-900 truncate">{check.label}</span>
+                          {AUTO_ACT_CHECKS.has(checkName) && (
+                            <span className="shrink-0 text-[9px] font-bold bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded-full">AUTO-ACTS</span>
+                          )}
+                        </div>
                         <Toggle
                           checked={isEnabled}
                           onChange={(val) => toggleCheck(checkName, val)}
@@ -285,6 +294,25 @@ export default function Autopilot() {
                         />
                         <span className="text-xs text-gray-500">{check.unit}</span>
                       </div>
+                      {check.can_auto_act && (
+                        <div className={`mt-3 pt-3 border-t border-gray-100 flex items-start justify-between gap-3 ${!isEnabled || !config.enabled ? 'opacity-50' : ''}`}>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs font-medium text-gray-700">
+                              {check.auto_act ? '⚡ Auto-acts' : '🔔 Alert only'}
+                            </p>
+                            <p className="text-[10px] text-gray-400 mt-0.5 leading-snug">
+                              {check.auto_act
+                                ? check.auto_act_description
+                                : 'Notifies you — no message sent without your approval'}
+                            </p>
+                          </div>
+                          <Toggle
+                            checked={check.auto_act ?? true}
+                            onChange={(val) => toggleAutoAct(checkName, val)}
+                            disabled={!isEnabled || !config.enabled}
+                          />
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -352,8 +380,7 @@ export default function Autopilot() {
           )}
         </div>
 
-      </div>
-    </Layout>
+    </div>
   )
 }
 

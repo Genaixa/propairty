@@ -1,0 +1,122 @@
+{% extends "documents/base.html" %}
+{% block content %}
+<h1>HMO Licensing Assessment &amp; Application Guide</h1>
+<p style="text-align:center; color:#555; font-size:10pt; margin-bottom:20px;">
+  Houses in Multiple Occupation — Licensing Compliance Report
+</p>
+
+<div class="parties">
+  <table>
+    <tr><td>Property:</td><td>{{ property_address }}</td></tr>
+    <tr><td>Property Type:</td><td>{{ property_type }}</td></tr>
+    <tr><td>Number of Units / Bedrooms:</td><td>{{ bedroom_count }}</td></tr>
+    <tr><td>Number of Storeys:</td><td>{{ storey_count or 'Not recorded' }}</td></tr>
+    <tr><td>Landlord / Agent:</td><td>{{ org_name }}</td></tr>
+    <tr><td>Assessment Date:</td><td>{{ today }}</td></tr>
+  </table>
+</div>
+
+<h2>1. HMO Licensing Assessment</h2>
+
+<div class="notice-box {% if mandatory_licence %}warning{% else %}info{% endif %}">
+  <strong>Assessment Result: {% if mandatory_licence %}Mandatory HMO Licence Required{% elif additional_licence %}Additional Licensing May Apply{% else %}Standard Licensing — HMO Rules May Still Apply{% endif %}</strong><br>
+  {% if mandatory_licence %}
+  This property appears to meet the criteria for a <strong>Mandatory HMO Licence</strong> under the Housing Act 2004. You must apply to your local council before letting this property as an HMO.
+  {% elif additional_licence %}
+  This property may require an <strong>Additional Licence</strong> depending on your local authority's scheme. Check with your council whether an additional licensing scheme is in force in your area.
+  {% else %}
+  This property does not appear to meet the threshold for mandatory HMO licensing based on the information recorded. However, HMO management regulations may still apply. Always verify with your local authority.
+  {% endif %}
+</div>
+
+<h2>2. Licensing Criteria Explained</h2>
+<div class="clause">
+<table style="width:100%; border-collapse:collapse; margin:8px 0;">
+  <tr style="background:#f5f5f5;"><th style="text-align:left; padding:8px 10px; border:1px solid #ddd;">Licence Type</th><th style="text-align:left; padding:8px 10px; border:1px solid #ddd;">Criteria</th><th style="padding:8px 10px; border:1px solid #ddd; text-align:center;">Applies?</th></tr>
+  <tr>
+    <td style="padding:8px 10px; border:1px solid #ddd;"><strong>Mandatory HMO Licence</strong></td>
+    <td style="padding:8px 10px; border:1px solid #ddd;">5 or more occupants from 2 or more households, sharing facilities</td>
+    <td style="padding:8px 10px; border:1px solid #ddd; text-align:center;">{{ '✓ Yes' if mandatory_licence else '✗ Not assessed — verify locally' }}</td>
+  </tr>
+  <tr>
+    <td style="padding:8px 10px; border:1px solid #ddd;"><strong>Additional Licence</strong></td>
+    <td style="padding:8px 10px; border:1px solid #ddd;">3 or 4 occupants from 2+ households (where local authority has a scheme)</td>
+    <td style="padding:8px 10px; border:1px solid #ddd; text-align:center;">{{ 'Check locally' if additional_licence else '—' }}</td>
+  </tr>
+  <tr>
+    <td style="padding:8px 10px; border:1px solid #ddd;"><strong>Selective Licence</strong></td>
+    <td style="padding:8px 10px; border:1px solid #ddd;">Any privately rented property in a selective licensing area</td>
+    <td style="padding:8px 10px; border:1px solid #ddd; text-align:center;">Check with local authority</td>
+  </tr>
+</table>
+</div>
+
+<h2>3. HMO Management Regulations</h2>
+<div class="clause">
+<p>Even if a full licence is not required, properties occupied by 3 or more persons from 2 or more households are subject to the <strong>Management of Houses in Multiple Occupation (England) Regulations 2006</strong>. As manager you must:</p>
+<ul>
+  <li>Ensure all means of escape from fire are maintained in good order and kept free from obstruction</li>
+  <li>Ensure fire fighting equipment and fire alarms are maintained</li>
+  <li>Ensure all common parts and fixtures are maintained in good repair</li>
+  <li>Ensure all windows and other means of ventilation are maintained</li>
+  <li>Ensure all gas and electrical supply systems are maintained in safe condition</li>
+  <li>Ensure adequate drainage and water supply</li>
+  <li>Provide each occupier with written information about their manager's name, address, and contact details</li>
+</ul>
+</div>
+
+<h2>4. Application Checklist</h2>
+<div class="clause">
+<p>If a licence is required, you will typically need to submit the following to your local council:</p>
+<table style="width:100%; border-collapse:collapse; margin:8px 0;">
+  <tr style="background:#f5f5f5;"><th style="text-align:left; padding:8px 10px; border:1px solid #ddd;">Document</th><th style="text-align:left; padding:8px 10px; border:1px solid #ddd;">Notes</th></tr>
+  <tr><td style="padding:6px 10px; border:1px solid #ddd;">&#9744; Gas Safety Certificate</td><td style="padding:6px 10px; border:1px solid #ddd;">Must be current (within 12 months)</td></tr>
+  <tr><td style="padding:6px 10px; border:1px solid #ddd;">&#9744; Electrical Installation Condition Report (EICR)</td><td style="padding:6px 10px; border:1px solid #ddd;">Must be current (within 5 years)</td></tr>
+  <tr><td style="padding:6px 10px; border:1px solid #ddd;">&#9744; Energy Performance Certificate (EPC)</td><td style="padding:6px 10px; border:1px solid #ddd;">Minimum rating E required</td></tr>
+  <tr><td style="padding:6px 10px; border:1px solid #ddd;">&#9744; Floor plan of the property</td><td style="padding:6px 10px; border:1px solid #ddd;">Showing all rooms, dimensions, and facilities</td></tr>
+  <tr><td style="padding:6px 10px; border:1px solid #ddd;">&#9744; Fire alarm test certificate</td><td style="padding:6px 10px; border:1px solid #ddd;">Annual inspection recommended</td></tr>
+  <tr><td style="padding:6px 10px; border:1px solid #ddd;">&#9744; Fire risk assessment</td><td style="padding:6px 10px; border:1px solid #ddd;">Required for 5+ person HMOs</td></tr>
+  <tr><td style="padding:6px 10px; border:1px solid #ddd;">&#9744; Portable Appliance Testing (PAT) certificates</td><td style="padding:6px 10px; border:1px solid #ddd;">For all landlord-supplied electrical appliances</td></tr>
+  <tr><td style="padding:6px 10px; border:1px solid #ddd;">&#9744; Completed licence application form</td><td style="padding:6px 10px; border:1px solid #ddd;">Available from your local council website</td></tr>
+  <tr><td style="padding:6px 10px; border:1px solid #ddd;">&#9744; Application fee</td><td style="padding:6px 10px; border:1px solid #ddd;">Varies by council — typically £500–£1,500</td></tr>
+</table>
+</div>
+
+<h2>5. Compliance Status from PropAIrty Records</h2>
+<div class="clause">
+<table style="width:100%; border-collapse:collapse; margin:8px 0;">
+  <tr style="background:#f5f5f5;"><th style="text-align:left; padding:8px 10px; border:1px solid #ddd;">Certificate</th><th style="padding:8px 10px; border:1px solid #ddd; text-align:center;">Status</th><th style="text-align:left; padding:8px 10px; border:1px solid #ddd;">Expiry</th></tr>
+  {% for cert in compliance_certs %}
+  <tr>
+    <td style="padding:6px 10px; border:1px solid #ddd;">{{ cert.cert_type }}</td>
+    <td style="padding:6px 10px; border:1px solid #ddd; text-align:center; {% if cert.status == 'valid' %}color:#16a34a; font-weight:bold;{% elif cert.status == 'expired' %}color:#dc2626; font-weight:bold;{% else %}color:#d97706;{% endif %}">{{ cert.status | upper }}</td>
+    <td style="padding:6px 10px; border:1px solid #ddd;">{{ cert.expiry_date or '—' }}</td>
+  </tr>
+  {% else %}
+  <tr><td colspan="3" style="padding:8px 10px; border:1px solid #ddd; color:#888;">No compliance certificates recorded in PropAIrty for this property.</td></tr>
+  {% endfor %}
+</table>
+</div>
+
+<h2>6. Next Steps</h2>
+<div class="clause">
+<ol style="margin-left:20px;">
+  {% if mandatory_licence %}
+  <li>Contact your local council immediately to obtain an HMO licence application form</li>
+  <li>Ensure all compliance certificates listed above are current before applying</li>
+  <li>Commission a fire risk assessment if not already done</li>
+  <li>Submit your application and pay the fee — do not let the property without a licence</li>
+  <li>Display the licence (or a summary) in a prominent position in the property</li>
+  {% else %}
+  <li>Contact your local council to confirm whether any additional or selective licensing applies in your area</li>
+  <li>Ensure HMO management regulations are being followed if 3+ persons from 2+ households are occupying</li>
+  <li>Keep all compliance certificates up to date</li>
+  {% endif %}
+  <li>Record the licence number in PropAIrty once granted</li>
+</ol>
+</div>
+
+<div class="notice-box info" style="margin-top:20px;">
+  <strong>Disclaimer:</strong> This assessment is based on information recorded in PropAIrty and current legislation as at the date of generation. Licensing requirements vary by local authority and may change. Always verify requirements with your local council. This document does not constitute legal advice.
+</div>
+{% endblock %}

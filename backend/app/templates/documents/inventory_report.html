@@ -46,7 +46,7 @@
     </tr>
   </thead>
   <tbody>
-    {% for item in room.items %}
+    {% for item in room['items'] %}
     <tr style="border-bottom:1px solid #f3f4f6;{% if is_comparison and item.changed %}background:#fef9c3;{% endif %}">
       <td style="padding:5px 10px;">{{ item.item_name }}</td>
       <td style="padding:5px 10px;text-align:center;">

@@ -65,6 +65,41 @@ function daysSince(dateStr) {
 
 const PRIORITY_DOT = { urgent: 'bg-red-500', high: 'bg-orange-500', medium: 'bg-yellow-400', low: 'bg-gray-300' }
 
+// ── AI Triage Card ────────────────────────────────────────────────────────────
+function AgentTriageCard({ triage }) {
+  const severityStyle = {
+    minor:     'bg-green-100 text-green-700 border-green-200',
+    moderate:  'bg-amber-100 text-amber-700 border-amber-200',
+    urgent:    'bg-orange-100 text-orange-700 border-orange-200',
+    emergency: 'bg-red-100 text-red-700 border-red-200',
+  }[triage.severity] || 'bg-gray-100 text-gray-600 border-gray-200'
+  const confidenceColor = { high: 'text-green-600', medium: 'text-amber-500', low: 'text-red-500' }[triage.confidence] || 'text-gray-400'
+
+  return (
+    <div className="rounded-lg border border-indigo-100 bg-indigo-50/60 p-3 text-sm">
+      <div className="flex items-center gap-2 mb-2">
+        <span className="text-indigo-500">🔍</span>
+        <span className="font-semibold text-indigo-800 text-xs">AI Visual Diagnosis</span>
+        <span className={`ml-auto text-[10px] font-semibold px-2 py-0.5 rounded-full border ${severityStyle}`}>
+          {triage.severity}
+        </span>
+      </div>
+      <p className="text-gray-700 text-xs leading-relaxed mb-2">{triage.diagnosis}</p>
+      {triage.self_fix_possible && triage.self_fix_tip ? (
+        <div className="bg-green-50 border border-green-100 rounded p-2 mb-1.5">
+          <p className="text-[10px] font-semibold text-green-700 mb-0.5">💡 Possible self-fix — contractor may not be needed</p>
+          <p className="text-xs text-gray-600">{triage.self_fix_tip}</p>
+        </div>
+      ) : triage.contractor_needed && (
+        <p className="text-[10px] font-medium text-amber-600 mb-1">
+          🔧 {triage.contractor_type ? triage.contractor_type.charAt(0).toUpperCase() + triage.contractor_type.slice(1) : 'Contractor'} recommended
+        </p>
+      )}
+      <p className={`text-[10px] ${confidenceColor}`}>Confidence: {triage.confidence}</p>
+    </div>
+  )
+}
+
 // ── Star Picker ───────────────────────────────────────────────────────────────
 function StarPicker({ value, onChange }) {
   const [hovered, setHovered] = useState(0)
@@ -776,6 +811,7 @@ function JobDrawer({ job, contractors, onClose, onAction }) {
             ) : (
               <>
                 {job.description && <p className="text-sm text-gray-700 leading-relaxed">{job.description}</p>}
+                {job.ai_triage && <AgentTriageCard triage={job.ai_triage} />}
                 <div className="grid grid-cols-2 gap-x-4 gap-y-2.5 text-xs">
                   <div>
                     <p className="text-gray-400 mb-0.5">Reported by</p>
@@ -1311,6 +1347,7 @@ export default function Maintenance() {
   const [searchParams, setSearchParams] = useSearchParams()
   const tenantIdFilter = searchParams.get('tenant_id') ? parseInt(searchParams.get('tenant_id')) : null
   const unitIdFilter = searchParams.get('unit_id') ? parseInt(searchParams.get('unit_id')) : null
+  const jobIdParam = searchParams.get('job') ? parseInt(searchParams.get('job')) : null
   const [tenantNameFilter, setTenantNameFilter] = useState('')
   const [unitNameFilter, setUnitNameFilter] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
@@ -1354,6 +1391,17 @@ export default function Maintenance() {
       }).catch(() => {})
     } else { setTenantNameFilter(''); setTenantUnit(null) }
   }, [tenantIdFilter])
+
+  const [jobNotFound, setJobNotFound] = useState(false)
+
+  // Auto-open drawer when ?job=ID is in the URL and requests have loaded
+  useEffect(() => {
+    if (jobIdParam && requests.length > 0 && !drawerJob) {
+      const target = requests.find(x => x.id === jobIdParam)
+      if (target) setDrawerJob(target)
+      else setJobNotFound(true)
+    }
+  }, [requests, jobIdParam])
 
   // Reset kpiFilter when switching statusFilter so there are no confusing empty states
   function handleStatusFilter(key) {
@@ -1426,6 +1474,13 @@ export default function Maintenance() {
   return (
     <div>
       <PageHeader title="Maintenance" subtitle="Track and resolve property issues" />
+
+      {jobNotFound && (
+        <div className="mb-4 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-sm text-amber-800 flex items-center gap-2">
+          <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/></svg>
+          Job #{jobIdParam} was not found — it may have been deleted.
+        </div>
+      )}
 
       <KpiBar requests={requests} activeFilter={kpiFilter} onFilter={handleKpiFilter} />
 

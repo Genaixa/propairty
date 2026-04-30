@@ -204,9 +204,12 @@ def agent_respond(
         raise HTTPException(status_code=404, detail="Renewal not found")
     if status not in ("accepted", "declined"):
         raise HTTPException(status_code=400, detail="status must be accepted or declined")
+    if renewal.status in ("accepted", "declined"):
+        raise HTTPException(status_code=409, detail="Tenant has already responded to this offer — it cannot be overridden")
 
     renewal.status = status
     renewal.responded_at = func.now()
+    renewal.responded_via = "agent"
     db.commit()
 
     if status == "accepted":

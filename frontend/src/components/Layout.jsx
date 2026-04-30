@@ -69,40 +69,37 @@ function NavIcon({ name, className = 'w-4 h-4' }) {
 function getGroups(t) {
   return [
     {
-      label: 'Portfolio', icon: 'home',
+      label: 'Properties', icon: 'home',
       items: [
-        { to: '/landlords',      label: 'Landlords',         icon: 'building' },
         { to: '/properties',     label: t('nav.properties'), icon: 'home' },
+        { to: '/landlords',      label: 'Landlords',         icon: 'building' },
         { to: '/tenants',        label: t('nav.tenants'),    icon: 'users' },
-        { to: '/meter-readings', label: 'Meter Readings',    icon: 'chart_bar' },
         { to: '/applicants',     label: t('nav.applicants'), icon: 'search' },
         { to: '/leases',         label: t('nav.leases'),     icon: 'document' },
+        { to: '/meter-readings', label: 'Meter Readings',    icon: 'chart_bar' },
       ],
     },
     {
-      label: 'Operations', icon: 'wrench',
+      label: 'Maintenance', icon: 'wrench',
       items: [
-        { to: '/contractors', label: t('nav.contractors'), icon: 'wrench' },
+        { divider: true, label: 'Jobs' },
         { to: '/maintenance', label: t('nav.maintenance'), icon: 'wrench' },
-        { to: '/ppm',         label: t('nav.ppm'),         icon: 'calendar' },
         { to: '/dispatch',    label: t('nav.dispatch'),    icon: 'rocket' },
+        { divider: true, label: 'Planned' },
+        { to: '/ppm',         label: t('nav.ppm'),         icon: 'calendar' },
         { to: '/inspections', label: t('nav.inspections'), icon: 'eye' },
-        { to: '/inventory',   label: t('nav.inventory'),   icon: 'clipboard' },
-        { to: '/checklists',  label: 'Checklists',          icon: 'check_circle' },
+        { divider: true, label: 'Contractors' },
+        { to: '/contractors',           label: t('nav.contractors'),  icon: 'wrench' },
+        { to: '/contractor-performance',label: 'Performance',         icon: 'star' },
+        { to: '/insurance-claims',      label: 'Insurance Claims',    icon: 'shield' },
       ],
     },
     {
-      label: 'Finance', icon: 'currency',
+      label: 'Tenancy', icon: 'clipboard',
       items: [
-        { to: '/payments',    label: t('nav.payments'),    icon: 'banknotes' },
-        { to: '/deposits',    label: t('nav.deposits'),    icon: 'bank' },
-        { to: '/accounting',  label: t('nav.accounting'),  icon: 'calculator' },
-        { to: '/tax-summary', label: 'Tax Summary',        icon: 'calculator' },
-      ],
-    },
-    {
-      label: 'Compliance & Legal', icon: 'shield',
-      items: [
+        { to: '/renewals',        label: t('nav.renewals'),    icon: 'arrow_path' },
+        { to: '/inventory',       label: t('nav.inventory'),   icon: 'clipboard' },
+        { to: '/checklists',      label: 'Checklists',         icon: 'check_circle' },
         { to: '/compliance',      label: t('nav.compliance'),  icon: 'shield' },
         { to: '/right-to-rent',   label: 'Right to Rent',      icon: 'id_card' },
         { to: '/notices',         label: t('nav.notices'),     icon: 'scale' },
@@ -111,43 +108,54 @@ function getGroups(t) {
       ],
     },
     {
+      label: 'Finance', icon: 'currency',
+      items: [
+        { to: '/payments',    label: t('nav.payments'),   icon: 'banknotes' },
+        { to: '/deposits',    label: t('nav.deposits'),   icon: 'bank' },
+        { to: '/accounting',  label: t('nav.accounting'), icon: 'calculator' },
+        { to: '/tax-summary', label: 'Tax Summary',       icon: 'calculator' },
+      ],
+    },
+    {
       label: 'Intelligence', icon: 'sparkle',
       items: [
-        { to: '/analytics',             label: t('nav.analytics'),   icon: 'chart_bar' },
-        { to: '/cfo',                   label: 'CFO Dashboard',      icon: 'briefcase' },
-        { to: '/alerts',                label: t('nav.alerts'),      icon: 'bell' },
-        { to: '/renewals',              label: t('nav.renewals'),    icon: 'arrow_path' },
-        { to: '/risk',                  label: t('nav.risk'),        icon: 'exclamation' },
-        { to: '/rent-optimisation',     label: 'Rent Optimiser',     icon: 'trending_up' },
-        { to: '/churn-risk',            label: 'Churn Risk',         icon: 'user_minus' },
-        { to: '/void-minimiser',        label: 'Void Minimiser',     icon: 'home' },
-        { to: '/valuation',             label: t('nav.valuation'),   icon: 'tag' },
-        { to: '/epc-roadmap',           label: 'EPC Roadmap',        icon: 'leaf' },
-        { to: '/contractor-performance',label: 'Contractor Perf.',   icon: 'star' },
-        { to: '/listing-generator',     label: 'Listing Generator',  icon: 'pencil' },
-        { to: '/insurance-claims',      label: 'Insurance Claims',   icon: 'shield' },
-        { to: '/lease-analyser',        label: 'Lease Analyser',     icon: 'search' },
-        { to: '/email-triage',          label: 'Email Triage',       icon: 'envelope' },
-        { to: '/phone-agent',           label: 'AI Phone Agent',     icon: 'phone' },
-        { to: '/surveys',               label: 'Surveys',            icon: 'star' },
+        { divider: true, label: 'Overview' },
+        { to: '/analytics',         label: t('nav.analytics'), icon: 'chart_bar' },
+        { to: '/cfo',               label: 'CFO Dashboard',    icon: 'briefcase' },
+        { to: '/news',              label: t('nav.news'),      icon: 'newspaper' },
+        { divider: true, label: 'Property & Revenue' },
+        { to: '/valuation',         label: t('nav.valuation'), icon: 'tag' },
+        { to: '/rent-optimisation', label: 'Rent Optimiser',   icon: 'trending_up' },
+        { to: '/epc-roadmap',       label: 'EPC Roadmap',      icon: 'leaf' },
+        { divider: true, label: 'Tenant' },
+        { to: '/churn-risk',        label: 'Churn Risk',       icon: 'user_minus' },
+        { to: '/void-minimiser',    label: 'Void Minimiser',   icon: 'home' },
+        { divider: true, label: 'Risk' },
+        { to: '/risk',              label: t('nav.risk'),      icon: 'exclamation' },
+        { divider: true, label: 'AI Tools' },
+        { to: '/email-triage',      label: 'Email Triage',     icon: 'envelope' },
+        { to: '/phone-agent',       label: 'AI Phone Agent',   icon: 'phone' },
+        { to: '/lease-analyser',    label: 'Lease Analyser',   icon: 'search' },
+        { to: '/listing-generator', label: 'Listing Generator',icon: 'pencil' },
+        { to: '/surveys',           label: 'Surveys',          icon: 'star' },
       ],
     },
     {
       label: 'Admin', icon: 'cog',
       items: [
-        { to: '/files',      label: t('nav.files'),      icon: 'folder' },
-        { to: '/news',       label: t('nav.news'),       icon: 'newspaper' },
-        { to: '/autopilot',  label: 'AI Autopilot',      icon: 'bolt' },
-        { to: '/workflows',  label: 'Workflows',         icon: 'cog' },
-        { to: '/audit-log',  label: 'Audit Trail',       icon: 'lock' },
-        { to: '/settings',   label: t('nav.settings'),   icon: 'cog' },
+        { to: '/files',     label: t('nav.files'),     icon: 'folder' },
+        { to: '/alerts',    label: t('nav.alerts'),    icon: 'bell' },
+        { to: '/autopilot', label: 'AI Autopilot',     icon: 'bolt' },
+        { to: '/workflows', label: 'Workflows',        icon: 'cog' },
+        { to: '/audit-log', label: 'Audit Trail',      icon: 'lock' },
+        { to: '/settings',  label: t('nav.settings'),  icon: 'cog' },
       ],
     },
   ]
 }
 
 function NavGroup({ group, currentPath }) {
-  const isActive = group.items.some(i => currentPath.startsWith(i.to))
+  const isActive = group.items.some(i => !i.divider && currentPath.startsWith(i.to))
   const [open, setOpen] = useState(isActive)
 
   useEffect(() => { if (isActive) setOpen(true) }, [currentPath])
@@ -171,10 +179,14 @@ function NavGroup({ group, currentPath }) {
 
       {open && (
         <div className="mt-0.5 mb-1 ml-2 space-y-0.5 border-l border-indigo-900 pl-2">
-          {group.items.map(({ to, label, icon, badge }) => (
+          {group.items.map((item, idx) => item.divider ? (
+            <div key={`divider-${idx}`} className="px-3 pt-2 pb-0.5">
+              <span className="text-[10px] font-semibold uppercase tracking-widest text-indigo-700">{item.label}</span>
+            </div>
+          ) : (
             <NavLink
-              key={to}
-              to={to}
+              key={item.to}
+              to={item.to}
               className={({ isActive }) =>
                 `flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-sm transition-colors duration-150 cursor-pointer ${
                   isActive
@@ -183,11 +195,11 @@ function NavGroup({ group, currentPath }) {
                 }`
               }
             >
-              <NavIcon name={icon} className="w-4 h-4 shrink-0" />
-              <span className="flex-1 truncate">{label}</span>
-              {badge > 0 && (
+              <NavIcon name={item.icon} className="w-4 h-4 shrink-0" />
+              <span className="flex-1 truncate">{item.label}</span>
+              {item.badge > 0 && (
                 <span className="bg-violet-500 text-white text-xs font-bold rounded-full h-4 w-4 flex items-center justify-center shrink-0">
-                  {badge > 9 ? '9+' : badge}
+                  {item.badge > 9 ? '9+' : item.badge}
                 </span>
               )}
             </NavLink>
@@ -201,7 +213,8 @@ function NavGroup({ group, currentPath }) {
 // Roles that can see each nav group (absent = all roles allowed)
 const GROUP_ROLE_GATES = {
   'Finance':      new Set(['admin', 'manager', 'accounts', 'read_only', 'agent']),
-  'Operations':   new Set(['admin', 'manager', 'negotiator', 'read_only', 'agent']),
+  'Maintenance':  new Set(['admin', 'manager', 'negotiator', 'read_only', 'agent']),
+  'Tenancy':      new Set(['admin', 'manager', 'negotiator', 'read_only', 'agent']),
   'Intelligence': new Set(['admin', 'manager', 'read_only', 'agent']),
 }
 

@@ -29,6 +29,7 @@ export default function PPM() {
   const [error, setError] = useState('')
   const [sortCol, setSortCol] = useState('next_due')
   const [sortDir, setSortDir] = useState('asc')
+  const [activeFilter, setActiveFilter] = useState(null) // 'overdue' | 'thisMonth' | 'in30'
 
   function toggleSort(col) {
     if (sortCol === col) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
@@ -140,6 +141,21 @@ export default function PPM() {
   }).length
   const dueIn30 = schedules.filter(s => s.is_active && s.next_due >= today && s.next_due <= in30).length
 
+  const filtered = sorted.filter(s => {
+    if (!activeFilter) return true
+    if (activeFilter === 'overdue') return s.is_active && s.next_due < today
+    if (activeFilter === 'thisMonth') {
+      if (!s.is_active || !s.next_due) return false
+      const d = new Date(s.next_due)
+      const now = new Date()
+      return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && s.next_due >= today
+    }
+    if (activeFilter === 'in30') return s.is_active && s.next_due >= today && s.next_due <= in30
+    return true
+  })
+
+  function toggleFilter(f) { setActiveFilter(v => v === f ? null : f) }
+
   return (
     <div>
       <PageHeader title="Planned Maintenance" subtitle="Recurring tasks that auto-create maintenance jobs when due">
@@ -148,27 +164,46 @@ export default function PPM() {
         </button>
       </PageHeader>
 
-      {/* Summary cards */}
+      {/* Summary cards — clickable filters */}
       <div className="grid grid-cols-3 gap-4 mb-6">
-        <div className={`rounded-xl border p-5 ${overdue > 0 ? 'bg-red-50 border-red-200' : 'bg-white border-gray-200'}`}>
+        <button onClick={() => toggleFilter('overdue')} className={`rounded-xl border p-5 text-left transition-all ${
+          activeFilter === 'overdue'
+            ? 'ring-2 ring-red-400 bg-red-50 border-red-300'
+            : overdue > 0 ? 'bg-red-50 border-red-200 hover:ring-2 hover:ring-red-300' : 'bg-white border-gray-200 hover:border-gray-300'
+        }`}>
           <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Overdue</p>
           <p className={`text-3xl font-bold mt-1 ${overdue > 0 ? 'text-red-600' : 'text-gray-400'}`}>{overdue}</p>
           <p className="text-xs text-gray-400 mt-1">past due date</p>
-        </div>
-        <div className={`rounded-xl border p-5 ${dueThisMonth > 0 ? 'bg-amber-50 border-amber-200' : 'bg-white border-gray-200'}`}>
+        </button>
+        <button onClick={() => toggleFilter('thisMonth')} className={`rounded-xl border p-5 text-left transition-all ${
+          activeFilter === 'thisMonth'
+            ? 'ring-2 ring-amber-400 bg-amber-50 border-amber-300'
+            : dueThisMonth > 0 ? 'bg-amber-50 border-amber-200 hover:ring-2 hover:ring-amber-300' : 'bg-white border-gray-200 hover:border-gray-300'
+        }`}>
           <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Due this month</p>
           <p className={`text-3xl font-bold mt-1 ${dueThisMonth > 0 ? 'text-amber-600' : 'text-gray-400'}`}>{dueThisMonth}</p>
           <p className="text-xs text-gray-400 mt-1">remaining this month</p>
-        </div>
-        <div className="bg-white rounded-xl border border-gray-200 p-5">
+        </button>
+        <button onClick={() => toggleFilter('in30')} className={`rounded-xl border p-5 text-left transition-all ${
+          activeFilter === 'in30'
+            ? 'ring-2 ring-indigo-400 bg-indigo-50 border-indigo-300'
+            : 'bg-white border-gray-200 hover:border-gray-300'
+        }`}>
           <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Due in 30 days</p>
-          <p className="text-3xl font-bold mt-1 text-indigo-600">{dueIn30}</p>
+          <p className={`text-3xl font-bold mt-1 ${activeFilter === 'in30' ? 'text-indigo-700' : 'text-indigo-600'}`}>{dueIn30}</p>
           <p className="text-xs text-gray-400 mt-1">upcoming schedules</p>
-        </div>
+        </button>
       </div>
 
       {/* Table */}
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+        {activeFilter && (
+          <div className="flex items-center gap-2 px-5 py-2.5 bg-gray-50 border-b border-gray-200 text-xs text-gray-500">
+            Filtered: <span className="font-medium text-gray-700">{{overdue:'Overdue',thisMonth:'Due this month',in30:'Due in 30 days'}[activeFilter]}</span>
+            · {filtered.length} result{filtered.length !== 1 ? 's' : ''}
+            <button onClick={() => setActiveFilter(null)} className="ml-auto text-indigo-600 hover:underline">Clear filter</button>
+          </div>
+        )}
         <table className="w-full text-sm">
           <thead className="bg-gray-50 border-b border-gray-200">
             <tr>
@@ -190,7 +225,14 @@ export default function PPM() {
                 </td>
               </tr>
             )}
-            {sorted.map(s => {
+            {filtered.length === 0 && schedules.length > 0 && (
+              <tr>
+                <td colSpan="8" className="px-5 py-10 text-center text-gray-400">
+                  No schedules match this filter.
+                </td>
+              </tr>
+            )}
+            {filtered.map(s => {
               const overdue = s.is_active && s.next_due < today
               const dueSoon = s.is_active && !overdue && s.next_due <= new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10)
               return (

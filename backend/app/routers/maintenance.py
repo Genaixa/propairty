@@ -1,3 +1,4 @@
+import json
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlalchemy.orm import Session
 from sqlalchemy import func as sqlfunc
@@ -90,6 +91,7 @@ def list_requests(db: Session = Depends(get_db), current_user: User = Depends(ge
             "quote_file_name": qf.original_name if qf else None,
             "invoice_file_url": f"/uploads/{inv_f.filename}" if inv_f else None,
             "invoice_file_name": inv_f.original_name if inv_f else None,
+            "ai_triage": json.loads(r.ai_triage) if r.ai_triage else None,
         })
     return result
 
@@ -331,6 +333,24 @@ def quote_decision(req_id: int, data: QuoteDecision, db: Session = Depends(get_d
         req.estimated_cost = req.contractor_quote
         # Leave proposed_date intact — agent decides on date separately (step 2)
     db.commit()
+
+    # Notify contractor of quote decision
+    if req.contractor_id:
+        from app.models.contractor import Contractor
+        from app.models.organisation import Organisation
+        contractor = db.query(Contractor).filter(Contractor.id == req.contractor_id).first()
+        org = db.query(Organisation).filter(Organisation.id == current_user.organisation_id).first()
+        if contractor:
+            label = "approved ✅" if data.decision == "approved" else "rejected ❌"
+            if contractor.telegram_chat_id:
+                notifications.send(
+                    f"📋 <b>Quote {label}</b>\n\nJob: {req.title}\nYour quote has been {data.decision}."
+                    + ("\nPlease log in to agree a visit date." if data.decision == "approved" else ""),
+                    chat_id=contractor.telegram_chat_id,
+                )
+            if contractor.notify_email:
+                emails.send_contractor_quote_decision(contractor, req.title, data.decision, org)
+
     return {"ok": True, "quote_status": req.quote_status}
 
 

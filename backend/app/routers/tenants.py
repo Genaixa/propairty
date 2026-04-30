@@ -17,6 +17,34 @@ from app import emails as _emails, audit
 
 router = APIRouter(prefix="/api/tenants", tags=["tenants"])
 
+
+@router.get("/for-picker")
+def tenants_for_picker(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Lightweight list for dropdowns — includes active lease property/unit."""
+    tenants = db.query(Tenant).filter(
+        Tenant.organisation_id == current_user.organisation_id,
+        Tenant.is_active == True,
+    ).order_by(Tenant.full_name).all()
+    result = []
+    for t in tenants:
+        lease = db.query(Lease).filter(
+            Lease.tenant_id == t.id, Lease.status == "active"
+        ).first()
+        unit = db.query(Unit).get(lease.unit_id) if lease else None
+        prop = db.query(Property).get(unit.property_id) if unit else None
+        result.append({
+            "id": t.id,
+            "full_name": t.full_name,
+            "property_id": prop.id if prop else None,
+            "property_name": prop.name if prop else None,
+            "unit_name": unit.name if unit else None,
+        })
+    return result
+
+
 @router.get("", response_model=List[TenantOut])
 def list_tenants(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     allowed = get_accessible_property_ids(db, current_user)

@@ -44,17 +44,24 @@ export default function Dispatch() {
   }
 
   async function toggleAutoMode() {
-    setSaving(true)
+    if (saving) return
     const newMode = !settings.auto_mode
-    await api.put('/dispatch/settings', { auto_mode: newMode })
-    setSettings(s => ({ ...s, auto_mode: newMode }))
-    loadAll()
-    setSaving(false)
+    // Optimistic update — reflect instantly, before API responds
+    const patch = { auto_mode: newMode }
+    if (!newMode) patch.urgent_auto_dispatch = true // sensible default when dropping to manual
+    setSettings(s => ({ ...s, ...patch }))
+    setSaving(true)
+    try {
+      await api.put('/dispatch/settings', patch)
+      loadAll()
+    } finally {
+      setSaving(false)
+    }
   }
 
   async function updateSetting(key, value) {
-    await api.put('/dispatch/settings', { [key]: value })
     setSettings(s => ({ ...s, [key]: value }))
+    api.put('/dispatch/settings', { [key]: value })
   }
 
   async function removeFromQueue(id) {
@@ -82,10 +89,11 @@ export default function Dispatch() {
           <button
             onClick={toggleAutoMode}
             disabled={saving}
-            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${settings?.auto_mode ? 'bg-green-500' : 'bg-gray-300'}`}
+            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors duration-150 ${settings?.auto_mode ? 'bg-green-500' : 'bg-gray-300'} ${saving ? 'opacity-70' : ''}`}
           >
-            <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${settings?.auto_mode ? 'translate-x-6' : 'translate-x-1'}`} />
+            <span className={`inline-block h-4 w-4 transform rounded-full shadow transition-transform duration-150 ${saving ? 'bg-gray-200' : 'bg-white'} ${settings?.auto_mode ? 'translate-x-6' : 'translate-x-1'}`} />
           </button>
+          {saving && <span className="text-xs text-gray-400 animate-pulse">saving…</span>}
         </div>
       </PageHeader>
 
@@ -120,14 +128,18 @@ export default function Dispatch() {
             <span className="text-gray-400">days</span>
           </label>
 
-          <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+          <label className={`flex items-center gap-2 text-sm cursor-pointer ${settings.auto_mode ? 'text-gray-400' : 'text-gray-700'}`}>
             <input
               type="checkbox"
               checked={settings.urgent_auto_dispatch}
               onChange={e => updateSetting('urgent_auto_dispatch', e.target.checked)}
-              className="rounded"
+              disabled={settings.auto_mode}
+              className="rounded disabled:opacity-40"
             />
             <span>Always auto-dispatch urgent jobs</span>
+            {settings.auto_mode && (
+              <span className="text-xs text-gray-400 italic">(covered by Auto Mode)</span>
+            )}
           </label>
 
           <div className="ml-auto flex gap-4 text-sm">

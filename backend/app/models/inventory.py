@@ -30,6 +30,9 @@ class Inventory(Base):
     meter_water = Column(String, nullable=True)
     keys_handed = Column(String, nullable=True)       # e.g. "2 front door, 1 postbox"
     status = Column(String, default="confirmed")   # confirmed | draft
+    ack_token = Column(String, nullable=True, unique=True)
+    ack_sent_at = Column(DateTime(timezone=True), nullable=True)
+    tenant_acknowledged_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     lease = relationship("Lease")

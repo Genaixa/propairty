@@ -167,16 +167,6 @@ export default function PortalPicker() {
             </svg>
           </a>
 
-          <p className="text-center text-xs text-gray-400">
-            New to PropAIrty?{' '}
-            <Link to="/signup" className="text-indigo-600 hover:text-indigo-700 font-semibold hover:underline underline-offset-2">
-              Sign up free
-            </Link>
-            {' · '}
-            <a href="/" className="text-gray-400 hover:text-gray-600">
-              Back to homepage
-            </a>
-          </p>
         </div>
       </div>
 

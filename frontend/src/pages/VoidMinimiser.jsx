@@ -15,12 +15,17 @@ export default function VoidMinimiser() {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState(null)
+  const [me, setMe] = useState(null)
   const navigate = useNavigate()
 
   useEffect(() => {
-    api.get('/intelligence/void-risk')
-      .then(r => setData(r.data))
-      .finally(() => setLoading(false))
+    Promise.all([
+      api.get('/intelligence/void-risk'),
+      api.get('/auth/me').catch(() => ({ data: null })),
+    ]).then(([r, u]) => {
+      setData(r.data)
+      setMe(u.data)
+    }).finally(() => setLoading(false))
   }, [])
 
   if (loading) return (
@@ -32,7 +37,7 @@ export default function VoidMinimiser() {
   const grouped = Object.fromEntries(BANDS.map(b => [b.key, data?.filter(v => v.risk === b.key) || []]))
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6">
+    <div className="max-w-4xl space-y-6">
       <div>
         <PageHeader title="Void Minimiser" subtitle="Identify at-risk voids before they happen" />
       </div>
@@ -73,7 +78,7 @@ export default function VoidMinimiser() {
             </div>
             <div className="divide-y divide-gray-100">
               {items.map(v => (
-                <VoidRow key={v.lease_id} void_={v} band={b}
+                <VoidRow key={v.lease_id} void_={v} band={b} me={me}
                   onGenerateListing={() => navigate(`/listing-generator?property=${v.property_id}&unit=${v.unit_id}`)} />
               ))}
             </div>
@@ -84,64 +89,156 @@ export default function VoidMinimiser() {
   )
 }
 
-function VoidRow({ void_: v, band: b, onGenerateListing }) {
-  const [emailState, setEmailState] = useState('idle')
+function buildDefaultEmail(v, me) {
+  const first = v.tenant_name?.split(' ')[0] || 'there'
+  const leaseEnd = new Date(v.lease_end).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })
+  const subject = `Your tenancy at ${v.property_name} is ending — would you like to stay?`
+  const agentName = me?.full_name || 'The Lettings Team'
+  const agentEmail = me?.email || ''
+  const orgName = me?.organisation_name || ''
+  const contactLine = agentEmail
+    ? `or email us at ${agentEmail}`
+    : 'or get in touch with us directly'
+  const body = `Hi ${first},
 
-  async function handleEmailTenant() {
-    setEmailState('sending')
+Your tenancy at ${v.property_name}, ${v.unit_name} is coming to an end on ${leaseEnd}.
+
+We'd love to have you stay, and renewing is straightforward — just let us know you're interested and we'll take care of the paperwork.
+
+Property: ${v.property_name}, ${v.unit_name}
+Lease ends: ${leaseEnd}${v.monthly_rent ? `\nMonthly rent: £${v.monthly_rent.toLocaleString()}/mo` : ''}
+
+To confirm your intention to renew, log in to your tenant portal and visit the Renewal tab — ${contactLine}.
+
+If you've already been in touch, or have decided not to renew, please ignore this message. We'll need at least one month's written notice if you plan to leave.
+
+Kind regards,
+${agentName}${orgName ? `\n${orgName}` : ''}`
+  return { subject, body }
+}
+
+function EmailPreviewModal({ void_: v, me, onClose, onSent }) {
+  const defaults = buildDefaultEmail(v, me)
+  const [subject, setSubject] = useState(defaults.subject)
+  const [body, setBody] = useState(defaults.body)
+  const [sending, setSending] = useState(false)
+  const [error, setError] = useState('')
+
+  async function send() {
+    setSending(true)
+    setError('')
     try {
-      await api.post(`/intelligence/void-risk/${v.lease_id}/email-tenant`)
-      setEmailState('sent')
-    } catch {
-      setEmailState('error')
-      setTimeout(() => setEmailState('idle'), 3000)
+      await api.post(`/intelligence/void-risk/${v.lease_id}/email-tenant`, { subject, body })
+      onSent()
+    } catch (e) {
+      setError(e.response?.data?.detail || 'Failed to send.')
+      setSending(false)
     }
   }
 
   return (
-    <div className="px-5 py-4 flex items-center gap-4">
-      <div className="flex-1 min-w-0">
-        <p className="text-sm font-semibold text-gray-900">{v.property_name} — {v.unit_name}</p>
-        <p className="text-xs text-gray-400 mt-0.5">
-          Tenant: {v.tenant_name} · {v.bedrooms} bed · £{v.monthly_rent.toLocaleString()}/mo
-        </p>
-        {v.renewal_status && (
-          <p className={`text-xs mt-1 font-medium ${
-            v.renewal_status === 'declined' ? 'text-red-600' :
-            v.renewal_status === 'sent' ? 'text-amber-600' : 'text-gray-500'
-          }`}>
-            Renewal: {v.renewal_status}
-          </p>
-        )}
-        {!v.renewal_status && (
-          <p className="text-xs mt-1 text-gray-400 italic">No renewal started</p>
-        )}
-      </div>
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg flex flex-col max-h-[90vh]">
+        <div className="px-5 py-4 border-b border-gray-200 flex items-center justify-between">
+          <div>
+            <p className="font-semibold text-gray-900 text-sm">Email to {v.tenant_name}</p>
+            <p className="text-xs text-gray-400 mt-0.5">{v.tenant_email}</p>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none">×</button>
+        </div>
 
-      <div className="text-right shrink-0">
-        <p className={`text-sm font-bold ${b.bold}`}>
-          {v.days_left <= 0 ? `Expired ${Math.abs(v.days_left)}d ago` : `${v.days_left}d left`}
-        </p>
-        <p className="text-xs text-gray-400">{new Date(v.lease_end).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</p>
-      </div>
+        <div className="flex-1 overflow-y-auto p-5 space-y-4">
+          <div>
+            <label className="block text-xs font-medium text-gray-500 mb-1">Subject</label>
+            <input
+              value={subject}
+              onChange={e => setSubject(e.target.value)}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-500 mb-1">Message</label>
+            <textarea
+              value={body}
+              onChange={e => setBody(e.target.value)}
+              rows={14}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none font-mono leading-relaxed"
+            />
+          </div>
+          {error && <p className="text-xs text-red-500">{error}</p>}
+        </div>
 
-      <div className="flex flex-col gap-1.5 shrink-0">
-        <button onClick={onGenerateListing}
-          className="text-xs bg-indigo-50 text-indigo-700 font-medium px-3 py-1.5 rounded-lg hover:bg-indigo-100 whitespace-nowrap">
-          ✍️ Draft listing
-        </button>
-        {v.tenant_email && (
-          <button onClick={handleEmailTenant} disabled={emailState === 'sending' || emailState === 'sent'}
-            className={`text-xs font-medium px-3 py-1.5 rounded-lg whitespace-nowrap transition-colors ${
-              emailState === 'sent'    ? 'bg-green-50 text-green-700 cursor-default' :
-              emailState === 'error'   ? 'bg-red-50 text-red-700' :
-              emailState === 'sending' ? 'bg-gray-50 text-gray-400 cursor-default' :
-              'bg-gray-50 text-gray-600 hover:bg-gray-100'
-            }`}>
-            {emailState === 'sent' ? '✓ Email sent' : emailState === 'sending' ? 'Sending…' : emailState === 'error' ? '✗ Failed' : '✉️ Email tenant'}
+        <div className="px-5 py-4 border-t border-gray-200 flex gap-2 justify-end">
+          <button onClick={onClose} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800 font-medium">Cancel</button>
+          <button onClick={send} disabled={sending || !subject.trim() || !body.trim()}
+            className="px-4 py-2 text-sm bg-indigo-600 hover:bg-indigo-700 text-white font-medium rounded-lg disabled:opacity-50 transition-colors">
+            {sending ? 'Sending…' : '✉️ Send email'}
           </button>
-        )}
+        </div>
       </div>
     </div>
+  )
+}
+
+function VoidRow({ void_: v, band: b, me, onGenerateListing }) {
+  const [emailState, setEmailState] = useState('idle')
+  const [showPreview, setShowPreview] = useState(false)
+
+  return (
+    <>
+      {showPreview && (
+        <EmailPreviewModal
+          void_={v}
+          me={me}
+          onClose={() => setShowPreview(false)}
+          onSent={() => { setShowPreview(false); setEmailState('sent') }}
+        />
+      )}
+      <div className="px-5 py-4 flex items-center gap-4">
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-semibold text-gray-900">{v.property_name} — {v.unit_name}</p>
+          <p className="text-xs text-gray-400 mt-0.5">
+            Tenant: {v.tenant_name} · {v.bedrooms} bed · £{v.monthly_rent.toLocaleString()}/mo
+          </p>
+          {v.renewal_status && (
+            <p className={`text-xs mt-1 font-medium ${
+              v.renewal_status === 'declined' ? 'text-red-600' :
+              v.renewal_status === 'sent' ? 'text-amber-600' : 'text-gray-500'
+            }`}>
+              Renewal: {v.renewal_status}
+            </p>
+          )}
+          {!v.renewal_status && (
+            <p className="text-xs mt-1 text-gray-400 italic">No renewal started</p>
+          )}
+        </div>
+
+        <div className="text-right shrink-0">
+          <p className={`text-sm font-bold ${b.bold}`}>
+            {v.days_left <= 0 ? `Expired ${Math.abs(v.days_left)}d ago` : `${v.days_left}d left`}
+          </p>
+          <p className="text-xs text-gray-400">{new Date(v.lease_end).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</p>
+        </div>
+
+        <div className="flex flex-col gap-1.5 shrink-0">
+          <button onClick={onGenerateListing}
+            className="text-xs bg-indigo-50 text-indigo-700 font-medium px-3 py-1.5 rounded-lg hover:bg-indigo-100 whitespace-nowrap">
+            ✍️ Draft listing
+          </button>
+          {v.tenant_email && (
+            <button
+              onClick={() => emailState === 'idle' && setShowPreview(true)}
+              disabled={emailState === 'sent'}
+              className={`text-xs font-medium px-3 py-1.5 rounded-lg whitespace-nowrap transition-colors ${
+                emailState === 'sent'  ? 'bg-green-50 text-green-700 cursor-default' :
+                emailState === 'error' ? 'bg-red-50 text-red-700' :
+                'bg-gray-50 text-gray-600 hover:bg-gray-100'
+              }`}>
+              {emailState === 'sent' ? '✓ Email sent' : emailState === 'error' ? '✗ Failed' : '✉️ Email tenant'}
+            </button>
+          )}
+        </div>
+      </div>
+    </>
   )
 }

@@ -150,6 +150,34 @@ TOOLS = [
                 "required": ["letter_type"]
             }
         }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "render_chart",
+            "description": "Render a chart to visualise data. Use whenever the user asks about trends, comparisons, or anything that benefits from a visual. Supports bar, line, and pie charts.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "type": {"type": "string", "enum": ["bar", "line", "pie"], "description": "Chart type"},
+                    "title": {"type": "string", "description": "Chart title"},
+                    "labels": {"type": "array", "items": {"type": "string"}, "description": "X-axis labels or pie segment names"},
+                    "datasets": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "label": {"type": "string"},
+                                "data": {"type": "array", "items": {"type": "number"}}
+                            },
+                            "required": ["label", "data"]
+                        },
+                        "description": "Data series"
+                    }
+                },
+                "required": ["type", "title", "labels", "datasets"]
+            }
+        }
     }
 ]
 
@@ -163,6 +191,9 @@ ANTHROPIC_TOOLS = [
     for t in TOOLS
 ]
 
+def _render_chart_tool(db, org_id, **kwargs):
+    return kwargs  # spec passed through; frontend renders it
+
 TOOL_FN_MAP = {
     "get_dashboard_stats": ai_tools.get_dashboard_stats,
     "list_properties": ai_tools.list_properties,
@@ -174,6 +205,7 @@ TOOL_FN_MAP = {
     "list_arrears": ai_tools.list_arrears,
     "draft_letter": ai_tools.draft_letter,
     "send_arrears_reminder": ai_tools.send_arrears_reminder,
+    "render_chart": _render_chart_tool,
 }
 
 
@@ -539,6 +571,27 @@ def _build_context_prompt(db: Session, org_id: int) -> str:
         for note, job, unit, prop in notes:
             lines.append(f"  [{note.author_type}] {note.author_name} on '{job.title}' ({prop.name} · {unit.name}): {note.body[:120]}")
 
+    # 30-day metric history for trend analysis
+    try:
+        from datetime import timedelta
+        from app.models.metric_snapshot import MetricSnapshot
+        thirty_ago = date.today() - timedelta(days=30)
+        snaps = db.query(MetricSnapshot).filter(
+            MetricSnapshot.organisation_id == org_id,
+            MetricSnapshot.date >= thirty_ago
+        ).order_by(MetricSnapshot.date).all()
+        if snaps:
+            lines.append("\n=== 30-DAY METRIC HISTORY (use for trend questions) ===")
+            lines.append("date | properties | units | vacant | active_leases | overdue_count | open_maintenance | applicants")
+            for s in snaps:
+                d = s.data
+                lines.append(
+                    f"{s.date} | {d.get('properties',0)} | {d.get('units',0)} | {d.get('vacant_units',0)} | "
+                    f"{d.get('active_leases',0)} | {d.get('overdue_rent_count',0)} | {d.get('open_maintenance',0)} | {d.get('active_applicants',0)}"
+                )
+    except Exception:
+        pass
+
     lines.append("\n=== END DATA — answer using only the above, do not invent names or numbers. ===")
     return "\n".join(lines)
 
@@ -564,6 +617,7 @@ def _chat_anthropic(req: ChatRequest, db: Session, org_id: int, api_key: str):
     client = anthropic.Anthropic(api_key=api_key)
 
     messages = [{"role": m.role, "content": m.content} for m in req.messages]
+    chart_result = None
 
     for _ in range(10):
         response = client.messages.create(
@@ -574,19 +628,22 @@ def _chat_anthropic(req: ChatRequest, db: Session, org_id: int, api_key: str):
             messages=messages,
         )
 
-        # Collect text and tool_use blocks
         tool_uses = [b for b in response.content if b.type == "tool_use"]
         text_blocks = [b for b in response.content if b.type == "text"]
 
         if response.stop_reason == "end_turn" or not tool_uses:
             reply = "\n".join(b.text for b in text_blocks).strip()
-            return {"reply": reply or "I couldn't find an answer to that.", "model": "claude-haiku"}
+            out = {"reply": reply or "I couldn't find an answer to that.", "model": "claude-haiku"}
+            if chart_result:
+                out["chart"] = chart_result
+            return out
 
-        # Execute tool calls
         messages.append({"role": "assistant", "content": response.content})
         tool_results = []
         for tu in tool_uses:
             result = _run_tool(tu.name, tu.input, db, org_id)
+            if tu.name == "render_chart":
+                chart_result = result
             tool_results.append({
                 "type": "tool_result",
                 "tool_use_id": tu.id,
@@ -594,7 +651,10 @@ def _chat_anthropic(req: ChatRequest, db: Session, org_id: int, api_key: str):
             })
         messages.append({"role": "user", "content": tool_results})
 
-    return {"reply": "I could not complete that request. Please try again.", "model": "claude-haiku"}
+    out = {"reply": "I could not complete that request. Please try again.", "model": "claude-haiku"}
+    if chart_result:
+        out["chart"] = chart_result
+    return out
 
 
 def _chat_openai(req: ChatRequest, db: Session, org_id: int, client, model: str):

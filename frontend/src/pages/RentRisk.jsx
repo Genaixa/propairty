@@ -212,12 +212,14 @@ export default function RentRisk() {
                       </div>
                       {t.tenant_email && (
                         <p className="text-xs text-gray-500 mt-3">
-                          <span className="font-medium">Email:</span> {t.tenant_email}
+                          <span className="font-medium">Email:</span>{' '}
+                          <a href={`mailto:${t.tenant_email}`} className="text-indigo-600 hover:underline">{t.tenant_email}</a>
                         </p>
                       )}
                       {t.tenant_phone && (
                         <p className="text-xs text-gray-500 mt-1">
-                          <span className="font-medium">Phone:</span> {t.tenant_phone}
+                          <span className="font-medium">Phone:</span>{' '}
+                          <a href={`tel:${t.tenant_phone}`} className="text-indigo-600 hover:underline">{t.tenant_phone}</a>
                         </p>
                       )}
                     </div>

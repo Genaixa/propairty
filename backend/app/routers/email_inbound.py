@@ -16,9 +16,12 @@ Inbound message routing — all channels feed the same AI triage queue:
     POST /api/inbound/telegram          — Telegram Bot webhook
     POST /api/inbound/telegram/register — Call setWebhook on Telegram API
 """
+import logging
 import re
 import secrets
 import tempfile
+
+log = logging.getLogger(__name__)
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import RedirectResponse, Response
@@ -249,15 +252,50 @@ async def whatsapp_webhook(request: Request, db: Session = Depends(get_db)):
     body     = str(form.get("Body", "")).strip()
     profile  = str(form.get("ProfileName", "")).strip() or None
 
-    if not body:
-        return Response(content="<?xml version='1.0'?><Response/>", media_type="application/xml")
-
     # Strip "whatsapp:" prefix
     from_number = from_raw.replace("whatsapp:", "").strip()
 
     org = _org_for_twilio_number(str(form.get("To", "")), db)
-    if org:
-        _run_triage(org.id, "whatsapp", from_number, profile, "", body, db)
+    if not org:
+        return Response(content="<?xml version='1.0' encoding='UTF-8'?><Response/>", media_type="application/xml")
+
+    # ── Media attachments — run AI visual triage on images ────────────────────
+    num_media = int(form.get("NumMedia", "0") or "0")
+    triage_summary = ""
+    if num_media > 0:
+        from app.vision_triage import run_visual_triage_from_bytes, format_triage_reply
+        for i in range(min(num_media, 3)):
+            media_url  = str(form.get(f"MediaUrl{i}", "")).strip()
+            media_mime = str(form.get(f"MediaContentType{i}", "image/jpeg")).strip()
+            if not media_url or not media_mime.startswith("image/"):
+                continue
+            try:
+                import httpx
+                # Twilio requires Basic auth to download its media
+                twilio_sid    = getattr(settings, "twilio_account_sid", None)
+                twilio_token  = getattr(settings, "twilio_auth_token", None)
+                async with httpx.AsyncClient(timeout=30) as client:
+                    if twilio_sid and twilio_token:
+                        r = await client.get(media_url, auth=(twilio_sid, twilio_token))
+                    else:
+                        r = await client.get(media_url)
+                    if r.status_code == 200:
+                        triage = run_visual_triage_from_bytes(r.content, media_mime)
+                        if triage:
+                            triage_summary = (
+                                f"[Photo via WhatsApp] AI Diagnosis: {triage.get('diagnosis','')} "
+                                f"(severity: {triage.get('severity','')}, "
+                                f"contractor_needed: {triage.get('contractor_needed','')})"
+                            )
+                            break
+            except Exception as exc:
+                log.warning("WhatsApp media download failed: %s", exc)
+
+    # Combine body text with any triage summary for the triage item
+    triage_body = "\n".join(filter(None, [body, triage_summary])) or "[Photo only — no text]"
+
+    if body or triage_summary:
+        _run_triage(org.id, "whatsapp", from_number, profile, "", triage_body, db)
 
     return Response(
         content="<?xml version='1.0' encoding='UTF-8'?><Response/>",
@@ -295,19 +333,39 @@ async def telegram_webhook(request: Request, db: Session = Depends(get_db)):
 
     from app.telegram_inventory import get_active_session, handle_telegram_message, handle_telegram_photo
 
-    # ── Photos: route directly to inventory bot if session is active ──────────
+    # ── Photos: inventory session OR visual maintenance triage ───────────────
     photos = message.get("photo")
     if photos:
         has_session = get_active_session(chat_id, org.id, db) is not None
+        best = photos[-1]  # highest-resolution is last in Telegram's array
+        photo_bytes, ext = await _download_telegram_file(best.get("file_id", ""))
         if has_session:
-            # Use highest-resolution photo (last in array)
-            best = photos[-1]
-            photo_bytes, ext = await _download_telegram_file(best.get("file_id", ""))
             if photo_bytes:
                 reply = await handle_telegram_photo(chat_id, photo_bytes, ext, org, db)
                 if reply:
                     await _telegram_send(chat_id, reply)
             return {"ok": True}
+
+        # Not an inventory session — run AI visual triage on the photo
+        if photo_bytes:
+            from app.vision_triage import run_visual_triage_from_bytes, format_triage_reply
+            mime = f"image/{ext.lstrip('.') or 'jpeg'}"
+            triage = run_visual_triage_from_bytes(photo_bytes, mime)
+            if triage:
+                reply = format_triage_reply(triage)
+                await _telegram_send(chat_id, reply)
+                # Also log as a triage item so agents can see it
+                _run_triage(
+                    org.id, "telegram", f"@{username}", from_name,
+                    "Photo: maintenance issue",
+                    f"[Photo sent via Telegram]\nAI Diagnosis: {triage.get('diagnosis','')} "
+                    f"(severity: {triage.get('severity','')}, contractor_needed: {triage.get('contractor_needed','')})",
+                    db,
+                    extra_profile={"telegram_chat_id": chat_id},
+                )
+            else:
+                await _telegram_send(chat_id, "📸 Photo received — your letting agent will review it shortly.")
+        return {"ok": True}
 
     # ── Resolve text — transcribe voice notes if needed ───────────────────────
     text = message.get("text", "").strip()

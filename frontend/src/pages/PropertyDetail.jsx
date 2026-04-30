@@ -634,6 +634,309 @@ function VacateModal({ unit, propertyId, onSaved, onClose }) {
   )
 }
 
+// ─── Property History ─────────────────────────────────────────────────────────
+
+const HTABS = [
+  { key: 'maintenance', label: 'Maintenance',      color: 'amber',  icon: 'M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z' },
+  { key: 'inspections', label: 'Inspections',      color: 'violet', icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4' },
+  { key: 'inventories', label: 'Inventories',      color: 'blue',   icon: 'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z' },
+  { key: 'leases',      label: 'Tenancy history',  color: 'emerald',icon: 'M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z' },
+  { key: 'compliance',  label: 'Compliance',       color: 'green',  icon: 'M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-2.956z' },
+  { key: 'documents',   label: 'Documents',        color: 'slate',  icon: 'M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z' },
+]
+
+const HTAB_COLORS = {
+  amber:   { active: 'bg-amber-500 text-white shadow-amber-200',   badge: 'bg-amber-400/30 text-amber-50',   idle: 'text-amber-600 bg-amber-50 border border-amber-200' },
+  violet:  { active: 'bg-violet-500 text-white shadow-violet-200', badge: 'bg-violet-400/30 text-violet-50', idle: 'text-violet-600 bg-violet-50 border border-violet-200' },
+  blue:    { active: 'bg-blue-500 text-white shadow-blue-200',     badge: 'bg-blue-400/30 text-blue-50',     idle: 'text-blue-600 bg-blue-50 border border-blue-200' },
+  emerald: { active: 'bg-emerald-500 text-white shadow-emerald-200',badge:'bg-emerald-400/30 text-emerald-50',idle: 'text-emerald-600 bg-emerald-50 border border-emerald-200'},
+  green:   { active: 'bg-green-600 text-white shadow-green-200',   badge: 'bg-green-400/30 text-green-50',   idle: 'text-green-700 bg-green-50 border border-green-200' },
+  slate:   { active: 'bg-slate-600 text-white shadow-slate-200',   badge: 'bg-slate-400/30 text-slate-50',   idle: 'text-slate-600 bg-slate-100 border border-slate-200' },
+}
+
+const H_STATUS = {
+  open:        'bg-amber-100 text-amber-700 ring-1 ring-amber-200',
+  in_progress: 'bg-sky-100 text-sky-700 ring-1 ring-sky-200',
+  completed:   'bg-emerald-100 text-emerald-700 ring-1 ring-emerald-200',
+  cancelled:   'bg-gray-100 text-gray-400',
+  scheduled:   'bg-indigo-100 text-indigo-600 ring-1 ring-indigo-200',
+  active:      'bg-emerald-100 text-emerald-700 ring-1 ring-emerald-200',
+  expired:     'bg-gray-100 text-gray-400',
+  terminated:  'bg-rose-100 text-rose-600 ring-1 ring-rose-200',
+  draft:       'bg-yellow-100 text-yellow-700',
+  confirmed:   'bg-emerald-100 text-emerald-700 ring-1 ring-emerald-200',
+}
+
+function HPill({ value, label }) {
+  const cls = H_STATUS[value] || 'bg-gray-100 text-gray-400'
+  const text = label || (value || '—').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
+  return <span className={`inline-flex items-center text-[11px] font-semibold px-2 py-0.5 rounded-md ${cls}`}>{text}</span>
+}
+
+function HEmpty({ icon, message }) {
+  return (
+    <div className="flex flex-col items-center justify-center py-14 text-center">
+      <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center mb-3">
+        <svg className="w-5 h-5 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+          <path strokeLinecap="round" strokeLinejoin="round" d={icon} />
+        </svg>
+      </div>
+      <p className="text-sm text-gray-400">{message}</p>
+    </div>
+  )
+}
+
+function HRow({ left, meta, right, link, linkTo }) {
+  return (
+    <div className="flex items-center gap-4 px-5 py-3.5 hover:bg-gray-50/70 transition-colors border-b border-gray-100 last:border-0 group">
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-medium text-gray-900 truncate">{left}</p>
+        {meta && <p className="text-xs text-gray-400 mt-0.5 truncate">{meta}</p>}
+      </div>
+      <div className="flex items-center gap-3 shrink-0">
+        {right}
+        {link && linkTo && (
+          <Link to={linkTo} className="text-xs text-indigo-500 opacity-0 group-hover:opacity-100 transition-opacity font-medium hover:text-indigo-700">
+            Open ↗
+          </Link>
+        )}
+        {link && !linkTo && (
+          <a href={link} target="_blank" rel="noreferrer" className="text-xs text-indigo-500 opacity-0 group-hover:opacity-100 transition-opacity font-medium hover:text-indigo-700">
+            Download ↗
+          </a>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function HistoryMaintenance({ rows }) {
+  const PRIO = { urgent: 'bg-red-100 text-red-600', high: 'bg-orange-100 text-orange-600', medium: 'bg-yellow-100 text-yellow-600', low: 'bg-gray-100 text-gray-400' }
+  if (!rows.length) return <HEmpty icon="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" message="No maintenance jobs on record" />
+  return (
+    <div>
+      {rows.map(r => (
+        <HRow key={r.id}
+          left={r.title}
+          meta={`${r.unit} · ${fmtDate(r.created_at)}`}
+          right={
+            <div className="flex items-center gap-2">
+              {r.priority && <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-md ${PRIO[r.priority] || 'bg-gray-100 text-gray-400'}`}>{r.priority}</span>}
+              <HPill value={r.status} />
+            </div>
+          }
+          linkTo="/maintenance"
+          link={true}
+        />
+      ))}
+    </div>
+  )
+}
+
+function HistoryInspections({ rows }) {
+  if (!rows.length) return <HEmpty icon="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" message="No inspections on record" />
+  return (
+    <div>
+      {rows.map(r => (
+        <HRow key={r.id}
+          left={r.type?.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}
+          meta={`${r.unit} · ${fmtDate(r.scheduled_date)}${r.inspector ? ` · ${r.inspector}` : ''}`}
+          right={<HPill value={r.status} />}
+          linkTo="/inspections"
+          link={true}
+        />
+      ))}
+    </div>
+  )
+}
+
+function HistoryInventories({ rows }) {
+  if (!rows.length) return <HEmpty icon="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" message="No inventories on record" />
+  return (
+    <div>
+      {rows.map(r => (
+        <HRow key={r.id}
+          left={r.inv_type === 'check_in' ? 'Check-In Inventory' : 'Check-Out Inventory'}
+          meta={`${fmtDate(r.inv_date)}${r.conducted_by ? ` · ${r.conducted_by}` : ''}`}
+          right={
+            <div className="flex items-center gap-2">
+              <HPill value={r.status} />
+              {r.tenant_acknowledged_at
+                ? <span className="text-[11px] font-semibold px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-700">Tenant signed</span>
+                : <span className="text-[11px] font-semibold px-2 py-0.5 rounded-md bg-gray-100 text-gray-400">Pending ack</span>
+              }
+            </div>
+          }
+          linkTo="/inventory"
+          link={true}
+        />
+      ))}
+    </div>
+  )
+}
+
+function HistoryLeases({ rows }) {
+  if (!rows.length) return <HEmpty icon="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" message="No tenancy history" />
+  return (
+    <div>
+      {rows.map(r => (
+        <HRow key={r.id}
+          left={r.tenant}
+          meta={`${r.unit} · ${fmtDate(r.start_date)} → ${r.end_date ? fmtDate(r.end_date) : r.is_periodic ? 'Periodic' : 'ongoing'}`}
+          right={
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-semibold text-gray-700">£{(r.monthly_rent || 0).toLocaleString()}<span className="text-xs font-normal text-gray-400">/mo</span></span>
+              <HPill value={r.status} />
+            </div>
+          }
+          linkTo={r.tenant_id ? `/tenants/${r.tenant_id}` : null}
+          link={!!r.tenant_id}
+        />
+      ))}
+    </div>
+  )
+}
+
+function HistoryCompliance({ rows }) {
+  if (!rows.length) return <HEmpty icon="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-2.956z" message="No compliance certificates on record" />
+  return (
+    <div>
+      {rows.map(r => (
+        <HRow key={r.id}
+          left={r.label}
+          meta={`Issued ${fmtDate(r.issue_date)} · Expires ${fmtDate(r.expiry_date)}${r.contractor ? ` · ${r.contractor}` : ''}${r.reference ? ` · Ref: ${r.reference}` : ''}`}
+          right={
+            r.expired
+              ? <span className="text-[11px] font-semibold px-2 py-0.5 rounded-md bg-rose-100 text-rose-600 ring-1 ring-rose-200">Expired</span>
+              : <span className="text-[11px] font-semibold px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-700 ring-1 ring-emerald-200">Valid</span>
+          }
+        />
+      ))}
+    </div>
+  )
+}
+
+function HistoryDocuments({ rows }) {
+  if (!rows.length) return <HEmpty icon="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" message="No documents on record" />
+  return (
+    <div>
+      {rows.map(r => {
+        const isImg = r.mime_type?.startsWith('image/')
+        const isPdf = r.mime_type === 'application/pdf'
+        const Icon = () => (
+          <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${isImg ? 'bg-violet-100' : isPdf ? 'bg-red-100' : 'bg-gray-100'}`}>
+            <svg className={`w-4 h-4 ${isImg ? 'text-violet-500' : isPdf ? 'text-red-500' : 'text-gray-400'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d={isImg ? 'M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z' : 'M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z'} />
+            </svg>
+          </div>
+        )
+        return (
+          <div key={r.id} className="flex items-center gap-3 px-5 py-3 hover:bg-gray-50/70 transition-colors border-b border-gray-100 last:border-0 group">
+            <Icon />
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium text-gray-900 truncate">{r.name}</p>
+              <p className="text-xs text-gray-400 mt-0.5 capitalize">{r.category || r.entity_type} · {fmtDate(r.created_at)}</p>
+            </div>
+            <a href={r.url} target="_blank" rel="noreferrer"
+              className="text-xs text-indigo-500 opacity-0 group-hover:opacity-100 transition-opacity font-medium hover:text-indigo-700 shrink-0">
+              Download ↗
+            </a>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+function PropertyHistory({ propertyId }) {
+  const [tab, setTab] = useState('maintenance')
+  const [data, setData] = useState(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    api.get(`/properties/${propertyId}/history`)
+      .then(r => setData(r.data))
+      .catch(() => {})
+      .finally(() => setLoading(false))
+  }, [propertyId])
+
+  const counts = data ? {
+    maintenance: data.maintenance.length,
+    inspections: data.inspections.length,
+    inventories: data.inventories.length,
+    leases:      data.leases.length,
+    compliance:  data.compliance.length,
+    documents:   data.documents.length,
+  } : {}
+
+  const active = HTABS.find(t => t.key === tab)
+  const cl = HTAB_COLORS[active?.color || 'slate']
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+      {/* Header */}
+      <div className="px-5 pt-5 pb-4 border-b border-gray-100">
+        <h2 className="text-sm font-semibold text-gray-900 mb-4">Property record</h2>
+
+        {/* Pill tabs — scroll on mobile */}
+        <div className="flex gap-2 overflow-x-auto pb-0.5 no-scrollbar">
+          {HTABS.map(t => {
+            const isActive = tab === t.key
+            const c = HTAB_COLORS[t.color]
+            const count = counts[t.key]
+            return (
+              <button
+                key={t.key}
+                onClick={() => setTab(t.key)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all duration-150 ${
+                  isActive
+                    ? `${c.active} shadow-sm`
+                    : `${c.idle} hover:opacity-80`
+                }`}
+              >
+                <svg className="w-3.5 h-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d={t.icon} />
+                </svg>
+                {t.label}
+                {count > 0 && (
+                  <span className={`px-1.5 py-px rounded-full text-[10px] font-bold tabular-nums ${isActive ? c.badge : 'bg-gray-200 text-gray-500'}`}>
+                    {count}
+                  </span>
+                )}
+              </button>
+            )
+          })}
+        </div>
+      </div>
+
+      {/* Content */}
+      <div className="min-h-[200px]">
+        {loading && (
+          <div className="flex items-center justify-center py-16">
+            <div className="flex items-center gap-2 text-gray-400 text-sm">
+              <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+              </svg>
+              Loading…
+            </div>
+          </div>
+        )}
+        {!loading && data && (
+          <>
+            {tab === 'maintenance'  && <HistoryMaintenance  rows={data.maintenance} />}
+            {tab === 'inspections'  && <HistoryInspections  rows={data.inspections} />}
+            {tab === 'inventories'  && <HistoryInventories  rows={data.inventories} />}
+            {tab === 'leases'       && <HistoryLeases       rows={data.leases} />}
+            {tab === 'compliance'   && <HistoryCompliance   rows={data.compliance} />}
+            {tab === 'documents'    && <HistoryDocuments    rows={data.documents} />}
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
 export default function PropertyDetail() {
   const { id } = useParams()
   const navigate = useNavigate()
@@ -709,7 +1012,23 @@ export default function PropertyDetail() {
               <Badge value={prop.property_type} />
             </div>
             <p className="text-gray-500">{prop.address_line1}{prop.address_line2 ? `, ${prop.address_line2}` : ''}, {prop.city}, {prop.postcode}</p>
-            {prop.description && <p className="mt-2 text-sm text-gray-500 max-w-2xl">{prop.description}</p>}
+            {prop.description && <p className="mt-2 text-sm text-gray-500 max-w-2xl leading-relaxed">{prop.description}</p>}
+            {(() => {
+              const feats = (prop.features || '').split('\n').map(f => f.trim()).filter(Boolean)
+              if (!feats.length) return null
+              return (
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {feats.map((f, i) => (
+                    <span key={i} className="inline-flex items-center gap-1.5 text-xs text-gray-600 bg-gray-100 rounded-full px-3 py-1">
+                      <svg className="w-3 h-3 text-indigo-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                      </svg>
+                      {f}
+                    </span>
+                  ))}
+                </div>
+              )
+            })()}
           </div>
           <div className="flex gap-2 flex-wrap">
             <button
@@ -858,6 +1177,9 @@ export default function PropertyDetail() {
           <p className="text-center text-gray-400 py-8 text-sm">No units yet.</p>
         )}
       </div>
+
+      {/* Property History */}
+      <PropertyHistory propertyId={prop.id} />
 
       {showAddUnit && (
         <AddUnitModal

@@ -11,6 +11,9 @@ from app.models.lease import Lease
 from app.models.tenant import Tenant
 from app.models.maintenance import MaintenanceRequest
 from app.models.upload import UploadedFile
+from app.models.inspection import Inspection
+from app.models.inventory import Inventory
+from app.models.compliance import ComplianceCertificate, CERT_TYPES
 from app.schemas.property import PropertyCreate, PropertyOut, UnitCreate, UnitOut
 
 router = APIRouter(prefix="/api/properties", tags=["properties"])
@@ -42,7 +45,7 @@ def list_properties(db: Session = Depends(get_db), current_user: User = Depends(
             "description": p.description,
             "epc_rating": p.epc_rating,
             "cover_photo": f"/uploads/{first_photo.filename}" if first_photo else None,
-            "units": [{"id": u.id, "name": u.name, "status": u.status, "monthly_rent": u.monthly_rent, "bedrooms": u.bedrooms, "bathrooms": u.bathrooms} for u in p.units],
+            "units": [{"id": u.id, "name": u.name, "status": u.status, "monthly_rent": u.monthly_rent, "bedrooms": u.bedrooms, "bathrooms": u.bathrooms, "epc_rating": u.epc_rating} for u in p.units],
         })
     return result
 
@@ -248,6 +251,135 @@ def get_property_detail(property_id: int, db: Session = Depends(get_db), current
         "units": units_out,
         "open_maintenance": open_maintenance_total,
         "photos": [{"id": p.id, "url": f"/uploads/{p.filename}", "name": p.original_name, "category": p.category} for p in photos],
+    }
+
+
+@router.get("/{property_id}/history")
+def get_property_history(property_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    prop = db.query(Property).filter(
+        Property.id == property_id,
+        Property.organisation_id == current_user.organisation_id,
+    ).first()
+    if not prop:
+        raise HTTPException(status_code=404, detail="Property not found")
+
+    unit_ids = [u.id for u in prop.units]
+
+    # All leases for this property (all statuses)
+    leases = db.query(Lease).filter(Lease.unit_id.in_(unit_ids)).order_by(Lease.start_date.desc()).all()
+    lease_ids = [l.id for l in leases]
+    tenant_map = {}
+    for l in leases:
+        if l.tenant_id and l.tenant_id not in tenant_map:
+            t = db.query(Tenant).filter(Tenant.id == l.tenant_id).first()
+            if t:
+                tenant_map[l.tenant_id] = {"id": t.id, "name": t.full_name, "email": t.email}
+    unit_map = {u.id: u.name for u in prop.units}
+
+    leases_out = [{
+        "id": l.id,
+        "unit": unit_map.get(l.unit_id, "—"),
+        "tenant_id": l.tenant_id,
+        "tenant": tenant_map.get(l.tenant_id, {}).get("name", "—"),
+        "start_date": str(l.start_date),
+        "end_date": str(l.end_date) if l.end_date else None,
+        "monthly_rent": l.monthly_rent,
+        "status": l.status,
+        "is_periodic": l.is_periodic,
+    } for l in leases]
+
+    # Maintenance
+    maintenance = db.query(MaintenanceRequest).filter(
+        MaintenanceRequest.unit_id.in_(unit_ids)
+    ).order_by(MaintenanceRequest.created_at.desc()).all()
+
+    maintenance_out = [{
+        "id": m.id,
+        "title": m.title,
+        "unit": unit_map.get(m.unit_id, "—"),
+        "status": m.status,
+        "priority": m.priority,
+        "created_at": str(m.created_at)[:10],
+    } for m in maintenance]
+
+    # Inspections
+    inspections = db.query(Inspection).filter(
+        Inspection.unit_id.in_(unit_ids)
+    ).order_by(Inspection.scheduled_date.desc()).all()
+
+    inspections_out = [{
+        "id": i.id,
+        "type": i.type,
+        "unit": unit_map.get(i.unit_id, "—"),
+        "status": i.status,
+        "scheduled_date": str(i.scheduled_date),
+        "inspector": i.inspector_name if hasattr(i, 'inspector_name') else None,
+    } for i in inspections]
+
+    # Inventories (via leases)
+    inventories = db.query(Inventory).filter(
+        Inventory.lease_id.in_(lease_ids)
+    ).order_by(Inventory.inv_date.desc()).all() if lease_ids else []
+
+    inventories_out = [{
+        "id": iv.id,
+        "inv_type": iv.inv_type,
+        "inv_date": str(iv.inv_date),
+        "status": iv.status,
+        "conducted_by": iv.conducted_by,
+        "tenant_acknowledged_at": str(iv.tenant_acknowledged_at)[:10] if iv.tenant_acknowledged_at else None,
+    } for iv in inventories]
+
+    # Compliance certificates
+    certs = db.query(ComplianceCertificate).filter(
+        ComplianceCertificate.property_id == property_id,
+    ).order_by(ComplianceCertificate.expiry_date.desc()).all()
+
+    from datetime import date
+    today = date.today()
+    certs_out = [{
+        "id": c.id,
+        "cert_type": c.cert_type,
+        "label": CERT_TYPES.get(c.cert_type, {}).get("label", c.cert_type),
+        "issue_date": str(c.issue_date),
+        "expiry_date": str(c.expiry_date),
+        "expired": c.expiry_date < today,
+        "contractor": c.contractor,
+        "reference": c.reference,
+    } for c in certs]
+
+    # Documents (property + units + leases)
+    entity_filters = [
+        (UploadedFile.entity_type == "property") & (UploadedFile.entity_id == property_id),
+    ]
+    if unit_ids:
+        entity_filters.append((UploadedFile.entity_type == "unit") & (UploadedFile.entity_id.in_(unit_ids)))
+    if lease_ids:
+        entity_filters.append((UploadedFile.entity_type == "lease") & (UploadedFile.entity_id.in_(lease_ids)))
+
+    from sqlalchemy import or_
+    docs = db.query(UploadedFile).filter(
+        UploadedFile.organisation_id == current_user.organisation_id,
+        or_(*entity_filters),
+    ).order_by(UploadedFile.created_at.desc()).all()
+
+    docs_out = [{
+        "id": d.id,
+        "name": d.original_name,
+        "category": d.category,
+        "entity_type": d.entity_type,
+        "mime_type": d.mime_type,
+        "created_at": str(d.created_at)[:10],
+        "url": f"/uploads/{d.filename}",
+    } for d in docs]
+
+    return {
+        "leases": leases_out,
+        "maintenance": maintenance_out,
+        "inspections": inspections_out,
+        "inventories": inventories_out,
+        "compliance": certs_out,
+        "documents": docs_out,
     }
 
 

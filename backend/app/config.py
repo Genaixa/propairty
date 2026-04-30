@@ -34,6 +34,10 @@ class Settings(BaseSettings):
     mistral_api_key: str = ""
     telegram_bot_token: str = ""
     telegram_chat_id: str = ""
+    # HMRC Making Tax Digital — register at developer.service.hmrc.gov.uk
+    hmrc_client_id: str = ""
+    hmrc_client_secret: str = ""
+    hmrc_sandbox: bool = True  # False = production API
 
     class Config:
         env_file = ".env.production"

@@ -81,9 +81,9 @@ export default function Deposits() {
   }, [])
 
   const filtered = deposits.filter(d => {
-    if (filter === 'attention') return d.protection_overdue || d.pi_overdue || (d.days_to_protect !== null && d.days_to_protect <= 7) || (d.days_to_pi !== null && d.days_to_pi <= 7)
-    if (filter === 'active') return ['unprotected', 'protected', 'pi_served'].includes(d.status)
-    if (filter === 'returned') return d.status === 'returned' || d.status === 'disputed'
+    if (filter === 'unprotected')   return d.status === 'unprotected'
+    if (filter === 'pi_outstanding') return d.status === 'protected'
+    if (filter === 'returned')      return d.status === 'returned' || d.status === 'disputed'
     return true
   })
 
@@ -127,32 +127,32 @@ export default function Deposits() {
       {/* Compliance summary */}
       {compliance && (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-          <div className="bg-white rounded-xl border border-gray-200 p-5">
+          <button onClick={() => setFilter('all')} className={`rounded-xl border p-5 text-left transition-all ${filter === 'all' ? 'ring-2 ring-gray-400 bg-gray-50 border-gray-300' : 'bg-white border-gray-200 hover:border-gray-300'}`}>
             <p className="text-sm text-gray-500">Total Held</p>
             <p className="text-2xl font-bold text-gray-900">£{compliance.total_held.toLocaleString()}</p>
             <p className="text-xs text-gray-400 mt-1">{compliance.total_count} deposits</p>
-          </div>
-          <div className={`rounded-xl border p-5 ${compliance.protection_overdue > 0 ? 'bg-red-50 border-red-200' : compliance.unprotected > 0 ? 'bg-amber-50 border-amber-200' : 'bg-white border-gray-200'}`}>
+          </button>
+          <button onClick={() => setFilter('unprotected')} className={`rounded-xl border p-5 text-left transition-all ${filter === 'unprotected' ? 'ring-2 ring-red-400 bg-red-50 border-red-300' : compliance.protection_overdue > 0 ? 'bg-red-50 border-red-200 hover:ring-2 hover:ring-red-300' : compliance.unprotected > 0 ? 'bg-amber-50 border-amber-200 hover:ring-2 hover:ring-amber-300' : 'bg-white border-gray-200 hover:border-gray-300'}`}>
             <p className="text-sm text-gray-500">Unprotected</p>
             <p className={`text-2xl font-bold ${compliance.protection_overdue > 0 ? 'text-red-600' : compliance.unprotected > 0 ? 'text-amber-600' : 'text-gray-900'}`}>
               {compliance.unprotected}
             </p>
             <p className="text-xs text-gray-400 mt-1">{compliance.protection_overdue > 0 ? `${compliance.protection_overdue} overdue!` : '30-day deadline'}</p>
-          </div>
-          <div className={`rounded-xl border p-5 ${compliance.pi_overdue > 0 ? 'bg-red-50 border-red-200' : compliance.pi_outstanding > 0 ? 'bg-amber-50 border-amber-200' : 'bg-white border-gray-200'}`}>
+          </button>
+          <button onClick={() => setFilter('pi_outstanding')} className={`rounded-xl border p-5 text-left transition-all ${filter === 'pi_outstanding' ? 'ring-2 ring-red-400 bg-red-50 border-red-300' : compliance.pi_overdue > 0 ? 'bg-red-50 border-red-200 hover:ring-2 hover:ring-red-300' : compliance.pi_outstanding > 0 ? 'bg-amber-50 border-amber-200 hover:ring-2 hover:ring-amber-300' : 'bg-white border-gray-200 hover:border-gray-300'}`}>
             <p className="text-sm text-gray-500">PI Outstanding</p>
             <p className={`text-2xl font-bold ${compliance.pi_overdue > 0 ? 'text-red-600' : compliance.pi_outstanding > 0 ? 'text-amber-600' : 'text-gray-900'}`}>
               {compliance.pi_outstanding}
             </p>
             <p className="text-xs text-gray-400 mt-1">{compliance.pi_overdue > 0 ? `${compliance.pi_overdue} overdue!` : '30-day deadline'}</p>
-          </div>
-          <div className={`rounded-xl border p-5 ${compliance.returns_pending > 0 ? 'bg-blue-50 border-blue-200' : 'bg-white border-gray-200'}`}>
+          </button>
+          <button onClick={() => setFilter('returned')} className={`rounded-xl border p-5 text-left transition-all ${filter === 'returned' ? 'ring-2 ring-blue-400 bg-blue-50 border-blue-300' : compliance.returns_pending > 0 ? 'bg-blue-50 border-blue-200 hover:ring-2 hover:ring-blue-300' : 'bg-white border-gray-200 hover:border-gray-300'}`}>
             <p className="text-sm text-gray-500">Returns Pending</p>
             <p className={`text-2xl font-bold ${compliance.returns_pending > 0 ? 'text-blue-600' : 'text-gray-900'}`}>
               {compliance.returns_pending}
             </p>
             <p className="text-xs text-gray-400 mt-1">tenancy ended</p>
-          </div>
+          </button>
         </div>
       )}
 
@@ -173,7 +173,7 @@ export default function Deposits() {
 
       {/* Filter tabs */}
       <div className="flex gap-1 mb-5 bg-white border border-gray-200 rounded-lg p-1 w-fit">
-        {[['all', 'All'], ['attention', 'Needs Attention'], ['active', 'Active'], ['returned', 'Returned']].map(([v, l]) => (
+        {[['all', 'All'], ['unprotected', 'Unprotected'], ['pi_outstanding', 'PI Outstanding'], ['returned', 'Returned']].map(([v, l]) => (
           <button key={v} onClick={() => setFilter(v)}
             className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${filter === v ? 'bg-indigo-600 text-white' : 'text-gray-600 hover:bg-gray-100'}`}>
             {l}

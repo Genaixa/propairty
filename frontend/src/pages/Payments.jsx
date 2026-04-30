@@ -125,6 +125,7 @@ export default function Payments() {
 
   const [sortCol, setSortCol] = useState('due_date')
   const [sortDir, setSortDir] = useState('asc')
+  const [activeFilter, setActiveFilter] = useState(null) // null | 'paid' | 'pending' | 'overdue'
 
   function toggleSort(col) {
     if (sortCol === col) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
@@ -138,6 +139,8 @@ export default function Payments() {
     </th>
   )
 
+  function toggleFilter(f) { setActiveFilter(v => v === f ? null : f) }
+
   const sortedPayments = [...payments].sort((a, b) => {
     let av, bv
     if      (sortCol === 'tenant_name') { av = a.tenant_name || ''; bv = b.tenant_name || '' }
@@ -150,6 +153,15 @@ export default function Payments() {
     if (av > bv) return sortDir === 'asc' ? 1 : -1
     return 0
   })
+
+  const displayedPayments = activeFilter
+    ? sortedPayments.filter(p => {
+        if (activeFilter === 'paid') return p.status === 'paid'
+        if (activeFilter === 'pending') return p.status === 'pending'
+        if (activeFilter === 'overdue') return p.status === 'overdue' || p.status === 'partial'
+        return true
+      })
+    : sortedPayments
 
   return (
     <div>
@@ -178,30 +190,30 @@ export default function Payments() {
         </div>
       )}
 
-      {/* Summary cards */}
+      {/* Summary cards — clickable filters */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-        <div className="bg-white rounded-xl border border-gray-200 p-5">
+        <button onClick={() => setActiveFilter(null)} className={`rounded-xl border p-5 text-left transition-all ${!activeFilter ? 'ring-2 ring-gray-400 bg-gray-50 border-gray-300' : 'bg-white border-gray-200 hover:border-gray-300'}`}>
           <p className="text-sm text-gray-500">Expected</p>
           <p className="text-2xl font-bold text-gray-900">£{expected.toLocaleString()}</p>
           <p className="text-xs text-gray-400 mt-1">{payments.length} payments</p>
-        </div>
-        <div className="bg-white rounded-xl border border-gray-200 p-5">
+        </button>
+        <button onClick={() => toggleFilter('paid')} className={`rounded-xl border p-5 text-left transition-all ${activeFilter === 'paid' ? 'ring-2 ring-green-400 bg-green-50 border-green-300' : 'bg-white border-gray-200 hover:border-green-200'}`}>
           <p className="text-sm text-gray-500">Collected</p>
           <p className="text-2xl font-bold text-green-600">£{collected.toLocaleString()}</p>
-          <p className="text-xs text-gray-400 mt-1">{paid.length} paid</p>
-        </div>
-        <div className="bg-white rounded-xl border border-gray-200 p-5">
+          <p className="text-xs text-gray-400 mt-1">{paid.length} paid · {expected > 0 ? Math.round((collected / expected) * 100) : 0}% collected</p>
+        </button>
+        <button onClick={() => toggleFilter('pending')} className={`rounded-xl border p-5 text-left transition-all ${activeFilter === 'pending' ? 'ring-2 ring-amber-400 bg-amber-50 border-amber-300' : 'bg-white border-gray-200 hover:border-amber-200'}`}>
           <p className="text-sm text-gray-500">Pending</p>
           <p className="text-2xl font-bold text-amber-500">{pending.length}</p>
           <p className="text-xs text-gray-400 mt-1">awaiting payment</p>
-        </div>
-        <div className={`rounded-xl border p-5 ${arrears?.count > 0 ? 'bg-red-50 border-red-200' : 'bg-white border-gray-200'}`}>
+        </button>
+        <button onClick={() => toggleFilter('overdue')} className={`rounded-xl border p-5 text-left transition-all ${activeFilter === 'overdue' ? 'ring-2 ring-red-400 bg-red-50 border-red-300' : arrears?.count > 0 ? 'bg-red-50 border-red-200 hover:ring-2 hover:ring-red-300' : 'bg-white border-gray-200 hover:border-red-200'}`}>
           <p className="text-sm text-gray-500">Total Arrears</p>
           <p className={`text-2xl font-bold ${arrears?.count > 0 ? 'text-red-600' : 'text-gray-900'}`}>
             £{arrears?.total_owed?.toLocaleString() ?? 0}
           </p>
           <p className="text-xs text-gray-400 mt-1">{arrears?.count ?? 0} overdue</p>
-        </div>
+        </button>
       </div>
 
       {/* Arrears alert */}
@@ -368,8 +380,14 @@ export default function Payments() {
 
       {/* This month's payments */}
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-        <div className="px-5 py-4 border-b border-gray-100 bg-gray-50">
-          <h3 className="font-semibold text-gray-700 text-sm">{monthLabel(month)} — All Payments</h3>
+        <div className="px-5 py-4 border-b border-gray-100 bg-gray-50 flex items-center gap-2">
+          <h3 className="font-semibold text-gray-700 text-sm">{monthLabel(month)} — {activeFilter ? { paid: 'Collected', pending: 'Pending', overdue: 'Arrears' }[activeFilter] : 'All Payments'}</h3>
+          {activeFilter && (
+            <>
+              <span className="text-xs text-gray-400">· {displayedPayments.length} result{displayedPayments.length !== 1 ? 's' : ''}</span>
+              <button onClick={() => setActiveFilter(null)} className="ml-auto text-xs text-indigo-600 hover:underline">Show all</button>
+            </>
+          )}
         </div>
         {loading ? (
           <div className="p-8 text-center text-gray-400 text-sm">Loading…</div>
@@ -389,7 +407,7 @@ export default function Payments() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {sortedPayments.map(p => (
+              {displayedPayments.map(p => (
                 <tr key={p.id} className={`hover:bg-gray-50 ${p.status === 'overdue' ? 'bg-red-50/40' : ''}`}>
                   <td className="px-5 py-3.5 font-medium">
                     {p.tenant_id

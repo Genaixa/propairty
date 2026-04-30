@@ -1,6 +1,7 @@
 import os
 import json
 import html
+import threading
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
@@ -14,7 +15,7 @@ from slowapi.middleware import SlowAPIMiddleware
 
 from app.database import Base, engine, SessionLocal
 from app.routers import auth, properties, tenants, leases, maintenance, dashboard, payments, compliance, documents, onboarding
-from app.routers import ai, alerts, landlord, tenant_portal, news, stripe_payments, contractors, inspections, risk, renewals, uploads, analytics, dispatch, deposits, accounting, applicants, notices, inventory, valuation, contractor_portal, ppm, billing, public_site, intelligence, phone, right_to_rent, surveys, email_inbound, system_settings, signing, workflows, checklists, audit_trail, feature_flags, cfo, autopilot
+from app.routers import ai, alerts, landlord, tenant_portal, news, stripe_payments, contractors, inspections, risk, renewals, uploads, analytics, dispatch, deposits, accounting, applicants, notices, inventory, valuation, contractor_portal, ppm, billing, public_site, intelligence, phone, right_to_rent, surveys, email_inbound, system_settings, signing, workflows, checklists, audit_trail, feature_flags, cfo, autopilot, mtd
 from app import notifications, emails, escalation, wendy
 
 # Load env from openclaw config if not already set
@@ -65,6 +66,60 @@ def daily_news_refresh():
         pass
 
 
+def snapshot_daily_metrics():
+    """Snapshot key portfolio metrics for every org — enables Mendy trend analysis."""
+    from datetime import date, timedelta
+    from app.models.organisation import Organisation
+    from app.models.metric_snapshot import MetricSnapshot
+    from app.models.property import Property
+    from app.models.unit import Unit
+    from app.models.lease import Lease
+    from app.models.payment import RentPayment
+    from app.models.compliance import ComplianceCertificate
+    from app.models.maintenance import MaintenanceRequest
+    from app.models.applicant import Applicant
+    db = SessionLocal()
+    try:
+        today = date.today()
+        orgs = db.query(Organisation).all()
+        for org in orgs:
+            oid = org.id
+            lease_ids = db.query(Lease.id).join(Unit).join(Property).filter(Property.organisation_id == oid)
+            overdue_rows = db.query(RentPayment).filter(
+                RentPayment.lease_id.in_(lease_ids), RentPayment.status == "overdue"
+            ).all()
+            now = today
+            data = {
+                "properties": db.query(Property).filter(Property.organisation_id == oid).count(),
+                "units": db.query(Unit).join(Property).filter(Property.organisation_id == oid).count(),
+                "vacant_units": db.query(Unit).join(Property).filter(Property.organisation_id == oid, Unit.status == "vacant").count(),
+                "active_leases": db.query(Lease).join(Unit).join(Property).filter(Property.organisation_id == oid, Lease.status == "active").count(),
+                "overdue_rent_count": len(overdue_rows),
+                "overdue_rent_amount": float(sum((r.amount or 0) - (r.amount_paid or 0) for r in overdue_rows)),
+                "expired_certs": db.query(ComplianceCertificate).join(Property).filter(Property.organisation_id == oid, ComplianceCertificate.expiry_date < now).count(),
+                "expiring_soon_certs": db.query(ComplianceCertificate).join(Property).filter(
+                    Property.organisation_id == oid,
+                    ComplianceCertificate.expiry_date >= now,
+                    ComplianceCertificate.expiry_date <= now + timedelta(days=90)
+                ).count(),
+                "open_maintenance": db.query(MaintenanceRequest).filter(
+                    MaintenanceRequest.organisation_id == oid,
+                    MaintenanceRequest.status.in_(["open", "in_progress"])
+                ).count(),
+                "active_applicants": db.query(Applicant).filter(Applicant.organisation_id == oid, Applicant.status == "active").count(),
+            }
+            snap = db.query(MetricSnapshot).filter_by(organisation_id=oid, date=today).first()
+            if snap:
+                snap.data = data
+            else:
+                db.add(MetricSnapshot(organisation_id=oid, date=today, data=data))
+        db.commit()
+    except Exception:
+        db.rollback()
+    finally:
+        db.close()
+
+
 def monthly_landlord_statements():
     """Run on the 1st of each month to email last month's statement to all landlords."""
     db = SessionLocal()
@@ -86,9 +141,10 @@ async def lifespan(app: FastAPI):
     scheduler.add_job(monthly_landlord_statements, "cron", day=1, hour=9, minute=0, id="landlord_statements")
     # Daily at noon — refresh Wendy's knowledge from git changes
     scheduler.add_job(wendy.refresh, "cron", hour=12, minute=0, id="wendy_refresh")
+    scheduler.add_job(snapshot_daily_metrics, "cron", hour=23, minute=50, id="metric_snapshots")
     scheduler.start()
     # Warm caches immediately in background on startup
-    import threading
+    threading.Thread(target=snapshot_daily_metrics, daemon=True).start()
     threading.Thread(target=daily_news_refresh, daemon=True).start()
     threading.Thread(target=wendy.load, daemon=True).start()
     yield
@@ -169,6 +225,7 @@ app.include_router(audit_trail.router)
 app.include_router(feature_flags.router)
 app.include_router(cfo.router)
 app.include_router(autopilot.router)
+app.include_router(mtd.router)
 
 # Serve uploaded files publicly (filenames are UUID-based, not guessable)
 app.mount("/uploads", StaticFiles(directory="/root/propairty/uploads"), name="uploads")

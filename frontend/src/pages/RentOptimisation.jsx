@@ -39,7 +39,7 @@ export default function RentOptimisation() {
   )
 
   return (
-    <div className="max-w-5xl mx-auto space-y-6">
+    <div className="max-w-5xl space-y-6">
       <div className="flex items-center justify-between">
         <div>
           <PageHeader title="Rent Optimiser" subtitle="Benchmarked against VOA Rental Market Statistics 2023–24" />

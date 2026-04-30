@@ -57,6 +57,16 @@
   .sig-line { border-bottom: 1px solid #d1d5db; height: 36px; margin-bottom: 6px; }
   .sig-option { display: inline-block; border: 1px solid #d1d5db; border-radius: 6px; padding: 8px 18px; font-size: 12px; font-weight: 600; color: #374151; margin-right: 12px; margin-bottom: 8px; }
 
+  .digital-confirmation { border-radius: 10px; padding: 18px 22px; margin: 20px 0; }
+  .digital-confirmation.accepted { background: #f0fdf4; border: 1px solid #86efac; }
+  .digital-confirmation.declined { background: #fef2f2; border: 1px solid #fca5a5; }
+  .digital-confirmation .dc-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: 10px; }
+  .digital-confirmation.accepted .dc-label { color: #15803d; }
+  .digital-confirmation.declined .dc-label { color: #b91c1c; }
+  .digital-confirmation .dc-row { display: flex; justify-content: space-between; font-size: 12px; padding: 4px 0; border-bottom: 1px solid rgba(0,0,0,0.05); }
+  .digital-confirmation .dc-row:last-child { border-bottom: none; }
+  .digital-confirmation .dc-key { color: #6b7280; }
+  .digital-confirmation .dc-val { font-weight: 600; color: #111827; }
   .footer { margin-top: 40px; padding-top: 16px; border-top: 1px solid #e5e7eb; font-size: 10px; color: #9ca3af; display: flex; justify-content: space-between; }
 </style>
 </head>
@@ -136,9 +146,14 @@
     <h3>How to Respond</h3>
     <p class="sub">The easiest way to accept or decline is via your tenant portal — log in at <strong>propairty.co.uk/tenant</strong> and go to the Renewals tab. Alternatively, you may sign and return this letter to your letting agent.</p>
     <div>
-      <span class="sig-option">&#9744;&nbsp; I ACCEPT the renewal offer</span>
-      <span class="sig-option">&#9744;&nbsp; I DECLINE the renewal offer</span>
+      <span class="sig-option" style="{% if renewal_status == 'accepted' %}background:#dcfce7;border-color:#16a34a;color:#15803d;font-weight:800;{% elif renewal_status == 'declined' %}opacity:0.4;{% endif %}">
+        {% if renewal_status == 'accepted' %}&#9745;{% else %}&#9744;{% endif %}&nbsp; I ACCEPT the renewal offer
+      </span>
+      <span class="sig-option" style="{% if renewal_status == 'declined' %}background:#fee2e2;border-color:#dc2626;color:#b91c1c;font-weight:800;{% elif renewal_status == 'accepted' %}opacity:0.4;{% endif %}">
+        {% if renewal_status == 'declined' %}&#9745;{% else %}&#9744;{% endif %}&nbsp; I DECLINE the renewal offer
+      </span>
     </div>
+    {% if renewal_status not in ('accepted', 'declined') %}
     <div class="sig-grid">
       <div class="sig-block">
         <div class="label">Tenant signature</div>
@@ -150,7 +165,19 @@
         <div class="sig-line"></div>
       </div>
     </div>
+    {% endif %}
   </div>
+
+  {% if renewal_status in ('accepted', 'declined') and responded_at %}
+  <div class="digital-confirmation {{ renewal_status }}">
+    <div class="dc-label">{% if renewal_status == 'accepted' %}✓ Digitally confirmed — accepted{% else %}✗ Digitally confirmed — declined{% endif %}</div>
+    <div class="dc-row"><span class="dc-key">Full name</span><span class="dc-val">{{ tenant_name }}</span></div>
+    <div class="dc-row"><span class="dc-key">Response</span><span class="dc-val">{% if renewal_status == 'accepted' %}Accepted the renewal offer{% else %}Declined the renewal offer{% endif %}</span></div>
+    <div class="dc-row"><span class="dc-key">Timestamp</span><span class="dc-val">{{ responded_at }}</span></div>
+    <div class="dc-row"><span class="dc-key">Method</span><span class="dc-val">{% if responded_via == 'portal' %}Tenant portal (authenticated session){% else %}Recorded by letting agent{% endif %}</span></div>
+    <div class="dc-row"><span class="dc-key">Reference</span><span class="dc-val">{{ ref }}</span></div>
+  </div>
+  {% endif %}
 
   <p>If you have any questions about this offer, please contact us and we will be happy to discuss.</p>
 

@@ -92,7 +92,7 @@ export default function ListingGenerator() {
   }
 
   return (
-    <div className="max-w-3xl mx-auto space-y-6">
+    <div className="max-w-3xl space-y-6">
       <div>
         <PageHeader title="Listing Generator" subtitle="AI-written Rightmove-ready property listings" />
       </div>
@@ -112,7 +112,7 @@ export default function ListingGenerator() {
               }}
               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
               <option value="">Select property…</option>
-              {properties.map(p => (
+              {[...properties].sort((a, b) => a.name.localeCompare(b.name)).map(p => (
                 <option key={p.id} value={p.id}>{p.name} — {p.postcode}</option>
               ))}
             </select>
@@ -232,10 +232,16 @@ export default function ListingGenerator() {
                 {copied ? '✓ Copied!' : '⎘ Copy listing'}
               </button>
               {result.pdf_url && (
-                <a href={`${API_BASE}${result.pdf_url}`} target="_blank" rel="noreferrer"
+                <button
+                  onClick={async () => {
+                    const r = await api.get(result.pdf_url.replace(/^\/api/, ''), { responseType: 'blob' })
+                    const url = URL.createObjectURL(r.data)
+                    const a = document.createElement('a'); a.href = url; a.download = result.pdf_url.split('/').pop(); a.click()
+                    URL.revokeObjectURL(url)
+                  }}
                   className="flex items-center gap-1.5 bg-indigo-600 text-white text-xs font-semibold px-3 py-1.5 rounded-lg hover:bg-indigo-700 transition-colors">
                   ↓ Download PDF
-                </a>
+                </button>
               )}
             </div>
           </div>
