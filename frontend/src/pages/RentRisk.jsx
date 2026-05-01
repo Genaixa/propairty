@@ -1,5 +1,6 @@
 import { PageHeader } from '../components/Illustration'
 import { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import api from '../lib/api'
 
 const RISK_CONFIG = {
@@ -17,6 +18,7 @@ const TREND_CONFIG = {
 }
 
 export default function RentRisk() {
+  const navigate = useNavigate()
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState('all')
@@ -207,8 +209,16 @@ export default function RentRisk() {
 
                     <div>
                       <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Recommended Action</p>
-                      <div className={`${cfg.bg} rounded-lg p-4`}>
+                      <div className={`${cfg.bg} rounded-lg p-4 flex items-start justify-between gap-3`}>
                         <p className={`text-sm font-medium ${cfg.text}`}>{t.recommendation}</p>
+                        {t.action_url && (
+                          <button
+                            onClick={() => navigate(t.action_url)}
+                            className="shrink-0 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 px-3 py-1.5 rounded-lg whitespace-nowrap"
+                          >
+                            {t.action_label || 'Take action'} →
+                          </button>
+                        )}
                       </div>
                       {t.tenant_email && (
                         <p className="text-xs text-gray-500 mt-3">

@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from datetime import date
 from app.database import get_db
 from app.auth import get_current_user
@@ -130,6 +130,9 @@ def get_dashboard(db: Session = Depends(get_db), current_user: User = Depends(ge
         .filter(
             Property.organisation_id == org_id,
             MaintenanceRequest.status.in_(["open", "in_progress"])
+        )
+        .options(
+            joinedload(MaintenanceRequest.unit).joinedload(Unit.property),
         )
         .order_by(desc(MaintenanceRequest.created_at))
         .limit(8)

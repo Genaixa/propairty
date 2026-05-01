@@ -6,7 +6,7 @@ import os
 import json
 from datetime import date
 from fastapi import APIRouter, Depends
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app.database import get_db
 from app.auth import get_current_user
@@ -146,31 +146,55 @@ def _score_tenant(lease: Lease, payments: list[RentPayment]) -> dict:
     # Recommendation — factor in actual arrears and trend, not just score
     if level == 1:
         recommendation = "No action needed"
+        action_url = f"/tenants/{tenant.id}"
+        action_label = "View tenant"
     elif level == 2:
         recommendation = "Monitor — send friendly reminder if trend continues"
+        action_url = f"/messages?tenant={tenant.id}"
+        action_label = "Message tenant"
     elif level == 3:
         if current_arrears > 0:
             recommendation = "Send formal rent reminder and request payment plan"
+            action_url = f"/messages?tenant={tenant.id}"
+            action_label = "Message tenant"
         else:
             recommendation = "Send friendly reminder — no arrears currently"
+            action_url = f"/messages?tenant={tenant.id}"
+            action_label = "Message tenant"
     elif level == 4:
         if current_arrears >= monthly_rent:
             recommendation = "Issue arrears warning letter — approaching Section 8 threshold"
+            action_url = f"/notices?tenant={tenant.id}&type=section_8"
+            action_label = "Issue notice"
         elif current_arrears > 0:
             recommendation = "Issue arrears warning letter and request immediate payment"
+            action_url = f"/notices?tenant={tenant.id}&type=section_8"
+            action_label = "Issue notice"
         else:
             recommendation = "Habitual late payer — discuss standing order or payment date change; no arrears currently"
+            action_url = f"/tenants/{tenant.id}"
+            action_label = "View tenant"
     else:  # Critical
         if current_arrears >= monthly_rent * 2:
             recommendation = "Urgent: arrears exceed 2 months — serve Section 8 notice"
+            action_url = f"/notices?tenant={tenant.id}&type=section_8"
+            action_label = "Serve Section 8"
         elif current_arrears >= monthly_rent:
             recommendation = "Urgent: issue formal arrears warning — approaching Section 8 threshold"
+            action_url = f"/notices?tenant={tenant.id}&type=section_8"
+            action_label = "Issue notice"
         elif current_arrears > 0:
             recommendation = "Issue arrears warning letter; monitor closely — no Section 8 grounds yet"
+            action_url = f"/notices?tenant={tenant.id}&type=section_8"
+            action_label = "Issue notice"
         elif trend == "worsening":
             recommendation = "Habitual late payer with worsening trend — send formal warning letter"
+            action_url = f"/messages?tenant={tenant.id}"
+            action_label = "Message tenant"
         else:
             recommendation = "Habitual late payer — discuss direct debit or payment date; no arrears currently"
+            action_url = f"/tenants/{tenant.id}"
+            action_label = "View tenant"
 
     unit = lease.unit
     prop = unit.property if unit else None
@@ -191,6 +215,8 @@ def _score_tenant(lease: Lease, payments: list[RentPayment]) -> dict:
         "trend": trend,
         "factors": factors,
         "recommendation": recommendation,
+        "action_url": action_url,
+        "action_label": action_label,
         "stats": {
             "total_payments": total,
             "on_time": on_time,
@@ -231,17 +257,9 @@ def _ai_portfolio_summary(risk_data: list[dict]) -> str:
     )
 
     try:
-        from openai import OpenAI
-        from app.config import settings
-        if not settings.groq_api_key:
-            return _fallback_summary(risk_data)
-        client = OpenAI(base_url="https://api.groq.com/openai/v1", api_key=settings.groq_api_key)
-        resp = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=120,
-        )
-        return resp.choices[0].message.content.strip()
+        from app.ai_utils import openrouter_chat
+        result = openrouter_chat([{"role": "user", "content": prompt}], max_tokens=120)
+        return result or _fallback_summary(risk_data)
     except Exception:
         return _fallback_summary(risk_data)
 
@@ -286,12 +304,23 @@ def get_risk_scores(
             Lease.status == "active",
             Property.organisation_id == current_user.organisation_id,
         )
+        .options(
+            joinedload(Lease.tenant),
+            joinedload(Lease.unit).joinedload(Unit.property),
+        )
         .all()
     )
 
+    # Bulk load all payments for all leases in one query
+    lease_ids = [l.id for l in leases]
+    all_payments = db.query(RentPayment).filter(RentPayment.lease_id.in_(lease_ids)).all() if lease_ids else []
+    payments_by_lease = {}
+    for p in all_payments:
+        payments_by_lease.setdefault(p.lease_id, []).append(p)
+
     scored = []
     for lease in leases:
-        payments = db.query(RentPayment).filter(RentPayment.lease_id == lease.id).all()
+        payments = payments_by_lease.get(lease.id, [])
         scored.append(_score_tenant(lease, payments))
 
     # Deduplicate by tenant — keep worst (highest) risk score per tenant

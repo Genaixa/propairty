@@ -1,6 +1,6 @@
 import json
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload, selectinload
 from sqlalchemy import func as sqlfunc
 from typing import List, Optional
 from pydantic import BaseModel
@@ -33,27 +33,56 @@ def list_requests(db: Session = Depends(get_db), current_user: User = Depends(ge
     allowed = get_accessible_property_ids(db, current_user)
     if allowed is not None:
         q = q.filter(Property.id.in_(allowed))
-    reqs = q.order_by(MaintenanceRequest.created_at.desc()).all()
+    reqs = q.options(
+        joinedload(MaintenanceRequest.unit).joinedload(Unit.property),
+        joinedload(MaintenanceRequest.contractor),
+    ).order_by(MaintenanceRequest.created_at.desc()).all()
+
+    if not reqs:
+        return []
+
+    req_ids = [r.id for r in reqs]
+
+    # Bulk load notes
+    all_notes = db.query(MaintenanceNote).filter(
+        MaintenanceNote.maintenance_request_id.in_(req_ids)
+    ).all()
+    notes_by_req = {}
+    for n in all_notes:
+        notes_by_req.setdefault(n.maintenance_request_id, []).append(n)
+
+    # Bulk load uploaded files (quotes + invoices)
+    all_files = db.query(UploadedFile).filter(
+        UploadedFile.entity_type.in_(["maintenance_quote", "maintenance_invoice"]),
+        UploadedFile.entity_id.in_(req_ids),
+    ).order_by(UploadedFile.id.desc()).all()
+    quote_files = {}
+    invoice_files = {}
+    for f in all_files:
+        if f.entity_type == "maintenance_quote" and f.entity_id not in quote_files:
+            quote_files[f.entity_id] = f
+        elif f.entity_type == "maintenance_invoice" and f.entity_id not in invoice_files:
+            invoice_files[f.entity_id] = f
+
+    # Bulk payment sums
+    payment_sums = dict(
+        db.query(MaintenancePayment.maintenance_request_id, sqlfunc.sum(MaintenancePayment.amount))
+        .filter(MaintenancePayment.maintenance_request_id.in_(req_ids))
+        .group_by(MaintenancePayment.maintenance_request_id)
+        .all()
+    )
 
     result = []
     for r in reqs:
-        unit = db.query(Unit).get(r.unit_id)
-        prop = db.query(Property).get(unit.property_id) if unit else None
-        contractor = db.query(Contractor).get(r.contractor_id) if r.contractor_id else None
-        notes = db.query(MaintenanceNote).filter(MaintenanceNote.maintenance_request_id == r.id).all()
+        unit = r.unit
+        prop = unit.property if unit else None
+        contractor = r.contractor
+        notes = notes_by_req.get(r.id, [])
         notes_count = len(notes)
         has_tenant_note = any(n.author_type == 'tenant' for n in notes)
-        qf = db.query(UploadedFile).filter(
-            UploadedFile.entity_type == "maintenance_quote",
-            UploadedFile.entity_id == r.id,
-        ).order_by(UploadedFile.id.desc()).first()
-        inv_f = db.query(UploadedFile).filter(
-            UploadedFile.entity_type == "maintenance_invoice",
-            UploadedFile.entity_id == r.id,
-        ).order_by(UploadedFile.id.desc()).first()
-        total_paid = db.query(sqlfunc.coalesce(sqlfunc.sum(MaintenancePayment.amount), 0.0)).filter(
-            MaintenancePayment.maintenance_request_id == r.id,
-        ).scalar() or 0.0
+        qf = quote_files.get(r.id)
+        inv_f = invoice_files.get(r.id)
+        total_paid = round(payment_sums.get(r.id) or 0.0, 2)
         result.append({
             "id": r.id,
             "title": r.title,

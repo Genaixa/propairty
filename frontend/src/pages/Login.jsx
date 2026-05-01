@@ -117,11 +117,6 @@ export default function Login() {
             <p className="text-xs text-indigo-500 font-mono">demo1234</p>
           </div>
 
-          <p className="text-center text-sm text-gray-400 mt-6">
-            {t('auth.noAccount')}{' '}
-            <Link to="/signup" className="text-indigo-600 hover:underline font-semibold">{t('auth.signUpFree')}</Link>
-          </p>
-
           {/* Demo website link */}
           <p className="text-center text-xs text-gray-400 mt-4">
             View demo agency site:{' '}

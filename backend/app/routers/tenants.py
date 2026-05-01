@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload, selectinload
+from sqlalchemy import and_
 from typing import List
 from app.database import get_db
 from app.auth import get_current_user, get_accessible_property_ids
@@ -24,17 +25,21 @@ def tenants_for_picker(
     current_user: User = Depends(get_current_user),
 ):
     """Lightweight list for dropdowns — includes active lease property/unit."""
-    tenants = db.query(Tenant).filter(
-        Tenant.organisation_id == current_user.organisation_id,
-        Tenant.is_active == True,
-    ).order_by(Tenant.full_name).all()
+    org_id = current_user.organisation_id
+    rows = (
+        db.query(Tenant, Lease, Unit, Property)
+        .outerjoin(Lease, and_(Lease.tenant_id == Tenant.id, Lease.status == "active"))
+        .outerjoin(Unit, Unit.id == Lease.unit_id)
+        .outerjoin(Property, Property.id == Unit.property_id)
+        .filter(
+            Tenant.organisation_id == org_id,
+            Tenant.is_active == True,
+        )
+        .order_by(Tenant.full_name)
+        .all()
+    )
     result = []
-    for t in tenants:
-        lease = db.query(Lease).filter(
-            Lease.tenant_id == t.id, Lease.status == "active"
-        ).first()
-        unit = db.query(Unit).get(lease.unit_id) if lease else None
-        prop = db.query(Property).get(unit.property_id) if unit else None
+    for t, lease, unit, prop in rows:
         result.append({
             "id": t.id,
             "full_name": t.full_name,
@@ -89,14 +94,43 @@ def get_tenant_profile(tenant_id: int, db: Session = Depends(get_db), current_us
     if not tenant:
         raise HTTPException(status_code=404, detail="Tenant not found")
 
-    leases = db.query(Lease).filter(Lease.tenant_id == tenant_id).order_by(Lease.start_date.desc()).all()
+    leases = (
+        db.query(Lease)
+        .filter(Lease.tenant_id == tenant_id)
+        .options(
+            joinedload(Lease.unit).joinedload(Unit.property),
+        )
+        .order_by(Lease.start_date.desc())
+        .all()
+    )
+
+    lease_ids = [l.id for l in leases]
+
+    # Bulk load payments per lease (last 24 per lease — done in Python after bulk fetch)
+    all_payments_raw = (
+        db.query(RentPayment)
+        .filter(RentPayment.lease_id.in_(lease_ids))
+        .order_by(RentPayment.due_date.desc())
+        .all()
+    ) if lease_ids else []
+    payments_by_lease = {}
+    for p in all_payments_raw:
+        payments_by_lease.setdefault(p.lease_id, []).append(p)
+
+    # Bulk load deposits per lease
+    all_deposits = (
+        db.query(TenancyDeposit)
+        .filter(TenancyDeposit.lease_id.in_(lease_ids))
+        .all()
+    ) if lease_ids else []
+    deposit_by_lease = {d.lease_id: d for d in all_deposits}
 
     leases_out = []
     for lease in leases:
-        unit = db.query(Unit).get(lease.unit_id)
-        prop = db.query(Property).get(unit.property_id) if unit else None
-        payments = db.query(RentPayment).filter(RentPayment.lease_id == lease.id).order_by(RentPayment.due_date.desc()).limit(24).all()
-        deposit = db.query(TenancyDeposit).filter(TenancyDeposit.lease_id == lease.id).first()
+        unit = lease.unit
+        prop = unit.property if unit else None
+        payments = payments_by_lease.get(lease.id, [])[:24]
+        deposit = deposit_by_lease.get(lease.id)
         leases_out.append({
             "id": lease.id,
             "status": lease.status,
@@ -156,19 +190,18 @@ from datetime import date as _date
 def list_meter_readings(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """All meter readings for this org, newest first."""
     from sqlalchemy import desc
-    readings = (
-        db.query(MeterReading)
+    rows = (
+        db.query(MeterReading, Tenant, Unit, Property)
         .join(Tenant, Tenant.id == MeterReading.tenant_id)
+        .join(Unit, Unit.id == MeterReading.unit_id)
+        .join(Property, Property.id == Unit.property_id)
         .filter(Tenant.organisation_id == current_user.organisation_id)
         .order_by(desc(MeterReading.reading_date), desc(MeterReading.id))
         .limit(500)
         .all()
     )
     result = []
-    for r in readings:
-        tenant = db.query(Tenant).filter(Tenant.id == r.tenant_id).first()
-        unit = db.query(Unit).filter(Unit.id == r.unit_id).first()
-        prop = db.query(Property).filter(Property.id == unit.property_id).first() if unit else None
+    for r, tenant, unit, prop in rows:
         result.append({
             "id": r.id,
             "tenant_name": tenant.full_name if tenant else "Unknown",
@@ -354,11 +387,18 @@ def agent_messages_inbox(db: Session = Depends(get_db), current_user: User = Dep
         TenantMessageModel.organisation_id == current_user.organisation_id
     ).order_by(TenantMessageModel.created_at.desc()).all()
 
+    # Bulk load all relevant tenants in one query
+    tenant_ids = {m.tenant_id for m in msgs}
+    tenants_map = {}
+    if tenant_ids:
+        for t in db.query(Tenant).filter(Tenant.id.in_(tenant_ids)).all():
+            tenants_map[t.id] = t
+
     # Group by tenant
     seen = {}
     for m in msgs:
         if m.tenant_id not in seen:
-            tenant = db.query(Tenant).filter(Tenant.id == m.tenant_id).first()
+            tenant = tenants_map.get(m.tenant_id)
             seen[m.tenant_id] = {
                 "tenant_id": m.tenant_id,
                 "tenant_name": tenant.full_name if tenant else "Unknown",

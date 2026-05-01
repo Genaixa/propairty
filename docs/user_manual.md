@@ -1,6 +1,6 @@
 # PropAIrty User Manual
 
-_Last updated: 2026-04-30_
+_Last updated: 2026-05-01_
 
 ---
 
@@ -314,9 +314,22 @@ Log Section 21 (no-fault eviction) and Section 8 (fault-based eviction) notices:
 
 ### Rent Risk
 
-[SCREENSHOT: Rent Risk page — tenants scored by risk level]
+[SCREENSHOT: Rent Risk page — tenants scored by risk level with action buttons]
 
-The Rent Risk tool uses payment history and lease data to score each tenant's likelihood of going into arrears. Tenants are flagged as low, medium, or high risk.
+The Rent Risk tool scores each tenant 1–5 (Low to Critical) based on their full payment history — late payments, partial payments, arrears, and payment trend over time.
+
+Each tenant card shows:
+- Risk score and label (Low / Low-Medium / Medium / High / Critical)
+- Payment breakdown — on time, late, overdue, partial counts
+- Current arrears amount
+- Recommended action — a plain-English instruction matched to the risk level
+
+**Action buttons** appear alongside each recommendation, taking you directly to the right place without hunting:
+- *Message tenant* → opens the messaging thread with that tenant pre-selected
+- *Issue notice / Serve Section 8* → opens the legal notices page filtered to that tenant
+- *View tenant* → opens the tenant's full profile
+
+[SCREENSHOT: Rent Risk — recommended action card with direct action button]
 
 ---
 
@@ -346,7 +359,7 @@ A quick snapshot of the portfolio's current state: active tenancies, total month
 
 The AI section includes several intelligent tools:
 
-- **AI Chat (Mendy)** — ask questions about your portfolio in plain English. Mendy has access to live portfolio data and 30 days of metric history, so you can ask things like "show me rent collection trend" or "chart occupancy this month". Charts appear inline in the chat as bar, line, or pie visualisations.
+- **AI Chat (Mendy)** — ask questions about your portfolio in plain English. Mendy has access to live portfolio data including tenants, leases, compliance certificates, maintenance jobs, arrears, deposits, legal notices, right-to-rent checks, and 30 days of metric history. Ask things like "which leases expire in the next 60 days?", "any compliance expiring this month?", or "summarise open maintenance jobs". Charts appear inline for trend questions. Mendy only answers from your real data — it will say so clearly if something isn't in your records rather than guessing.
 - **Listing Generator** — write a rental listing description from property details. Upload photos to include them in the PDF; the generated listing is ready to paste into Rightmove, Zoopla, or OnTheMarket.
 - **Lease Analyser** — upload a lease document and ask questions about it
 - **Valuation** — AI-estimated rental value based on market data

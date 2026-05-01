@@ -24,7 +24,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sqlalchemy import func
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.database import get_db
 from app.models.user import User
@@ -55,28 +55,11 @@ PDF_DIR.mkdir(exist_ok=True)
 # ── helpers ──────────────────────────────────────────────────────────────────
 
 def _claude(prompt: str, max_tokens: int = 1024) -> str:
-    from openai import OpenAI, RateLimitError
-    from app.config import settings
-    client = OpenAI(base_url="https://api.groq.com/openai/v1", api_key=settings.groq_api_key)
-    try:
-        msg = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
-            max_tokens=max_tokens,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        return msg.choices[0].message.content.strip()
-    except RateLimitError:
-        # Groq daily limit hit — fall back to Claude Haiku for this request only
-        if not settings.anthropic_api_key:
-            raise HTTPException(status_code=503, detail="AI service daily limit reached. Please try again tomorrow or contact support.")
-        import anthropic
-        ac = anthropic.Anthropic(api_key=settings.anthropic_api_key)
-        msg = ac.messages.create(
-            model="claude-haiku-4-5-20251001",
-            max_tokens=max_tokens,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        return msg.content[0].text.strip()
+    from app.ai_utils import openrouter_chat
+    result = openrouter_chat([{"role": "user", "content": prompt}], max_tokens=max_tokens)
+    if not result:
+        raise HTTPException(status_code=503, detail="AI service unavailable. Please try again shortly.")
+    return result
 
 
 def _cache_get(key: str, ttl_seconds: int = 3600):
@@ -674,8 +657,17 @@ def rent_optimisation(
         db.query(Unit)
         .join(Property)
         .filter(Property.organisation_id == org_id)
+        .options(joinedload(Unit.property))
         .all()
     )
+
+    # Bulk load active leases for all units
+    unit_ids = [u.id for u in units]
+    active_leases_list = db.query(Lease).filter(
+        Lease.unit_id.in_(unit_ids),
+        Lease.status == "active",
+    ).all() if unit_ids else []
+    active_lease_by_unit = {l.unit_id: l for l in active_leases_list}
 
     results = []
     for unit in units:
@@ -711,7 +703,7 @@ def rent_optimisation(
             rec = "At market rate."
             status = "at_market"
 
-        active_lease = db.query(Lease).filter(Lease.unit_id == unit.id, Lease.status == "active").first()
+        active_lease = active_lease_by_unit.get(unit.id)
         results.append({
             "unit_id": unit.id,
             "unit_name": unit.name,
@@ -1017,7 +1009,45 @@ def churn_risk(
     active_leases = db.query(Lease).join(Unit).join(Property).filter(
         Property.organisation_id == org_id,
         Lease.status == "active",
+    ).options(
+        joinedload(Lease.tenant),
+        joinedload(Lease.unit).joinedload(Unit.property),
     ).all()
+
+    lease_ids = [l.id for l in active_leases]
+    unit_ids = [l.unit_id for l in active_leases]
+    six_months_ago = today - timedelta(days=180)
+
+    # Bulk load all payments for all leases (for arrears + late count)
+    all_payments = db.query(RentPayment).filter(
+        RentPayment.lease_id.in_(lease_ids)
+    ).all() if lease_ids else []
+    payments_by_lease = {}
+    for p in all_payments:
+        payments_by_lease.setdefault(p.lease_id, []).append(p)
+
+    # Bulk: open maintenance count by unit_id
+    open_maint_rows = db.query(
+        MaintenanceRequest.unit_id, func.count(MaintenanceRequest.id)
+    ).filter(
+        MaintenanceRequest.organisation_id == org_id,
+        MaintenanceRequest.unit_id.in_(unit_ids),
+        MaintenanceRequest.status.in_(["open", "in_progress"]),
+    ).group_by(MaintenanceRequest.unit_id).all() if unit_ids else []
+    open_maint_by_unit = {row[0]: row[1] for row in open_maint_rows}
+
+    # Bulk: last contact (most recent maintenance) per unit_id
+    # Use a subquery approach: get all maintenance for these units ordered, then take latest per unit in Python
+    all_maint_contact = db.query(
+        MaintenanceRequest.unit_id, MaintenanceRequest.created_at
+    ).filter(
+        MaintenanceRequest.organisation_id == org_id,
+        MaintenanceRequest.unit_id.in_(unit_ids),
+    ).order_by(MaintenanceRequest.created_at.desc()).all() if unit_ids else []
+    last_contact_by_unit = {}
+    for row in all_maint_contact:
+        if row[0] not in last_contact_by_unit:
+            last_contact_by_unit[row[0]] = row[1]
 
     results = []
     for lease in active_leases:
@@ -1027,14 +1057,13 @@ def churn_risk(
 
         score = 0
         factors = []
+        lease_payments = payments_by_lease.get(lease.id, [])
 
         # Late payments in last 6 months
-        six_months_ago = today - timedelta(days=180)
-        late = db.query(RentPayment).filter(
-            RentPayment.lease_id == lease.id,
-            RentPayment.status == "overdue",
-            RentPayment.due_date >= six_months_ago,
-        ).count()
+        late = sum(
+            1 for p in lease_payments
+            if p.status == "overdue" and p.due_date and p.due_date >= six_months_ago
+        )
         if late >= 3:
             score += 35
             factors.append(f"{late} late payments in last 6 months")
@@ -1043,11 +1072,7 @@ def churn_risk(
             factors.append(f"{late} late payment{'s' if late > 1 else ''} in last 6 months")
 
         # Open maintenance requests
-        open_maint = db.query(MaintenanceRequest).filter(
-            MaintenanceRequest.organisation_id == org_id,
-            MaintenanceRequest.unit_id == lease.unit_id,
-            MaintenanceRequest.status.in_(["open", "in_progress"]),
-        ).count()
+        open_maint = open_maint_by_unit.get(lease.unit_id, 0)
         if open_maint >= 3:
             score += 25
             factors.append(f"{open_maint} unresolved maintenance issues")
@@ -1065,11 +1090,8 @@ def churn_risk(
             factors.append(f"Lease ends in {days_to_end} days")
 
         # No recent contact (no maintenance requests at all = disengaged)
-        any_contact = db.query(MaintenanceRequest).filter(
-            MaintenanceRequest.organisation_id == org_id,
-            MaintenanceRequest.unit_id == lease.unit_id,
-        ).order_by(MaintenanceRequest.created_at.desc()).first()
-        last_contact = any_contact.created_at.date() if any_contact else lease.start_date
+        last_contact_dt = last_contact_by_unit.get(lease.unit_id)
+        last_contact = last_contact_dt.date() if last_contact_dt else lease.start_date
         days_silent = (today - last_contact).days if last_contact else 999
         if days_silent > 180:
             score += 10
@@ -1078,12 +1100,11 @@ def churn_risk(
         score = min(score, 100)
         risk_level = "high" if score >= 40 else "medium" if score >= 15 else "low"
 
-        # Check current arrears
-        overdue_payments = db.query(RentPayment).filter(
-            RentPayment.lease_id == lease.id,
-            RentPayment.status.in_(["overdue", "pending", "partial"]),
-            RentPayment.due_date <= today,
-        ).all()
+        # Check current arrears (computed in Python from already-loaded payments)
+        overdue_payments = [
+            p for p in lease_payments
+            if p.status in ("overdue", "pending", "partial") and p.due_date and p.due_date <= today
+        ]
         current_arrears = sum((p.amount_due or 0) - (p.amount_paid or 0) for p in overdue_payments)
 
         results.append({

@@ -27,13 +27,22 @@ def list_properties(db: Session = Depends(get_db), current_user: User = Depends(
     if allowed is not None:
         q = q.filter(Property.id.in_(allowed))
     props = q.all()
+    prop_ids = [p.id for p in props]
+
+    # Bulk-load first photo per property — one query instead of one per property
+    all_photos = db.query(UploadedFile).filter(
+        UploadedFile.entity_type == "property",
+        UploadedFile.entity_id.in_(prop_ids),
+        UploadedFile.mime_type.like("image/%"),
+    ).order_by(UploadedFile.entity_id, UploadedFile.created_at.asc()).all()
+    first_photo_by_prop = {}
+    for photo in all_photos:
+        if photo.entity_id not in first_photo_by_prop:
+            first_photo_by_prop[photo.entity_id] = photo
+
     result = []
     for p in props:
-        first_photo = db.query(UploadedFile).filter(
-            UploadedFile.entity_type == "property",
-            UploadedFile.entity_id == p.id,
-            UploadedFile.mime_type.like("image/%"),
-        ).order_by(UploadedFile.created_at.asc()).first()
+        first_photo = first_photo_by_prop.get(p.id)
         result.append({
             "id": p.id,
             "name": p.name,
@@ -176,6 +185,7 @@ def vacate_unit(property_id: int, unit_id: int, data: VacateRequest, db: Session
 
 @router.get("/{property_id}/detail")
 def get_property_detail(property_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    from sqlalchemy import func as sqlfunc
     prop = db.query(Property).options(joinedload(Property.units)).filter(
         Property.id == property_id,
         Property.organisation_id == current_user.organisation_id
@@ -183,17 +193,37 @@ def get_property_detail(property_id: int, db: Session = Depends(get_db), current
     if not prop:
         raise HTTPException(status_code=404, detail="Property not found")
 
+    unit_ids = [u.id for u in prop.units]
+
+    # Bulk load active leases for all units
+    active_leases_list = db.query(Lease).filter(
+        Lease.unit_id.in_(unit_ids),
+        Lease.status == "active",
+    ).all() if unit_ids else []
+    active_lease_by_unit = {l.unit_id: l for l in active_leases_list}
+
+    # Bulk load tenants for those leases
+    tenant_ids = [l.tenant_id for l in active_leases_list if l.tenant_id]
+    tenants_map = {}
+    if tenant_ids:
+        for t in db.query(Tenant).filter(Tenant.id.in_(tenant_ids)).all():
+            tenants_map[t.id] = t
+
+    # Bulk open maintenance counts by unit_id
+    open_jobs_rows = db.query(
+        MaintenanceRequest.unit_id,
+        sqlfunc.count(MaintenanceRequest.id),
+    ).filter(
+        MaintenanceRequest.unit_id.in_(unit_ids),
+        MaintenanceRequest.status.notin_(["completed", "cancelled"]),
+    ).group_by(MaintenanceRequest.unit_id).all() if unit_ids else []
+    open_jobs_by_unit = {row[0]: row[1] for row in open_jobs_rows}
+
     units_out = []
     for u in prop.units:
-        active_lease = db.query(Lease).filter(
-            Lease.unit_id == u.id,
-            Lease.status == "active"
-        ).first()
-        tenant = db.query(Tenant).filter(Tenant.id == active_lease.tenant_id).first() if active_lease else None
-        open_jobs = db.query(MaintenanceRequest).filter(
-            MaintenanceRequest.unit_id == u.id,
-            MaintenanceRequest.status.notin_(["completed", "cancelled"])
-        ).count()
+        active_lease = active_lease_by_unit.get(u.id)
+        tenant = tenants_map.get(active_lease.tenant_id) if active_lease else None
+        open_jobs = open_jobs_by_unit.get(u.id, 0)
         units_out.append({
             "id": u.id,
             "name": u.name,
@@ -268,12 +298,11 @@ def get_property_history(property_id: int, db: Session = Depends(get_db), curren
     # All leases for this property (all statuses)
     leases = db.query(Lease).filter(Lease.unit_id.in_(unit_ids)).order_by(Lease.start_date.desc()).all()
     lease_ids = [l.id for l in leases]
-    tenant_map = {}
-    for l in leases:
-        if l.tenant_id and l.tenant_id not in tenant_map:
-            t = db.query(Tenant).filter(Tenant.id == l.tenant_id).first()
-            if t:
-                tenant_map[l.tenant_id] = {"id": t.id, "name": t.full_name, "email": t.email}
+    tenant_ids = list({l.tenant_id for l in leases if l.tenant_id})
+    tenant_map = {
+        t.id: {"id": t.id, "name": t.full_name, "email": t.email}
+        for t in db.query(Tenant).filter(Tenant.id.in_(tenant_ids)).all()
+    }
     unit_map = {u.id: u.name for u in prop.units}
 
     leases_out = [{

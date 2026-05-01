@@ -232,7 +232,18 @@ def get_openai_client():
 
 
 def _build_context_prompt(db: Session, org_id: int) -> str:
-    """Build a compact plain-text context from live portfolio data."""
+    """Build agent Mendy context from live DB data. Called fresh on every request.
+
+    MANIFEST — data included (update this list when adding new features):
+      overview stats, landlords, properties+units, tenants+leases, open maintenance,
+      arrears, payments (90d), compliance (ALL certs), deposits, legal notices,
+      recent payments, right-to-rent, contractors, renewals, applicants, inspections,
+      inventories, dispatch queue, portal messages, maintenance surveys,
+      contractor reviews, property valuations, PPM schedules, maintenance notes,
+      30-day metric history.
+
+    When adding a new model/feature: add a section here so Mendy knows about it.
+    """
     from datetime import date
     from app.models.landlord import Landlord
     from app.models.lease import Lease
@@ -299,11 +310,12 @@ def _build_context_prompt(db: Session, org_id: int) -> str:
     lines.append(f"PAYMENT SNAPSHOT: {paid_this_month} payments collected this month. {future_pending} future scheduled payments (not arrears).")
 
     comp = ai_tools.list_compliance(db=db, org_id=org_id)
-    if comp['expired'] or comp['expiring_soon']:
-        lines.append(f"\nCOMPLIANCE: {comp['expired']} expired, {comp['expiring_soon']} expiring soon.")
+    lines.append(f"\nCOMPLIANCE ({comp['expired']} expired, {comp['expiring_soon']} expiring soon — FULL LIST BELOW, do not invent any items not listed):")
+    if comp['certificates']:
         for c in comp['certificates']:
-            if c['status'] != 'valid':
-                lines.append(f"  [{c['status']}] {c['cert_type']} — {c['property']} — expires {c['expiry_date']}")
+            lines.append(f"  [{c['status']}] {c['cert_type']} — {c['property']} — expires {c['expiry_date']}")
+    else:
+        lines.append("  No compliance certificates on record.")
 
     from app.models.deposit import TenancyDeposit
     from app.models.lease import Lease
@@ -329,16 +341,21 @@ def _build_context_prompt(db: Session, org_id: int) -> str:
     from app.models.contractor import Contractor
     from app.models.renewal import LeaseRenewal
 
-    # Legal notices
-    notices = db.query(LegalNotice).filter(LegalNotice.organisation_id == org_id).order_by(LegalNotice.served_date.desc()).all()
+    # Legal notices — single join query, no per-notice lookups
+    notices = (
+        db.query(LegalNotice, Tenant, Unit, Property)
+        .join(Lease, Lease.id == LegalNotice.lease_id)
+        .join(Tenant, Tenant.id == Lease.tenant_id)
+        .join(Unit, Unit.id == Lease.unit_id)
+        .join(Property, Property.id == Unit.property_id)
+        .filter(LegalNotice.organisation_id == org_id)
+        .order_by(LegalNotice.served_date.desc())
+        .all()
+    )
     if notices:
         lines.append("\nLEGAL NOTICES:")
-        for n in notices:
-            lease = db.query(Lease).filter(Lease.id == n.lease_id).first()
-            tenant = db.query(Tenant).filter(Tenant.id == lease.tenant_id).first() if lease else None
-            unit = db.query(Unit).filter(Unit.id == lease.unit_id).first() if lease else None
-            prop = db.query(Property).filter(Property.id == unit.property_id).first() if unit else None
-            label = f"{prop.name} · {unit.name}" if prop and unit else "—"
+        for n, tenant, unit, prop in notices:
+            label = f"{prop.name} · {unit.name}"
             type_label = {"section_21": "Section 21", "section_8": "Section 8", "section_13": "Section 13"}.get(n.notice_type, n.notice_type)
             extra = ""
             if n.notice_type == "section_8" and n.arrears_amount:
@@ -347,7 +364,7 @@ def _build_context_prompt(db: Session, org_id: int) -> str:
                 extra = f", new rent £{n.arrears_amount:.2f} effective {n.possession_date}"
             elif n.notice_type == "section_21" and n.possession_date:
                 extra = f", possession by {n.possession_date}"
-            lines.append(f"  {type_label} — {tenant.full_name if tenant else '—'} — {label} — served {n.served_date}{extra}")
+            lines.append(f"  {type_label} — {tenant.full_name} — {label} — served {n.served_date}{extra}")
 
     # Recent payments (last 3 months, past due only — excludes future scheduled)
     from datetime import date, timedelta
@@ -592,7 +609,8 @@ def _build_context_prompt(db: Session, org_id: int) -> str:
     except Exception:
         pass
 
-    lines.append("\n=== END DATA — answer using only the above, do not invent names or numbers. ===")
+    from app.ai_utils import data_boundary
+    lines.append(data_boundary())
     return "\n".join(lines)
 
 
@@ -675,21 +693,40 @@ def _chat_openai(req: ChatRequest, db: Session, org_id: int, client, model: str)
         raise
 
 
+OPENROUTER_MODELS = [
+    "deepseek/deepseek-chat-v3-0324",  # best quality/cost; falls back on quota
+    "openai/gpt-4o-mini",              # rock-solid OpenAI fallback
+    "google/gemini-flash-2.5",         # Google fallback
+]
+
+
+def _openrouter_complete(messages: list, tools: list = None) -> str:
+    """Try OPENROUTER_MODELS in order, return reply text. Raises HTTPException if all fail."""
+    if not settings.openrouter_api_key:
+        raise HTTPException(status_code=503, detail="AI is unavailable — please try again shortly.")
+
+    client = OpenAI(base_url="https://openrouter.ai/api/v1", api_key=settings.openrouter_api_key)
+    last_err = None
+    for model in OPENROUTER_MODELS:
+        try:
+            kw = {"tools": tools} if tools else {}
+            resp = client.chat.completions.create(model=model, messages=messages, timeout=60, temperature=0, **kw)
+            return resp
+        except Exception as e:
+            print(f"[openrouter] {model} failed: {e}")
+            last_err = e
+    raise HTTPException(status_code=503, detail="AI is unavailable — please try again shortly.")
+
+
 @router.post("/chat")
 def chat(req: ChatRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    # 1. Try Anthropic Claude if key present and funded
-    if settings.anthropic_api_key:
-        try:
-            return _chat_anthropic(req, db, current_user.organisation_id, settings.anthropic_api_key)
-        except Exception:
-            pass  # Fall through to Groq/Ollama
-
-    # 2. Ollama (free, local) / Mistral
-    client, model = get_openai_client()
-    if client:
-        return _chat_openai(req, db, current_user.organisation_id, client, model)
-
-    raise HTTPException(status_code=500, detail="No AI provider available.")
+    context = _build_context_prompt(db, current_user.organisation_id)
+    from app import wendy as _wendy
+    system = _wendy.get('mendy_agent') + context
+    messages = [{"role": "system", "content": system}]
+    messages += [{"role": m.role, "content": m.content} for m in req.messages]
+    resp = _openrouter_complete(messages)
+    return {"reply": resp.choices[0].message.content or "", "model": resp.model}
 
 
 # ── Portal AI chat endpoints ───────────────────────────────────────────────────
@@ -697,71 +734,28 @@ def chat(req: ChatRequest, db: Session = Depends(get_db), current_user: User = D
 # data only, calls the same AI backend. No cross-portal data leakage.
 
 def _portal_chat(messages_in, system_prompt: str, context: str):
-    """Run a portal chat using available AI backend (Anthropic → Groq → fail)."""
     return _portal_chat_with_tools(messages_in, system_prompt, context, tools=[], tool_fn_map={})
 
 
 def _portal_chat_with_tools(messages_in, system_prompt: str, context: str, tools: list, tool_fn_map: dict):
-    """Portal chat with optional tool support. tools: OpenAI function-format list."""
-    from app.config import settings
-
+    """Portal chat — DeepSeek V3 → GPT-4o mini → Gemini Flash 2.5 cascade via OpenRouter."""
     full_system = system_prompt + "\n\n" + context
+    msgs = [{"role": "system", "content": full_system}]
+    msgs += [{"role": m["role"], "content": m["content"]} for m in messages_in]
 
-    if settings.anthropic_api_key:
-        try:
-            import anthropic
-            client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
-            anthr_tools = [
-                {"name": t["function"]["name"], "description": t["function"]["description"],
-                 "input_schema": t["function"]["parameters"]}
-                for t in tools
-            ]
-            msgs = [{"role": m["role"], "content": m["content"]} for m in messages_in]
-            for _ in range(6):
-                kw = {"tools": anthr_tools} if anthr_tools else {}
-                response = client.messages.create(
-                    model="claude-haiku-4-5-20251001", max_tokens=1024,
-                    system=full_system, messages=msgs, **kw
-                )
-                tool_uses = [b for b in response.content if b.type == "tool_use"]
-                text_blocks = [b for b in response.content if b.type == "text"]
-                if response.stop_reason == "end_turn" or not tool_uses:
-                    reply = "\n".join(b.text for b in text_blocks).strip()
-                    return {"reply": reply or "I'm not sure about that. Please contact your agent."}
-                msgs.append({"role": "assistant", "content": response.content})
-                results = []
-                for tu in tool_uses:
-                    fn = tool_fn_map.get(tu.name)
-                    result = fn(**tu.input) if fn else {"error": "unknown tool"}
-                    results.append({"type": "tool_result", "tool_use_id": tu.id, "content": json.dumps(result)})
-                msgs.append({"role": "user", "content": results})
-            return {"reply": "I could not complete that request."}
-        except Exception as e:
-            print(f"[portal_ai] Anthropic failed: {e}")
-
-    client_oa, model = get_openai_client()
-    if client_oa:
-        msgs_oa = [{"role": "system", "content": full_system}]
-        msgs_oa += [{"role": m["role"], "content": m["content"]} for m in messages_in]
-        for _ in range(6):
-            try:
-                kw = {"tools": tools} if tools else {}
-                response = client_oa.chat.completions.create(model=model, messages=msgs_oa, timeout=60, **kw)
-                choice = response.choices[0]
-                if tools and choice.finish_reason == "tool_calls" and choice.message.tool_calls:
-                    msgs_oa.append(choice.message)
-                    for tc in choice.message.tool_calls:
-                        args = json.loads(tc.function.arguments or "{}")
-                        fn = tool_fn_map.get(tc.function.name)
-                        result = fn(**args) if fn else {"error": "unknown tool"}
-                        msgs_oa.append({"role": "tool", "tool_call_id": tc.id, "content": json.dumps(result)})
-                else:
-                    return {"reply": choice.message.content or ""}
-            except Exception as e:
-                raise HTTPException(status_code=503, detail="AI is busy — please try again shortly.")
-        return {"reply": "I could not complete that request."}
-
-    raise HTTPException(status_code=500, detail="No AI provider configured.")
+    for _ in range(6):
+        resp = _openrouter_complete(msgs, tools=tools or None)
+        choice = resp.choices[0]
+        if tools and choice.finish_reason == "tool_calls" and choice.message.tool_calls:
+            msgs.append(choice.message)
+            for tc in choice.message.tool_calls:
+                args = json.loads(tc.function.arguments or "{}")
+                fn = tool_fn_map.get(tc.function.name)
+                result = fn(**args) if fn else {"error": "unknown tool"}
+                msgs.append({"role": "tool", "tool_call_id": tc.id, "content": json.dumps(result)})
+        else:
+            return {"reply": choice.message.content or "I'm not sure about that. Please contact your agent."}
+    return {"reply": "I could not complete that request."}
 
 
 # ── Tenant portal AI ──────────────────────────────────────────────────────────
@@ -798,6 +792,9 @@ from app.models.maintenance import MaintenanceRequest as _MR
 from app.models.deposit import TenancyDeposit as _Dep
 
 def _tenant_context(tenant, db: Session) -> str:
+    """Tenant Wendy context. MANIFEST: lease, rent, deposit, payments (12),
+    maintenance (own jobs), documents, inspections (unit), meter readings.
+    When adding tenant-facing features: add a section here."""
     lines = [f"=== TENANT: {tenant.full_name} ===",
              f"Email: {tenant.email or '—'} | Phone: {tenant.phone or '—'}"]
     lease = db.query(_Lease).filter(_Lease.tenant_id == tenant.id, _Lease.status == "active").first()
@@ -821,9 +818,45 @@ def _tenant_context(tenant, db: Session) -> str:
         _MR.organisation_id == tenant.organisation_id,
         (_MR.reported_by_tenant_id == tenant.id) | (_MR.reported_by == tenant.full_name)
     ).order_by(_MR.created_at.desc()).limit(10).all()
-    lines.append(f"Maintenance ({len(maint)} recent):")
+    lines.append(f"Maintenance ({len(maint)} recent — do not invent jobs not listed):")
     for m in maint:
         lines.append(f"  - [{m.status}] {m.title} (priority: {m.priority})")
+
+    # Documents
+    from app.models.document import Document as _Doc
+    docs = db.query(_Doc).filter(_Doc.lease_id == lease.id).all() if lease else []
+    if docs:
+        lines.append(f"Documents on file ({len(docs)}):")
+        for d in docs:
+            lines.append(f"  - {d.doc_type or d.filename} — uploaded {d.created_at.date() if d.created_at else '—'}")
+    else:
+        lines.append("Documents on file: none on record.")
+
+    # Inspections
+    from app.models.inspection import Inspection as _Insp
+    if lease and unit:
+        inspections = db.query(_Insp).filter(_Insp.unit_id == unit.id).order_by(_Insp.scheduled_date.desc()).limit(5).all()
+        if inspections:
+            lines.append("Inspections:")
+            for ins in inspections:
+                cond = f", condition: {ins.overall_condition}" if ins.overall_condition else ""
+                lines.append(f"  - {ins.type.replace('_',' ').title()} — {ins.scheduled_date} ({ins.status}){cond}")
+        else:
+            lines.append("Inspections: none on record.")
+
+    # Meter readings
+    from app.models.meter_reading import MeterReading as _MR2
+    if lease:
+        readings = db.query(_MR2).filter(_MR2.lease_id == lease.id).order_by(_MR2.reading_date.desc()).limit(10).all()
+        if readings:
+            lines.append("Meter readings:")
+            for r in readings:
+                lines.append(f"  - {r.utility_type} — {r.reading_value} {r.unit or ''} on {r.reading_date}")
+        else:
+            lines.append("Meter readings: none submitted.")
+
+    from app.ai_utils import data_boundary
+    lines.append(data_boundary())
     return "\n".join(lines)
 
 
@@ -846,6 +879,9 @@ Be professional but approachable. Speak in plain English. If they ask for someth
 You can send a message to the letting agent on the landlord's behalf using the send_message_to_agent tool. Use this ONLY when the landlord explicitly asks you to send, write, or forward a message. Draft the message clearly and confirm once sent."""
 
 def _landlord_context(landlord, db: Session) -> str:
+    """Landlord Wendy context. MANIFEST: properties, units, leases, arrears,
+    open maintenance count, compliance (all certs), deposits, legal notices.
+    When adding landlord-facing features: add a section here."""
     from app.models.property import Property as _P
     from app.models.unit import Unit as _U
     from app.models.lease import Lease as _L
@@ -876,6 +912,65 @@ def _landlord_context(landlord, db: Session) -> str:
             lines.append(f"  Open maintenance: {open_maint} job(s)")
     lines.append(f"\nTotal monthly rent roll: £{total_rent:,.0f}")
     lines.append(f"Total arrears: £{total_arrears:,.0f}" if total_arrears else "No arrears outstanding.")
+
+    from app.models.compliance import ComplianceCertificate as _CC
+    from datetime import date as _date, timedelta as _td
+    today = _date.today()
+    prop_ids = [p.id for p in props]
+    if prop_ids:
+        certs = db.query(_CC).filter(_CC.property_id.in_(prop_ids)).order_by(_CC.expiry_date).all()
+        lines.append(f"\nCOMPLIANCE (full list — do not invent items not listed here):")
+        if certs:
+            for c in certs:
+                if c.expiry_date < today:
+                    status = "EXPIRED"
+                elif (c.expiry_date - today).days <= 60:
+                    status = f"expiring in {(c.expiry_date - today).days}d"
+                else:
+                    status = "valid"
+                prop_name = next((p.name for p in props if p.id == c.property_id), "—")
+                lines.append(f"  [{status}] {c.cert_type} — {prop_name} — expires {c.expiry_date}")
+        else:
+            lines.append("  No compliance certificates on record.")
+
+    # Deposits
+    from app.models.deposit import TenancyDeposit as _Dep2
+    from app.models.tenant import Tenant as _Ten
+    dep_rows = (
+        db.query(_Dep2, _Ten)
+        .join(_L, _L.id == _Dep2.lease_id)
+        .join(_Ten, _Ten.id == _L.tenant_id)
+        .join(_U, _U.id == _L.unit_id)
+        .filter(_U.property_id.in_([p.id for p in props]))
+        .all()
+    )
+    if dep_rows:
+        lines.append("\nDEPOSITS (do not invent items not listed):")
+        for dep, ten in dep_rows:
+            lines.append(f"  {ten.full_name} — £{dep.amount:.2f} — {dep.scheme} — {dep.status} — ref: {dep.scheme_reference or '—'}")
+    else:
+        lines.append("\nDEPOSITS: None on record.")
+
+    # Legal notices
+    from app.models.notice import LegalNotice as _LN
+    notices = (
+        db.query(_LN)
+        .join(_L, _L.id == _LN.lease_id)
+        .join(_U, _U.id == _L.unit_id)
+        .filter(_U.property_id.in_([p.id for p in props]))
+        .order_by(_LN.served_date.desc())
+        .all()
+    )
+    if notices:
+        lines.append("\nLEGAL NOTICES:")
+        for n in notices:
+            type_label = {"section_21": "Section 21", "section_8": "Section 8", "section_13": "Section 13"}.get(n.notice_type, n.notice_type)
+            lines.append(f"  {type_label} — served {n.served_date}" + (f", possession by {n.possession_date}" if n.possession_date else ""))
+    else:
+        lines.append("Legal notices: none served.")
+
+    from app.ai_utils import data_boundary
+    lines.append(data_boundary())
     return "\n".join(lines)
 
 
@@ -896,6 +991,9 @@ Be practical and to the point. If they need more detail than you have, let them 
 You can send a message to the letting agent on the contractor's behalf using the send_message_to_agent tool. Use this ONLY when the contractor explicitly asks you to send, write, or forward a message. Draft the message clearly and confirm once sent."""
 
 def _contractor_context(contractor, db: Session) -> str:
+    """Contractor Wendy context. MANIFEST: assigned jobs (20 recent) with status,
+    priority, property, unit, description.
+    When adding contractor-facing features: add a section here."""
     from app.models.maintenance import MaintenanceRequest as _M
     lines = [f"=== CONTRACTOR: {contractor.full_name} ({contractor.company_name or ''}) ===",
              f"Trade: {contractor.trade or '—'} | Email: {contractor.email or '—'}"]
@@ -909,4 +1007,6 @@ def _contractor_context(contractor, db: Session) -> str:
         lines.append(f"  [{j.status}] {j.title} | Priority: {j.priority} | {prop.name if prop else '—'}, {unit.name if unit else '—'}")
         if j.description:
             lines.append(f"    Description: {j.description[:100]}")
+    from app.ai_utils import data_boundary
+    lines.append(data_boundary())
     return "\n".join(lines)

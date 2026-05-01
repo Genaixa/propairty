@@ -18,6 +18,9 @@ from app import emails
 
 router = APIRouter(prefix="/api/payments", tags=["payments"])
 
+# Cache: skip generation if already ran today for this org
+_ensure_cache: dict = {}
+
 
 def _org_leases(db: Session, org_id: int):
     return db.query(Lease).join(Unit).join(Property).filter(
@@ -27,8 +30,18 @@ def _org_leases(db: Session, org_id: int):
 
 
 def _ensure_payments_generated(db: Session, org_id: int):
-    """Generate pending payment records for active leases for the next 12 months."""
+    """Generate pending payment records for active leases for the next 12 months.
+    Cached per org per day — safe to call on every request."""
     today = date.today()
+    if _ensure_cache.get(org_id) == today:
+        return  # Already ran today — skip all DB work
+
+    leases = _org_leases(db, org_id)
+    if not leases:
+        _ensure_cache[org_id] = today
+        return
+
+    # Build target due dates for all leases at once
     months = []
     for i in range(12):
         m = today.month + i
@@ -36,36 +49,41 @@ def _ensure_payments_generated(db: Session, org_id: int):
         m = ((m - 1) % 12) + 1
         months.append((y, m))
 
-    for lease in _org_leases(db, org_id):
+    lease_ids = [l.id for l in leases]
+
+    # One bulk query for all existing payment dates — replaces N×12 individual SELECTs
+    existing = set(
+        db.query(RentPayment.lease_id, RentPayment.due_date)
+        .filter(RentPayment.lease_id.in_(lease_ids))
+        .all()
+    )
+
+    new_payments = []
+    for lease in leases:
         for year, month in months:
             last_day = calendar.monthrange(year, month)[1]
             due_day = min(lease.rent_day, last_day)
             due_date = date(year, month, due_day)
-
-            # Skip if before lease start
             if due_date < lease.start_date:
                 continue
-            # Skip if after lease end
             if lease.end_date and due_date > lease.end_date:
                 continue
-
-            exists = db.query(RentPayment).filter(
-                RentPayment.lease_id == lease.id,
-                RentPayment.due_date == due_date
-            ).first()
-            if not exists:
-                db.add(RentPayment(
+            if (lease.id, due_date) not in existing:
+                new_payments.append(RentPayment(
                     lease_id=lease.id,
                     due_date=due_date,
                     amount_due=lease.monthly_rent,
                     status="pending"
                 ))
-    db.commit()
 
-    # Mark overdue — fetch IDs first, then update without joins
+    if new_payments:
+        db.bulk_save_objects(new_payments)
+        db.commit()
+
+    # Mark overdue in one UPDATE
     overdue_ids = [
         row.id for row in
-        db.query(RentPayment).join(Lease).join(Unit).join(Property).filter(
+        db.query(RentPayment.id).join(Lease).join(Unit).join(Property).filter(
             Property.organisation_id == org_id,
             RentPayment.status == "pending",
             RentPayment.due_date < today
@@ -75,7 +93,9 @@ def _ensure_payments_generated(db: Session, org_id: int):
         db.query(RentPayment).filter(RentPayment.id.in_(overdue_ids)).update(
             {"status": "overdue"}, synchronize_session=False
         )
-    db.commit()
+        db.commit()
+
+    _ensure_cache[org_id] = today
 
 
 def _enrich(payments: list, db: Session) -> list:

@@ -133,16 +133,10 @@ async def wendy_chat(req: PublicChatRequest, request: Request):
         except Exception as e:
             print(f"[wendy] Anthropic error: {e}")
 
-    if settings.groq_api_key:
-        try:
-            from openai import OpenAI as _OAI
-            oai = _OAI(base_url="https://api.groq.com/openai/v1", api_key=settings.groq_api_key)
-            msgs = [{"role": "system", "content": system_prompt}] + messages_in
-            resp = oai.chat.completions.create(model="llama-3.1-8b-instant", messages=msgs, timeout=30)
-            reply = resp.choices[0].message.content or ""
-            return {"reply": reply}
-        except Exception as e:
-            print(f"[wendy] Groq error: {e}")
+    from app.ai_utils import openrouter_chat
+    reply = openrouter_chat([{"role": "system", "content": system_prompt}] + messages_in)
+    if reply:
+        return {"reply": reply}
 
     if settings.mistral_api_key:
         try:
@@ -901,8 +895,10 @@ def _build_public_context(org, props: list) -> str:
         "",
         "When suggesting a property, mention its name and price clearly.",
         "When a user wants to book a viewing, ask for: full name, email, phone, preferred date/time, and which property/unit.",
-        "End every viewing request confirmation with: 'I'll pass your details to the {org.name} team and they'll be in touch shortly.'",
+        f"End every viewing request confirmation with: 'I'll pass your details to the {org.name} team and they'll be in touch shortly.'",
     ]
+    from app.ai_utils import data_boundary
+    lines.append(data_boundary())
     return "\n".join(lines)
 
 
@@ -976,17 +972,10 @@ async def public_chat(slug: str, req: PublicChatRequest, request: Request, db: S
         except Exception as e:
             print(f"[public chat] Anthropic error: {e}")
 
-    # Fallback: Groq
-    if settings.groq_api_key:
-        try:
-            from openai import OpenAI as _OAI
-            oai = _OAI(base_url="https://api.groq.com/openai/v1", api_key=settings.groq_api_key)
-            msgs = [{"role": "system", "content": system_prompt}] + messages_in
-            resp = oai.chat.completions.create(model="llama-3.1-8b-instant", messages=msgs, timeout=30)
-            reply = resp.choices[0].message.content or ""
-            return {"reply": reply, "agent": getattr(org, "ai_agent_name", None) or "Wendy"}
-        except Exception as e:
-            print(f"[public chat] Groq error: {e}")
+    from app.ai_utils import openrouter_chat
+    reply = openrouter_chat([{"role": "system", "content": system_prompt}] + messages_in)
+    if reply:
+        return {"reply": reply, "agent": getattr(org, "ai_agent_name", None) or "Wendy"}
 
     raise HTTPException(status_code=503, detail="AI chat is temporarily unavailable.")
 

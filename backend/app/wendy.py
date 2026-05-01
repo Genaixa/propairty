@@ -280,18 +280,10 @@ def _ask_ai_to_update(key: str, current_prompt: str, log: str, diff: str) -> str
         except Exception as e:
             print(f"[wendy refresh:{key}] Anthropic error: {e}")
 
-    if settings.groq_api_key:
-        try:
-            from openai import OpenAI as _OAI
-            oai = _OAI(base_url="https://api.groq.com/openai/v1", api_key=settings.groq_api_key)
-            resp = oai.chat.completions.create(
-                model="llama-3.3-70b-versatile",
-                messages=[{"role": "user", "content": request}],
-                timeout=60,
-            )
-            return (resp.choices[0].message.content or "").strip()
-        except Exception as e:
-            print(f"[wendy refresh:{key}] Groq error: {e}")
+    from app.ai_utils import openrouter_chat
+    result = openrouter_chat([{"role": "user", "content": request}], max_tokens=4096)
+    if result:
+        return result
 
     if settings.mistral_api_key:
         try:
@@ -373,18 +365,9 @@ def _generate_faq(knowledge: str):
         except Exception as e:
             print(f"[wendy faq] Anthropic error: {e}")
 
-    if not raw and settings.groq_api_key:
-        try:
-            from openai import OpenAI as _OAI
-            oai = _OAI(base_url="https://api.groq.com/openai/v1", api_key=settings.groq_api_key)
-            resp = oai.chat.completions.create(
-                model="llama-3.3-70b-versatile",
-                messages=[{"role": "user", "content": request}],
-                timeout=60,
-            )
-            raw = (resp.choices[0].message.content or "").strip()
-        except Exception as e:
-            print(f"[wendy faq] Groq error: {e}")
+    if not raw:
+        from app.ai_utils import openrouter_chat
+        raw = openrouter_chat([{"role": "user", "content": request}], max_tokens=4096)
 
     if not raw:
         print("[wendy faq] No AI available — skipping FAQ generation.")

@@ -31,6 +31,7 @@ class Settings(BaseSettings):
     pexels_api_key: str = ""
     groq_api_key: str = ""
     anthropic_api_key: str = ""
+    openrouter_api_key: str = ""
     mistral_api_key: str = ""
     telegram_bot_token: str = ""
     telegram_chat_id: str = ""

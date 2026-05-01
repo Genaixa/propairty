@@ -159,6 +159,39 @@ function MockupAccounting() {
   )
 }
 
+function MockupMTD() {
+  return (
+    <MockupDashboard rows={[
+      { icon: '🏛️', label: 'HMRC Connection', sub: 'Government Gateway · OAuth connected', value: '✓ Live', badge: 'bg-green-100 text-green-700' },
+      { icon: '📅', label: 'Q1 2026/27 — Apr–Jun 2026', sub: 'Income £21,400 · Expenses £1,840', value: 'Submitted', badge: 'bg-green-100 text-green-700' },
+      { icon: '📅', label: 'Q2 2026/27 — Jul–Sep 2026', sub: 'Income £22,100 · Expenses £2,150', value: 'Preview', badge: 'bg-indigo-100 text-indigo-700' },
+      { icon: '📅', label: 'Q3 2026/27 — Oct–Dec 2026', sub: 'Not yet due', value: 'Upcoming', badge: 'bg-gray-100 text-gray-500' },
+    ]} />
+  )
+}
+
+function MockupMeterReadings() {
+  return (
+    <MockupDashboard rows={[
+      { icon: '⚡', label: 'Electricity — Flat 3, 22 Oak Lane', sub: 'Submitted 28 Apr 2026 · James Smith', value: '4,821 kWh', badge: 'bg-yellow-100 text-yellow-700' },
+      { icon: '🔥', label: 'Gas — Flat 3, 22 Oak Lane', sub: 'Submitted 28 Apr 2026 · James Smith', value: '1,203 m³', badge: 'bg-orange-100 text-orange-700' },
+      { icon: '💧', label: 'Water — 14 Birchwood Close', sub: 'Submitted 25 Apr 2026 · Priya Patel', value: '312 m³', badge: 'bg-blue-100 text-blue-700' },
+      { icon: '⚡', label: 'Electricity — 14 Birchwood Close', sub: 'Submitted 25 Apr 2026 · Priya Patel', value: '3,107 kWh', badge: 'bg-yellow-100 text-yellow-700' },
+    ]} />
+  )
+}
+
+function MockupAdvancePayments() {
+  return (
+    <MockupDashboard rows={[
+      { icon: '💳', label: 'Advance received — James Smith', sub: 'Flat 3, 22 Oak Lane · 1 Apr 2026', value: '£3,600', badge: 'bg-green-100 text-green-700' },
+      { icon: '✓', label: 'Apr 2026 — Allocated', sub: 'Part of £3,600 advance received 1 Apr 2026', value: '£1,200', badge: 'bg-green-100 text-green-700' },
+      { icon: '✓', label: 'May 2026 — Allocated', sub: 'Part of £3,600 advance received 1 Apr 2026', value: '£1,200', badge: 'bg-green-100 text-green-700' },
+      { icon: '✓', label: 'Jun 2026 — Allocated', sub: 'Part of £3,600 advance received 1 Apr 2026', value: '£1,200', badge: 'bg-green-100 text-green-700' },
+    ]} />
+  )
+}
+
 function MockupTenantPortal() {
   return (
     <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-sm">
@@ -311,6 +344,9 @@ const MOCKUPS = {
   'ai-insights':     MockupAIInsights,
   files:             MockupFiles,
   surveys:           MockupSurveys,
+  mtd:               MockupMTD,
+  'meter-readings':  MockupMeterReadings,
+  'advance-payments': MockupAdvancePayments,
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
